@@ -244,7 +244,7 @@ class Speaker(
         val key = cache.key(client.name, s.voiceOrDefault, s.ttsModelOrDefault, clip.emotion.name, clip.text)
         try {
             ss.fetchSlots.withPermit {
-                if (ss.system || session !== ss) { clip.data.close(); return }
+                if (ss.system || session !== ss) { clip.format.completeExceptionally(Skipped()); clip.data.close(); return }
                 cache.get(key)?.let { (fmt, bytes) ->
                     clip.fromCache = true
                     clip.format.complete(fmt)
@@ -279,7 +279,8 @@ class Speaker(
                 if (ss.system) { main.post { speakSystem(ss, clip.text) }; continue }
                 val fmt = try { clip.format.await() } catch (e: Exception) {
                     if (session !== ss) return
-                    cloudFailed(ss, e)
+                    // Skipped: the session already switched to the system voice — not a new failure.
+                    if (e !is Skipped && !ss.system) cloudFailed(ss, e)
                     main.post { speakSystem(ss, clip.text) }
                     continue
                 }
@@ -305,7 +306,7 @@ class Speaker(
                     }
                 } catch (e: Exception) {
                     if (session !== ss) return
-                    cloudFailed(ss, e)
+                    if (!ss.system) cloudFailed(ss, e)
                 }
             }
             t?.let { drain(ss, it, framesWritten, trackFormat!!.sampleRate) }
@@ -449,6 +450,8 @@ class Speaker(
         focus?.let { runCatching { audioManager.abandonAudioFocusRequest(it) } }
         focus = null
     }
+
+    private class Skipped : Exception("skipped")
 
     private companion object { val MOUTH = Any() }
 }

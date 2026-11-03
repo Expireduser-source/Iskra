@@ -210,6 +210,9 @@ class VoiceEar(
                     // Speech is over: take the result now instead of waiting for more audio.
                     val rec = current()
                     finalText(rec === fullRec, field(rec.finalResult, "text"))
+                    // The name was found only now, at the end of the phrase: the replayed audio is
+                    // all there is, so finish the full recogniser too instead of waiting for more speech.
+                    if (rec !== fullRec && useFull) finalText(true, field(fullRec.finalResult, "text"))
                 }
             }
         } catch (_: InterruptedException) {
