@@ -10,6 +10,7 @@ import ru.iskra.app.data.ProviderPreset
 import ru.iskra.app.data.SettingsRepo
 import ru.iskra.app.data.SqliteConversationStore
 import ru.iskra.app.data.SqliteMemoryStore
+import ru.iskra.app.data.AutoBackup
 import ru.iskra.app.data.SqliteNoteStore
 import ru.iskra.app.data.SqliteReminderStore
 import ru.iskra.app.skills.AndroidReminderScheduler
@@ -111,6 +112,7 @@ class IskraApp : Application() {
             llmKeyIfOpenAi = { if (settings.load().preset == ProviderPreset.OPENAI) vault.load() else null },
         )
         chat = ChatController(this)
+        AutoBackup.schedule(this, onlyIfMissing = true)
     }
 
     /** Built per request so settings/key changes apply immediately. */
@@ -137,6 +139,7 @@ class IskraApp : Application() {
         vault.clear()
         ttsVault.clear()
         speaker.clearCache()
+        Diag.clearCrashes()
         notes.deleteAll()
         reminders.pending().forEach { reminderScheduler.cancel(it.id) }
         reminders.deleteAll()

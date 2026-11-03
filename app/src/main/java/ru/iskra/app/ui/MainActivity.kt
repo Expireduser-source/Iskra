@@ -58,9 +58,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import ru.iskra.app.IskraApp
+import ru.iskra.app.data.AutoBackup
 import ru.iskra.app.data.Backups
 import ru.iskra.app.data.ProviderPreset
 import ru.iskra.app.diag.Diag
+import ru.iskra.app.diag.DiagCollector
 import ru.iskra.core.backup.BackupException
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.rememberCoroutineScope
@@ -102,6 +104,7 @@ private fun MainScreen() {
     ) { padding ->
         Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
             AccessibilityWarning()
+            CrashBanner()
             val m = Modifier.weight(1f)
             when (tab) {
                 0 -> ChatScreen(m)
@@ -119,6 +122,26 @@ private fun MainScreen() {
  * silently do nothing, so say it plainly and offer the fix: switch it off and on again.
  */
 private var lastLoggedAccess: CompanionAccessibilityService.State? = null
+
+/** Stage 5 crash journal: after a crash, offer the report once (the cause is in it, without keys or chat). */
+@Composable
+private fun CrashBanner() {
+    val ctx = LocalContext.current
+    val prefs = remember { ctx.getSharedPreferences("crash_seen", android.content.Context.MODE_PRIVATE) }
+    val last = remember { Diag.crashTimes().maxOrNull() ?: 0L }
+    var seen by remember { mutableStateOf(prefs.getLong("seen", 0L)) }
+    if (last <= seen) return
+    Card(Modifier.fillMaxWidth().padding(8.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Text("Искра аварийно закрылась " + java.text.SimpleDateFormat("dd.MM в HH:mm", java.util.Locale.ROOT).format(java.util.Date(last)), fontSize = 15.sp)
+            Text("Причина записана в журнал. Отправь отчёт — так её проще найти. В нём нет ключей и переписки.", fontSize = 13.sp)
+            Row {
+                TextButton(onClick = { runCatching { DiagCollector.shareReport(ctx) }; prefs.edit().putLong("seen", last).apply(); seen = last }) { Text("📤 Отправить отчёт") }
+                TextButton(onClick = { prefs.edit().putLong("seen", last).apply(); seen = last }) { Text("Понятно") }
+            }
+        }
+    }
+}
 
 @Composable
 private fun AccessibilityWarning() {
@@ -240,6 +263,20 @@ private fun MemoryScreen(modifier: Modifier) {
             OutlinedButton(onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text("💾 Сохранить копию") }
             Spacer(Modifier.size(8.dp))
             OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text("📂 Восстановить") }
+        }
+        var autoState by remember { mutableStateOf(AutoBackup.describe(ctx)) }
+        val treeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri == null) return@rememberLauncherForActivityResult
+            runCatching { AutoBackup.enable(ctx, uri) }.onFailure { backupMsg = "Папка не подходит: ${it.javaClass.simpleName}" }
+            scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) }
+        }
+        Text("🗓 Ежедневная копия: $autoState", fontSize = 13.sp)
+        Row {
+            OutlinedButton(onClick = { treeLauncher.launch(null) }) { Text(if (AutoBackup.folder(ctx) == null) "Включить: выбрать папку" else "Другая папка") }
+            if (AutoBackup.folder(ctx) != null) {
+                TextButton(onClick = { scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) } }) { Text("Сейчас") }
+                TextButton(onClick = { AutoBackup.disable(ctx); autoState = AutoBackup.describe(ctx) }) { Text("Выключить") }
+            }
         }
         Row {
             OutlinedButton(onClick = { app.chat.clearHistory(); Diag.i("memory", "Переписка очищена владельцем") }) { Text("Очистить переписку") }

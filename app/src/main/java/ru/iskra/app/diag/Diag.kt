@@ -31,6 +31,7 @@ object Diag {
     fun init(ctx: Context, knownSecrets: () -> Collection<String>) {
         secrets = knownSecrets
         val f = File(ctx.filesDir, "diag.log").also { file = it }
+        crashFile = File(ctx.filesDir, "crashes.txt")
         runCatching { if (f.exists()) log.load(f.readText()) }
         installCrashHandler()
     }
@@ -84,12 +85,22 @@ object Diag {
         return "${t.javaClass.simpleName}(${t.message?.take(120).orEmpty()})$cause" + if (own.isNotEmpty()) " @ $own" else ""
     }
 
+    @Volatile private var crashFile: File? = null
+
+    /** Times of crashes (ms), oldest first; kept until «Стереть всё». */
+    fun crashTimes(): List<Long> = runCatching {
+        crashFile?.takeIf { it.exists() }?.readLines()?.mapNotNull { it.trim().toLongOrNull() }.orEmpty().takeLast(200)
+    }.getOrDefault(emptyList())
+
+    fun clearCrashes() { runCatching { crashFile?.delete() } }
+
     private fun installCrashHandler() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, t ->
             runCatching {
                 log.add(DiagEntry.Level.ERROR, "crash", "Падение в потоке ${thread.name}: ${describe(t)}")
                 writeNow() // synchronously: the process is about to die
+                crashFile?.appendText("${System.currentTimeMillis()}\n")
             }
             previous?.uncaughtException(thread, t)
         }

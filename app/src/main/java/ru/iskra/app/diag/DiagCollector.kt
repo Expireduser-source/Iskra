@@ -59,6 +59,8 @@ object DiagCollector {
             "Кадры/с у Искры" to if (FrameStats.hz > 0) "экран ~${FrameStats.hz}, отрисовка ~${FrameStats.drawnHz}" else "нет данных (Искра не на экране)",
             "Режим кадров" to s.fpsMode.title,
             "Группа ожидания Android" to standbyBucket(ctx),
+            "Падения" to ru.iskra.core.diag.CrashHistory.summary(Diag.crashTimes(), System.currentTimeMillis(), installedAt(ctx)),
+            "Ежедневная копия" to ru.iskra.app.data.AutoBackup.describe(ctx),
             "Расход в покое" to (PowerWatch.summary() ?: "пока нет данных: нужно ≥ 2 замеров без зарядки (замер раз в 5 мин, пока Искра на экране)"),
             "Кэш голоса" to runCatching {
                 val c = app.speaker.cache
@@ -143,6 +145,22 @@ object DiagCollector {
 
     /** SHA-256 of app/debug.keystore's certificate (public, as is the debug key itself). */
     private const val DEBUG_CERT_SHA256 = "15:AD:00:1F:99:5A:A0:A5"
+
+    fun installedAt(ctx: Context): Long =
+        runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).firstInstallTime }.getOrDefault(System.currentTimeMillis())
+
+    /** Opens the share sheet with the full report as a .txt file (same as the diagnostics button). */
+    fun shareReport(ctx: Context) {
+        val uri = reportFile(ctx)
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            putExtra(android.content.Intent.EXTRA_SUBJECT, "Искра: отчёт диагностики")
+            clipData = android.content.ClipData.newRawUri("report", uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        ctx.startActivity(android.content.Intent.createChooser(send, "Отправить отчёт").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
 
     private fun keyState(key: String?) = if (key.isNullOrBlank()) "не сохранён" else "сохранён, ${Redactor.mask(key)}"
     private fun yesNo(b: Boolean) = if (b) "да" else "нет"

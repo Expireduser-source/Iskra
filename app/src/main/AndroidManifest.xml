@@ -82,6 +82,10 @@
             android:windowSoftInputMode="adjustResize" />
 
         <receiver android:name=".skills.ReminderReceiver" android:exported="false" />
+        <service
+            android:name=".data.AutoBackupJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <!-- Only the system sends these (protected broadcasts). -->
         <receiver android:name=".skills.ReminderBootReceiver" android:exported="true">
             <intent-filter>

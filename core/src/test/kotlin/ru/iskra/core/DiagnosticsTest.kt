@@ -123,3 +123,16 @@ class DiagReportTest {
         assertTrue(r.contains("sk-o…***"))
     }
 }
+
+class CrashHistoryTest {
+    private val day = 86_400_000L
+    @org.junit.Test fun countsDaysWithoutCrashesAndTheWeek() {
+        val now = 100 * day
+        kotlin.test.assertEquals(9, ru.iskra.core.diag.CrashHistory.daysWithout(emptyList(), now, now - 9 * day - 1))
+        val times = listOf(now - 20 * day, now - 3 * day - 5)
+        kotlin.test.assertEquals(3, ru.iskra.core.diag.CrashHistory.daysWithout(times, now, 0))
+        kotlin.test.assertEquals(1, ru.iskra.core.diag.CrashHistory.countSince(times, now - 7 * day))
+        kotlin.test.assertTrue(ru.iskra.core.diag.CrashHistory.summary(emptyList(), now, now - 8 * day).contains("✅"))
+        kotlin.test.assertTrue(ru.iskra.core.diag.CrashHistory.summary(times, now, 0).contains("за 7 дней: 1"))
+    }
+}

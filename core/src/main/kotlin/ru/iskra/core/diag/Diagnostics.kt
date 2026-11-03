@@ -122,6 +122,24 @@ data class DiagInfo(
     val signing: String = "",
 )
 
+/** Crash counter for the 1.0 criterion «7 дней без падений». */
+object CrashHistory {
+    private const val DAY = 86_400_000L
+
+    /** Whole days since the last crash, or since [trackingSinceMs] if there was none. */
+    fun daysWithout(times: List<Long>, nowMs: Long, trackingSinceMs: Long): Long =
+        ((nowMs - (times.maxOrNull() ?: trackingSinceMs)) / DAY).coerceAtLeast(0)
+
+    fun countSince(times: List<Long>, sinceMs: Long) = times.count { it >= sinceMs }
+
+    fun summary(times: List<Long>, nowMs: Long, trackingSinceMs: Long): String {
+        val week = countSince(times, nowMs - 7 * DAY)
+        val days = daysWithout(times, nowMs, trackingSinceMs)
+        val goal = if (days >= 7) " ✅ цель 1.0 достигнута" else " (цель 1.0 — 7)"
+        return "за 7 дней: $week · без падений $days дн.$goal" + if (times.isNotEmpty()) " · всего ${times.size}" else ""
+    }
+}
+
 object DiagReport {
     /**
      * Plain-text report to paste into a chat or issue. The final [Redactor] pass is a safety net:
