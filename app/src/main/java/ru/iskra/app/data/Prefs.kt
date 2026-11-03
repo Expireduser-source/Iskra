@@ -13,6 +13,7 @@ import ru.iskra.core.agent.CompanionState
 import ru.iskra.core.agent.CompanionStateStore
 import ru.iskra.core.persona.MoodState
 import ru.iskra.core.persona.StyleProfile
+import ru.iskra.core.voice.ElevenLabsTts
 
 enum class ProviderPreset(val title: String, val baseUrl: String, val defaultModel: String, val anthropic: Boolean = false) {
     OFFLINE("Без облака (только команды)", "", ""),
@@ -23,6 +24,26 @@ enum class ProviderPreset(val title: String, val baseUrl: String, val defaultMod
     CUSTOM("Свой OpenAI-совместимый сервер", "https://", ""),
 }
 
+/** Who speaks Iskra's replies. Cloud engines get only the reply text, never the dialogue. */
+enum class TtsEngine(val title: String, val defaultVoice: String, val defaultModel: String, val needsKey: Boolean, val note: String) {
+    SYSTEM("Голос Android", "", "", false, "Бесплатно и без интернета, но звучит механически."),
+    YANDEX("Yandex SpeechKit", "jane", "", true,
+        "Лучшие русские голоса, оплата в рублях (~1–2 ₽ за длинный ответ). Ключ: Yandex Cloud → сервисный аккаунт → API-ключ. Голоса: jane, alena, omazh, filipp…"),
+    ELEVENLABS("ElevenLabs", ElevenLabsTts.DEFAULT_VOICE, "eleven_flash_v2_5", true,
+        "Очень живые голоса, есть бесплатный лимит (~10 000 символов в месяц). Голос — это voice_id из их библиотеки."),
+    OPENAI("OpenAI", "nova", "gpt-4o-mini-tts", true,
+        "Голос слушается указаний по эмоциям. Голоса: nova, shimmer, coral, sage… Если «мозг» тоже OpenAI, ключ можно не вводить."),
+    CUSTOM("Свой сервер (OpenAI-совместимый)", "", "", false,
+        "Например, свой сервер с Silero/XTTS, отвечающий на /v1/audio/speech. Только https."),
+}
+
+/** How often the character is redrawn. */
+enum class FpsMode(val title: String) {
+    AUTO("Как у экрана (до 120 Гц)"),
+    HZ60("60 кадров/с"),
+    ECO("Экономия (30 кадров/с)"),
+}
+
 data class AppSettings(
     val preset: ProviderPreset = ProviderPreset.OFFLINE,
     val baseUrl: String = "",
@@ -31,7 +52,21 @@ data class AppSettings(
     val overlayEnabled: Boolean = false,
     val wander: Boolean = true,
     val avatarSizeDp: Int = 120,
-)
+    val ttsEngine: TtsEngine = TtsEngine.SYSTEM,
+    val ttsVoice: String = "",
+    val ttsModel: String = "",
+    val ttsBaseUrl: String = "",
+    val alwaysListen: Boolean = false,
+    val listenScreenOff: Boolean = false,
+    val followUp: Boolean = true,
+    val wakeNames: String = "Искра, Искорка",
+    val fpsMode: FpsMode = FpsMode.AUTO,
+    val liveliness: Int = 1,
+) {
+    val voiceOrDefault get() = ttsVoice.ifBlank { ttsEngine.defaultVoice }
+    val ttsModelOrDefault get() = ttsModel.ifBlank { ttsEngine.defaultModel }
+    val wakeNameList get() = wakeNames.split(',', ';').map { it.trim() }.filter { it.length >= 3 }
+}
 
 class SettingsRepo(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -44,6 +79,16 @@ class SettingsRepo(context: Context) {
         overlayEnabled = prefs.getBoolean("overlay", false),
         wander = prefs.getBoolean("wander", true),
         avatarSizeDp = prefs.getInt("avatarSize", 120).coerceIn(72, 220),
+        ttsEngine = runCatching { TtsEngine.valueOf(prefs.getString("ttsEngine", null) ?: "SYSTEM") }.getOrDefault(TtsEngine.SYSTEM),
+        ttsVoice = prefs.getString("ttsVoice", "") ?: "",
+        ttsModel = prefs.getString("ttsModel", "") ?: "",
+        ttsBaseUrl = prefs.getString("ttsBaseUrl", "") ?: "",
+        alwaysListen = prefs.getBoolean("alwaysListen", false),
+        listenScreenOff = prefs.getBoolean("listenScreenOff", false),
+        followUp = prefs.getBoolean("followUp", true),
+        wakeNames = prefs.getString("wakeNames", null) ?: "Искра, Искорка",
+        fpsMode = runCatching { FpsMode.valueOf(prefs.getString("fpsMode", null) ?: "AUTO") }.getOrDefault(FpsMode.AUTO),
+        liveliness = prefs.getInt("liveliness", 1).coerceIn(0, 2),
     )
 
     fun save(s: AppSettings) {
@@ -55,6 +100,16 @@ class SettingsRepo(context: Context) {
             .putBoolean("overlay", s.overlayEnabled)
             .putBoolean("wander", s.wander)
             .putInt("avatarSize", s.avatarSizeDp)
+            .putString("ttsEngine", s.ttsEngine.name)
+            .putString("ttsVoice", s.ttsVoice.trim())
+            .putString("ttsModel", s.ttsModel.trim())
+            .putString("ttsBaseUrl", s.ttsBaseUrl.trim())
+            .putBoolean("alwaysListen", s.alwaysListen)
+            .putBoolean("listenScreenOff", s.listenScreenOff)
+            .putBoolean("followUp", s.followUp)
+            .putString("wakeNames", s.wakeNames)
+            .putString("fpsMode", s.fpsMode.name)
+            .putInt("liveliness", s.liveliness)
             .apply()
     }
 }

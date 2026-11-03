@@ -25,6 +25,10 @@ import ru.iskra.core.tools.ToolRegistry
 class IskraApp : Application() {
     lateinit var settings: SettingsRepo; private set
     lateinit var vault: KeyVault; private set
+    /** Separate key for the voice service (may be a different vendor than the "brain"). */
+    lateinit var ttsVault: KeyVault; private set
+    /** How many chat screens are in the foreground (they show confirmation dialogs). */
+    val chatScreensResumed = java.util.concurrent.atomic.AtomicInteger(0)
     lateinit var db: IskraDb; private set
     lateinit var memory: MemoryManager; private set
     lateinit var conversation: SqliteConversationStore; private set
@@ -39,6 +43,7 @@ class IskraApp : Application() {
         instance = this
         settings = SettingsRepo(this)
         vault = KeyVault(this)
+        ttsVault = KeyVault(this, "tts_key")
         db = IskraDb(this)
         memory = MemoryManager(SqliteMemoryStore(db))
         conversation = SqliteConversationStore(db)
@@ -58,7 +63,12 @@ class IskraApp : Application() {
                     if (CompanionAccessibilityService.isConnected()) "включена." else "выключена — системная навигация недоступна."
             },
         )
-        speaker = Speaker(this)
+        speaker = Speaker(
+            this,
+            settings = { settings.load() },
+            ttsKey = { ttsVault.load() },
+            llmKeyIfOpenAi = { if (settings.load().preset == ProviderPreset.OPENAI) vault.load() else null },
+        )
         chat = ChatController(this)
     }
 
@@ -78,12 +88,13 @@ class IskraApp : Application() {
         )
     }
 
-    /** "Forget everything": memory, dialogue, mood, key. Settings stay. */
+    /** "Forget everything": memory, dialogue, mood, keys. Settings stay. */
     fun wipeAllData() {
         memory.deleteAll()
         conversation.clear()
         stateStore.reset()
         vault.clear()
+        ttsVault.clear()
         chat.reload()
     }
 

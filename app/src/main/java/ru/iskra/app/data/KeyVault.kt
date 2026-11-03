@@ -14,10 +14,10 @@ import javax.crypto.spec.GCMParameterSpec
  * Stores the owner's API key encrypted with an AES-256-GCM key that lives in the Android Keystore
  * (hardware-backed where available, non-exportable). The plaintext key is never logged or shown.
  */
-class KeyVault(context: Context) {
+class KeyVault(context: Context, private val slot: String = "api_key") {
     private val prefs = context.getSharedPreferences("vault", Context.MODE_PRIVATE)
 
-    fun hasKey(): Boolean = prefs.contains(PREF)
+    fun hasKey(): Boolean = prefs.contains(slot)
 
     fun save(apiKey: String) {
         val trimmed = apiKey.trim()
@@ -26,12 +26,12 @@ class KeyVault(context: Context) {
         cipher.init(Cipher.ENCRYPT_MODE, secretKey())
         val ct = cipher.doFinal(trimmed.toByteArray(Charsets.UTF_8))
         val packed = b64(cipher.iv) + ":" + b64(ct)
-        prefs.edit().putString(PREF, packed).apply()
+        prefs.edit().putString(slot, packed).apply()
     }
 
     /** Returns the key or null if absent / undecryptable (e.g. keystore reset). */
     fun load(): String? {
-        val packed = prefs.getString(PREF, null) ?: return null
+        val packed = prefs.getString(slot, null) ?: return null
         return try {
             val (iv, ct) = packed.split(":").let { unb64(it[0]) to unb64(it[1]) }
             val cipher = Cipher.getInstance(TRANSFORM)
@@ -42,7 +42,7 @@ class KeyVault(context: Context) {
         }
     }
 
-    fun clear() = prefs.edit().remove(PREF).apply()
+    fun clear() = prefs.edit().remove(slot).apply()
 
     private fun secretKey(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -63,7 +63,6 @@ class KeyVault(context: Context) {
 
     private companion object {
         const val ALIAS = "iskra_api_key_v1"
-        const val PREF = "api_key"
         const val TRANSFORM = "AES/GCM/NoPadding"
     }
 }

@@ -15,26 +15,41 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 /**
- * The character's window content. Runs the [AvatarBrain] simulation on Choreographer frames
- * (≤30 fps, ≤10 fps while sleeping) and translates touches into brain/host events.
+ * The character's window content. Runs the [AvatarBrain] simulation on Choreographer (vsync) frames:
+ * every display refresh while she moves, a lower rate while she stands still, 10 fps asleep.
+ *
+ * The window may show only part of her (at a screen edge); [offsetX]/[offsetY] place the full
+ * [box]-sized character relative to the window.
  */
 @SuppressLint("ViewConstructor")
-class AvatarView(context: Context, val brain: AvatarBrain, private val host: Host) : View(context), Choreographer.FrameCallback {
+class AvatarView(
+    context: Context,
+    val brain: AvatarBrain,
+    private val box: Int,
+    private val host: Host,
+) : View(context), Choreographer.FrameCallback {
 
     interface Host {
-        fun onMoved(x: Int, y: Int)
+        fun onPose(pose: AvatarPose)
         fun onTap()
         fun onDoubleTap()
         fun onLongPress()
         fun onDragFinished(flung: Boolean)
     }
 
+    /** Max frames per second while moving; 0 = every vsync (the display's refresh rate). */
+    var movingFps = 0
+    /** Max frames per second while standing still. */
+    var idleFps = 60
+
+    var offsetX = 0f
+    var offsetY = 0f
+
     private val renderer = CatgirlRenderer()
     private var pose: AvatarPose = brain.update(0f)
     private var lastFrameNs = 0L
+    private var lastVsyncNs = 0L
     private var running = false
-    private var lastDrawnX = Int.MIN_VALUE
-    private var lastDrawnY = Int.MIN_VALUE
 
     // Drag state (raw screen coordinates, because the window itself moves under the finger).
     private var dragging = false
@@ -47,7 +62,7 @@ class AvatarView(context: Context, val brain: AvatarBrain, private val host: Hos
 
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
-        override fun onSingleTapConfirmed(e: MotionEvent): Boolean { brain.tapped(); host.onTap(); return true }
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean { host.onTap(); brain.tapped(); return true }
         override fun onDoubleTap(e: MotionEvent): Boolean { brain.tapped(); host.onDoubleTap(); return true }
         override fun onLongPress(e: MotionEvent) { if (!dragging) host.onLongPress() }
     })
@@ -72,23 +87,35 @@ class AvatarView(context: Context, val brain: AvatarBrain, private val host: Hos
 
     override fun doFrame(frameTimeNanos: Long) {
         if (!running) return
-        val minIntervalNs = if (brain.activity == Activity.SLEEPING) 100_000_000L else 33_000_000L
+        // Measure the real vsync rate (what the display gives us) for the settings screen.
+        if (lastVsyncNs != 0L) {
+            val dt = frameTimeNanos - lastVsyncNs
+            if (dt in 4_000_000L..50_000_000L) FrameStats.addVsync(dt)
+        }
+        lastVsyncNs = frameTimeNanos
+
+        val fps = when {
+            pose.activity == Activity.SLEEPING -> 10
+            pose.moving || pose.talking || dragging -> movingFps
+            else -> idleFps
+        }
+        // 1.5 ms slack so vsync jitter does not make us skip every other frame.
+        val minIntervalNs = if (fps <= 0) 0L else 1_000_000_000L / fps - 1_500_000L
         if (lastFrameNs == 0L || frameTimeNanos - lastFrameNs >= minIntervalNs) {
             val dt = if (lastFrameNs == 0L) 0f else (frameTimeNanos - lastFrameNs) / 1e9f
             lastFrameNs = frameTimeNanos
             pose = brain.update(dt)
-            val nx = pose.x.toInt(); val ny = pose.y.toInt()
-            if (nx != lastDrawnX || ny != lastDrawnY) {
-                lastDrawnX = nx; lastDrawnY = ny
-                host.onMoved(nx, ny)
-            }
+            host.onPose(pose)
             invalidate()
         }
         Choreographer.getInstance().postFrameCallback(this)
     }
 
     override fun onDraw(canvas: Canvas) {
-        renderer.draw(canvas, width.toFloat(), height.toFloat(), pose)
+        canvas.save()
+        canvas.translate(offsetX, offsetY)
+        renderer.draw(canvas, box.toFloat(), pose)
+        canvas.restore()
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -104,7 +131,8 @@ class AvatarView(context: Context, val brain: AvatarBrain, private val host: Hos
                 if (!dragging && hypot(e.rawX - downRawX, e.rawY - downRawY) > slop) {
                     dragging = true
                     brain.dragStart()
-                    // Cancel pending long-press / tap detection.
+                    // If she was half off-screen, keep the grab point under the finger once clamped.
+                    grabDx = grabDx.coerceIn(0f, box.toFloat()); grabDy = grabDy.coerceIn(0f, box.toFloat())
                     val cancel = MotionEvent.obtain(e).apply { action = MotionEvent.ACTION_CANCEL }
                     gestures.onTouchEvent(cancel); cancel.recycle()
                 }
@@ -135,4 +163,11 @@ class AvatarView(context: Context, val brain: AvatarBrain, private val host: Hos
         val vx = (b.second - a.second) / dt; val vy = (b.third - a.third) / dt
         return if (abs(vx) < 50 && abs(vy) < 50) 0f to 0f else vx to vy
     }
+}
+
+/** Measured display refresh (from vsync spacing), shown in settings so the owner can verify 120 Hz. */
+object FrameStats {
+    @Volatile private var avgNs = 0.0
+    fun addVsync(ns: Long) { avgNs = if (avgNs == 0.0) ns.toDouble() else avgNs * 0.95 + ns * 0.05 }
+    val hz: Int get() = if (avgNs <= 0.0) 0 else (1e9 / avgNs).toInt()
 }

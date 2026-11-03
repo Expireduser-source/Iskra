@@ -8,7 +8,9 @@ import ru.iskra.core.persona.Emotion
 /** Cues from chat/voice to the on-screen character. */
 sealed interface AvatarCue {
     data class Feel(val emotion: Emotion) : AvatarCue
-    data class Talk(val text: String) : AvatarCue
+    /** [lipSync]: the mouth will follow [Mouth] levels from real audio until [StopTalking]. */
+    data class Talk(val text: String, val lipSync: Boolean = false) : AvatarCue
+    data class Mouth(val level: Float) : AvatarCue
     data object StopTalking : AvatarCue
     data class Thinking(val on: Boolean) : AvatarCue
     data class Listening(val on: Boolean) : AvatarCue
@@ -16,7 +18,7 @@ sealed interface AvatarCue {
 }
 
 object CompanionBus {
-    private val _cues = MutableSharedFlow<AvatarCue>(extraBufferCapacity = 32, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    private val _cues = MutableSharedFlow<AvatarCue>(extraBufferCapacity = 64, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     val cues: SharedFlow<AvatarCue> = _cues
     fun emit(cue: AvatarCue) { _cues.tryEmit(cue) }
 }

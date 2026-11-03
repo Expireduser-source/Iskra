@@ -46,6 +46,13 @@ import ru.iskra.app.AvatarCue
 import ru.iskra.app.CompanionBus
 import ru.iskra.app.IskraApp
 import ru.iskra.app.voice.Listener
+import ru.iskra.app.voice.MicArbiter
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import ru.iskra.core.persona.Emotion
 
 private fun emotionEmoji(e: Emotion?) = when (e) {
@@ -70,13 +77,36 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
     val listener = remember {
         Listener(ctx,
             onResult = { app.chat.send(it) },
-            onState = { listening = it; CompanionBus.emit(AvatarCue.Listening(it)) },
-            onError = { voiceError = it })
+            onState = { on ->
+                listening = on
+                CompanionBus.emit(AvatarCue.Listening(on))
+                if (!on) MicArbiter.set(false)
+            },
+            onError = { voiceError = it; MicArbiter.set(false) })
     }
-    DisposableEffect(Unit) { onDispose { listener.destroy() } }
+    DisposableEffect(Unit) { onDispose { listener.destroy(); MicArbiter.set(false) } }
+
+    // Confirmation dialogs are shown here; the overlay opens the quick chat if no chat screen is visible.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        var counted = false
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && !counted) { counted = true; app.chatScreensResumed.incrementAndGet() }
+            if (event == Lifecycle.Event.ON_PAUSE && counted) { counted = false; app.chatScreensResumed.decrementAndGet() }
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs); if (counted) app.chatScreensResumed.decrementAndGet() }
+    }
+
+    val scope = rememberCoroutineScope()
+    fun startListening() {
+        // Let the always-on ear release the microphone first.
+        MicArbiter.set(true)
+        scope.launch { delay(250); listener.start() }
+    }
 
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) listener.start() else voiceError = "Без доступа к микрофону голосовой ввод не работает."
+        if (granted) startListening() else voiceError = "Без доступа к микрофону голосовой ввод не работает."
     }
 
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
@@ -114,7 +144,7 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
                 voiceError = null
                 if (listening) { listener.stop(); return@FilledTonalButton }
                 if (!listener.available()) { voiceError = "На телефоне нет службы распознавания речи."; return@FilledTonalButton }
-                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) listener.start()
+                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
                 else micPermission.launch(Manifest.permission.RECORD_AUDIO)
             }) { Text(if (listening) "■" else "🎤") }
             Spacer(Modifier.size(6.dp))

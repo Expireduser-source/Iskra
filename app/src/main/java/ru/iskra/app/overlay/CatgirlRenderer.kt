@@ -13,8 +13,11 @@ import kotlin.math.sin
 
 /**
  * Procedural chibi cat-girl drawn with Canvas primitives in a 100x100 unit box.
- * No bitmap assets → no licensing issues, tiny APK, any resolution. Will be replaced by a
- * rigged Rive/Spine model in a later version behind the same [AvatarPose] interface.
+ * No bitmap assets → no licensing issues, tiny APK, any resolution. Can be replaced by a
+ * rigged Rive/Spine model later behind the same [AvatarPose] interface.
+ *
+ * Local coordinates: origin at the bottom centre of the box, y up is negative, she faces -x
+ * (the canvas is mirrored when she faces right).
  */
 class CatgirlRenderer {
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -34,30 +37,45 @@ class CatgirlRenderer {
     private val dress = Color.parseColor("#2E2246")
     private val accent = Color.parseColor("#FF8FB8")
     private val line = Color.parseColor("#2B1A3D")
+    private val mouthColor = Color.parseColor("#C2416B")
 
-    fun draw(c: Canvas, w: Float, h: Float, p: AvatarPose) {
-        val s = minOf(w, h) / 100f
+    private fun onFloor(a: Activity) = a == Activity.IDLE || a == Activity.WALKING || a == Activity.RUNNING ||
+        a == Activity.SITTING || a == Activity.SLEEPING
+
+    /** Draws the character into a [box] x [box] square whose top-left is the canvas origin. */
+    fun draw(c: Canvas, box: Float, p: AvatarPose) {
+        val s = box / 100f
         c.save()
-        c.translate(w / 2f, h)
+        c.translate(box / 2f, box)
         c.scale(s, s)
+        if (p.rotation != 0f) c.rotate(p.rotation, 0f, -50f)
+        if (p.wallSide != 0) c.translate(p.wallSide * 26f, 0f)
+        if (onFloor(p.activity)) drawShadow(c)
         if (p.facingRight) c.scale(-1f, 1f)
-        c.translate(0f, -2f + p.bob * 0.6f)
+        val sitDrop = if (p.activity == Activity.SITTING) 8f else 0f
+        val lean = if (p.activity == Activity.RUNNING) -8f else 0f
+        c.translate(0f, -2f + p.bob * 0.6f + sitDrop)
+        if (lean != 0f) c.rotate(lean, 0f, 0f)
 
-        drawShadow(c)
         drawTail(c, p)
-        drawBody(c, p)
+        if (p.activity == Activity.HANGING) drawArms(c, p) // behind the head, reaching up
+        drawLegs(c, p)
+        drawDress(c)
+        if (p.activity != Activity.HANGING) drawArms(c, p)
         c.save()
         c.rotate(p.tilt, 0f, -42f)
         drawHead(c, p)
         c.restore()
         c.restore()
 
-        // Effects drawn unmirrored, in view space.
-        c.save()
-        c.translate(w / 2f, h)
-        c.scale(s, s)
-        drawEffects(c, p)
-        c.restore()
+        // Effects drawn unmirrored and unrotated, in box space.
+        if (p.rotation == 0f) {
+            c.save()
+            c.translate(box / 2f, box)
+            c.scale(s, s)
+            drawEffects(c, p)
+            c.restore()
+        }
     }
 
     private fun drawShadow(c: Canvas) {
@@ -68,52 +86,111 @@ class CatgirlRenderer {
     private fun drawTail(c: Canvas, p: AvatarPose) {
         val sway = sin(p.tailPhase) * 8f
         path.reset()
-        path.moveTo(10f, -14f)
-        path.cubicTo(28f, -14f, 30f + sway * 0.5f, -34f, 22f + sway, -48f)
+        if (p.activity == Activity.HANGING || p.activity == Activity.FALLING) {
+            path.moveTo(10f, -14f)
+            path.cubicTo(20f, -8f, 24f + sway * 0.5f, 2f, 18f + sway, 8f) // tail hangs down
+        } else {
+            path.moveTo(10f, -14f)
+            path.cubicTo(28f, -14f, 30f + sway * 0.5f, -34f, 22f + sway, -48f)
+        }
         stroke.color = hair; stroke.strokeWidth = 6f
         c.drawPath(path, stroke)
-        fill.color = hairDark
-        c.drawCircle(22f + sway, -48f, 3.6f, fill)
     }
 
-    private fun drawBody(c: Canvas, p: AvatarPose) {
-        // Legs
-        val leg = sin(p.legPhase) * 3f
-        stroke.color = skin; stroke.strokeWidth = 5f
-        c.drawLine(-5f, -14f, -6f + leg, -2f, stroke)
-        c.drawLine(5f, -14f, 6f - leg, -2f, stroke)
+    private fun foot(c: Canvas, x: Float, y: Float) {
         fill.color = line
-        oval.set(-10f + leg, -4f, -2f + leg, 0f); c.drawOval(oval, fill)
-        oval.set(2f - leg, -4f, 10f - leg, 0f); c.drawOval(oval, fill)
-        // Dress (trapezoid)
+        oval.set(x - 4f, y - 2f, x + 4f, y + 2f); c.drawOval(oval, fill)
+    }
+
+    private fun drawLegs(c: Canvas, p: AvatarPose) {
+        stroke.color = skin; stroke.strokeWidth = 5f
+        val ph = p.legPhase
+        when (p.activity) {
+            Activity.WALKING, Activity.RUNNING -> {
+                val amp = if (p.activity == Activity.RUNNING) 6f else 3f
+                val leg = sin(ph) * amp
+                c.drawLine(-5f, -14f, -6f + leg, -2f, stroke); c.drawLine(5f, -14f, 6f - leg, -2f, stroke)
+                foot(c, -6f + leg, -2f); foot(c, 6f - leg, -2f)
+            }
+            Activity.JUMPING, Activity.FALLING, Activity.DRAGGED -> { // knees tucked
+                c.drawLine(-5f, -14f, -10f, -8f, stroke); c.drawLine(-10f, -8f, -5f, -4f, stroke)
+                c.drawLine(5f, -14f, 9f, -7f, stroke); c.drawLine(9f, -7f, 6f, -2f, stroke)
+                foot(c, -5f, -4f); foot(c, 6f, -2f)
+            }
+            Activity.SITTING -> { // legs stretched forward (towards -x)
+                c.drawLine(-5f, -12f, -16f, -6f, stroke); c.drawLine(4f, -12f, -10f, -4f, stroke)
+                foot(c, -17f, -6f); foot(c, -11f, -4f)
+            }
+            Activity.CLIMBING -> { // feet against the wall (towards -x)
+                val a = sin(ph) * 4f
+                c.drawLine(-5f, -14f, -14f, -10f + a, stroke); c.drawLine(5f, -14f, -10f, -2f - a, stroke)
+                foot(c, -15f, -10f + a); foot(c, -11f, -2f - a)
+            }
+            Activity.HANGING -> { // dangling, swinging
+                val sw = sin(ph) * 3f
+                c.drawLine(-4f, -14f, -4f + sw, 0f, stroke); c.drawLine(4f, -14f, 4f + sw, 0f, stroke)
+                foot(c, -4f + sw, 1f); foot(c, 4f + sw, 1f)
+            }
+            else -> {
+                c.drawLine(-5f, -14f, -6f, -2f, stroke); c.drawLine(5f, -14f, 6f, -2f, stroke)
+                foot(c, -6f, -2f); foot(c, 6f, -2f)
+            }
+        }
+    }
+
+    private fun drawDress(c: Canvas) {
         path.reset()
         path.moveTo(-8f, -32f); path.lineTo(8f, -32f); path.lineTo(15f, -12f); path.lineTo(-15f, -12f); path.close()
         fill.color = dress; c.drawPath(path, fill)
         fill.color = accent
         c.drawCircle(0f, -30f, 2.2f, fill) // bow
-        // Arms
+    }
+
+    private fun arm(c: Canvas, x0: Float, y0: Float, x1: Float, y1: Float) {
+        c.drawLine(x0, y0, x1, y1, stroke)
+        fill.color = skin; c.drawCircle(x1, y1, 2.6f, fill)
+    }
+
+    private fun drawArms(c: Canvas, p: AvatarPose) {
         stroke.color = skin; stroke.strokeWidth = 4.5f
+        val ph = p.legPhase
         when {
-            p.activity == Activity.DRAGGED -> {
-                c.drawLine(-7f, -30f, -15f, -44f, stroke); c.drawLine(7f, -30f, 15f, -44f, stroke)
+            p.activity == Activity.HANGING -> {
+                val a = sin(ph) * 3f
+                arm(c, -7f, -30f, -20f, -96f + a); arm(c, 7f, -30f, 20f, -96f - a)
             }
-            p.activity == Activity.THINKING -> {
-                c.drawLine(-7f, -30f, -13f, -20f, stroke); c.drawLine(7f, -30f, 5f, -38f, stroke)
+            p.activity == Activity.CLIMBING -> {
+                val a = sin(ph) * 5f
+                arm(c, -7f, -30f, -21f, -46f + a); arm(c, 7f, -30f, -19f, -36f - a)
             }
+            p.activity == Activity.PEEKING -> { // one paw on the edge, one waving a little
+                arm(c, -7f, -30f, -22f, -46f)
+                arm(c, 7f, -30f, 12f, -20f)
+            }
+            p.activity == Activity.DRAGGED || p.activity == Activity.FALLING -> {
+                val f = sin(p.tailPhase * 4f) * 3f
+                arm(c, -7f, -30f, -15f, -44f + f); arm(c, 7f, -30f, 15f, -44f - f)
+            }
+            p.activity == Activity.JUMPING -> { arm(c, -7f, -30f, -13f, -47f); arm(c, 7f, -30f, 13f, -47f) }
+            p.activity == Activity.RUNNING -> {
+                val a = sin(p.legPhase) * 5f
+                arm(c, -7f, -30f, -13f + a, -20f); arm(c, 7f, -30f, 12f - a, -22f)
+            }
+            p.thinking -> { arm(c, -7f, -30f, -13f, -20f); arm(c, 7f, -30f, 5f, -38f) }
             p.emotion == Emotion.EXCITED || p.emotion == Emotion.HAPPY -> {
                 val wave = sin(p.tailPhase * 1.5f) * 4f
-                c.drawLine(-7f, -30f, -14f, -22f, stroke); c.drawLine(7f, -30f, 15f, -40f + wave, stroke)
+                arm(c, -7f, -30f, -14f, -22f); arm(c, 7f, -30f, 15f, -40f + wave)
             }
-            else -> { c.drawLine(-7f, -30f, -12f, -18f, stroke); c.drawLine(7f, -30f, 12f, -18f, stroke) }
+            p.activity == Activity.SITTING -> { arm(c, -7f, -30f, -11f, -16f); arm(c, 7f, -30f, 9f, -15f) }
+            else -> { arm(c, -7f, -30f, -12f, -18f); arm(c, 7f, -30f, 12f, -18f) }
         }
     }
 
     private fun drawHead(c: Canvas, p: AvatarPose) {
         val cy = -56f
-        val perk = if (p.activity == Activity.LISTENING) -4f else 0f
+        val perk = if (p.listening) -4f else 0f
         val droop = if (p.emotion == Emotion.SAD || p.activity == Activity.SLEEPING) 5f else 0f
         val twitch = p.earTwitch * 6f
-        // Ears
         drawEar(c, -1f, cy, perk + droop, twitch)
         drawEar(c, 1f, cy, perk + droop, 0f)
         // Back hair
@@ -132,7 +209,6 @@ class CatgirlRenderer {
 
         drawEyes(c, p, cy)
         drawMouth(c, p, cy)
-        // Blush
         val blushA = when (p.emotion) { Emotion.SHY -> 200; Emotion.HAPPY, Emotion.EXCITED -> 130; else -> 70 }
         fill.color = Color.argb(blushA, 255, 140, 170)
         oval.set(-17f, cy + 5f, -10f, cy + 9f); c.drawOval(oval, fill)
@@ -161,13 +237,12 @@ class CatgirlRenderer {
     private fun drawEyes(c: Canvas, p: AvatarPose, cy: Float) {
         val ey = cy + 1f
         stroke.color = line; stroke.strokeWidth = 1.8f
-        // Brows
         val browTilt = when (p.emotion) { Emotion.POUTY -> 3f; Emotion.SAD -> -3f; else -> 0f }
         c.drawLine(-13f, ey - 9f - browTilt, -6f, ey - 9f + browTilt, stroke)
         c.drawLine(6f, ey - 9f + browTilt, 13f, ey - 9f - browTilt, stroke)
 
         val happyArcs = p.emotion == Emotion.HAPPY || p.emotion == Emotion.EXCITED
-        if (p.eyeOpen < 0.2f || happyArcs && p.activity != Activity.LISTENING) {
+        if (p.eyeOpen < 0.2f || happyArcs && !p.listening && p.activity != Activity.PEEKING) {
             stroke.strokeWidth = 2f
             for (x in floatArrayOf(-9.5f, 9.5f)) {
                 if (happyArcs && p.eyeOpen >= 0.2f) {
@@ -180,7 +255,9 @@ class CatgirlRenderer {
         }
         val big = if (p.emotion == Emotion.SURPRISED) 1.25f else 1f
         val open = p.eyeOpen
-        val lookX = if (p.emotion == Emotion.SHY) 1.5f else 0f
+        // lookX is in screen space; the canvas is mirrored when she faces right.
+        val screenLook = if (p.facingRight) -p.lookX else p.lookX
+        val lookX = (if (p.emotion == Emotion.SHY) 1.5f else 0f) + screenLook * 1.8f
         for (x in floatArrayOf(-9.5f, 9.5f)) {
             val rx = 4.6f * big; val ry = 6f * big * open
             fill.color = eye; oval.set(x - rx, ey - ry, x + rx, ey + ry); c.drawOval(oval, fill)
@@ -194,10 +271,11 @@ class CatgirlRenderer {
     private fun drawMouth(c: Canvas, p: AvatarPose, cy: Float) {
         val my = cy + 10f
         stroke.color = line; stroke.strokeWidth = 1.5f
-        if (p.mouthOpen > 0.1f) {
-            fill.color = Color.parseColor("#C2416B")
-            val h = 1.5f + p.mouthOpen * 3.5f
-            oval.set(-2.6f, my - h / 2f, 2.6f, my + h / 2f); c.drawOval(oval, fill)
+        if (p.mouthOpen > 0.08f) {
+            fill.color = mouthColor
+            val h = 1.2f + p.mouthOpen * 4f
+            val w = 2.2f + p.mouthOpen * 1.2f
+            oval.set(-w, my - h / 2f, w, my + h / 2f); c.drawOval(oval, fill)
             return
         }
         when (p.emotion) {
@@ -219,12 +297,12 @@ class CatgirlRenderer {
                 c.drawText("z", 18f + k * 6f, -80f - k * 10f, text)
                 text.textSize = 6f; c.drawText("z", 13f, -74f, text)
             }
-            p.activity == Activity.THINKING -> {
+            p.thinking -> {
                 text.color = Color.WHITE
                 val dots = ".".repeat(1 + ((p.tailPhase * 0.8f).toInt() % 3))
                 c.drawText(dots, 0f, -84f, text)
             }
-            p.activity == Activity.LISTENING -> {
+            p.listening -> {
                 stroke.color = accent; stroke.strokeWidth = 1.5f
                 for (i in 1..2) {
                     val r = 6f + i * 4f + (sin(p.tailPhase * 3f) + 1f) * 1.5f

@@ -15,8 +15,11 @@ android {
         applicationId = "ru.iskra.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.2.0-mvp"
+        versionCode = 4
+        versionName = "0.3.0"
+        // Redmi Note 14 and nearly all current phones are arm64; armeabi-v7a kept for old devices.
+        // Dropping x86 keeps the speech engine from adding ~20 MB.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     signingConfigs {
@@ -82,6 +85,8 @@ dependencies {
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
     implementation(libs.compose.ui.tooling.preview)
+    // Offline speech recognition for always-on listening (Apache-2.0). Brings JNA (AAR) with it.
+    implementation(libs.vosk.android)
 
     testImplementation(libs.junit)
 }

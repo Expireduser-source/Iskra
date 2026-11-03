@@ -4,7 +4,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -95,9 +97,17 @@ class ChatController(private val app: IskraApp) {
         ))
         CompanionBus.emit(AvatarCue.Feel(reply.emotion))
         CompanionBus.emit(AvatarCue.Say(reply.text))
-        val spoken = app.settings.load().ttsEnabled && app.speaker.speak(reply.text)
-        CompanionBus.emit(AvatarCue.Talk(if (spoken) reply.text else reply.text.take(80)))
+        // The speaker emits Talk/StopTalking itself; without a voice the mouth moves briefly.
+        val spoken = app.settings.load().ttsEnabled && app.speaker.speak(reply.text, reply.emotion)
+        if (!spoken) CompanionBus.emit(AvatarCue.Talk(reply.text.take(80)))
+        _replies.tryEmit(spoken)
     }
+
+    private val _replies = MutableSharedFlow<Boolean>(extraBufferCapacity = 4)
+    /** Emits after each reply is delivered; the value is whether it is being spoken aloud. */
+    val replies: SharedFlow<Boolean> = _replies
+
+    fun stopSpeaking() = app.speaker.stop()
 
     private fun append(m: UiMessage) {
         _messages.value = (_messages.value + m).takeLast(200)

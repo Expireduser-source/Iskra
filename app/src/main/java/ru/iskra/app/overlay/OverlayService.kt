@@ -1,5 +1,6 @@
 package ru.iskra.app.overlay
 
+import android.Manifest
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,16 +10,20 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.util.TypedValue
+import android.view.Display
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -28,22 +33,32 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import ru.iskra.app.AvatarCue
 import ru.iskra.app.CompanionBus
 import ru.iskra.app.IskraApp
 import ru.iskra.app.R
+import ru.iskra.app.data.AppSettings
+import ru.iskra.app.data.FpsMode
 import ru.iskra.app.system.DeviceHelper
 import ru.iskra.app.ui.MainActivity
 import ru.iskra.app.ui.QuickChatActivity
+import ru.iskra.app.voice.MicArbiter
+import ru.iskra.app.voice.SpeechModel
+import ru.iskra.app.voice.VoiceEar
 import ru.iskra.core.avatar.AvatarBrain
+import ru.iskra.core.avatar.AvatarPose
 import ru.iskra.core.persona.MoodEvent
+import kotlin.math.floor
 
 /**
- * Keeps the character on screen over other apps. A foreground service is required so Android
- * (and HyperOS battery management) does not kill it; the notification is the visible "she's here".
+ * Keeps the character on screen over other apps, and (if the owner enabled it) listens for her
+ * name. A foreground service is required so Android/HyperOS do not kill it; the notification is
+ * the visible "she's here / she's listening", with buttons to stop either.
  */
-class OverlayService : Service(), AvatarView.Host {
+class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private val scope = MainScope()
     private lateinit var wm: WindowManager
     private var avatar: AvatarView? = null
@@ -53,13 +68,25 @@ class OverlayService : Service(), AvatarView.Host {
     private val handler = Handler(Looper.getMainLooper())
     private val hideBubble = Runnable { bubble?.visibility = View.GONE }
     private var sizePx = 0
+    private var screenW = 0
+    private var screenH = 0
+    private var boxX = 0f
+    private var boxY = 0f
+    private var windowHidden = false
+
+    private var ear: VoiceEar? = null
+    private var micInForeground = false
+    private var earProblem: String? = null
+    private var screenOn = true
+    private var settings = AppSettings()
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_SCREEN_OFF -> avatar?.stop()
-                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> avatar?.start()
+                Intent.ACTION_SCREEN_OFF -> { screenOn = false; avatar?.stop() }
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> { screenOn = true; avatar?.start() }
             }
+            updateEarPause()
         }
     }
 
@@ -68,68 +95,179 @@ class OverlayService : Service(), AvatarView.Host {
     override fun onCreate() {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        screenOn = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            IskraApp.instance.settings.let { it.save(it.load().copy(overlayEnabled = false)) }
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                IskraApp.instance.settings.let { it.save(it.load().copy(overlayEnabled = false)) }
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_TOGGLE_EAR -> {
+                val repo = IskraApp.instance.settings
+                repo.save(repo.load().copy(alwaysListen = !repo.load().alwaysListen))
+            }
         }
+        settings = IskraApp.instance.settings.load()
         startInForeground()
         if (!DeviceHelper.canDrawOverlays(this)) {
             stopSelf()
             return START_NOT_STICKY
         }
         if (avatar == null) showAvatar()
+        syncEar()
         return START_STICKY
     }
 
+    // ------------------------------------------------------------------ foreground + notification
+
+    private fun wantsEar() = settings.alwaysListen && hasMic() && SpeechModel.isReady(this)
+    private fun hasMic() = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
     private fun startInForeground() {
         val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= 26 && nm.getNotificationChannel(CHANNEL) == null) {
+        if (nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(NotificationChannel(CHANNEL, getString(R.string.overlay_channel), NotificationManager.IMPORTANCE_MIN))
         }
+        // The microphone type must be declared to hear in the background. Android only allows it
+        // while the app is visible (it is started from the app), so fall back gracefully.
+        micInForeground = false
+        if (wantsEar() && Build.VERSION.SDK_INT >= 30) {
+            try {
+                ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(listening = true),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                micInForeground = true
+                earProblem = null
+                return
+            } catch (e: Exception) {
+                earProblem = "Открой приложение Искры, чтобы включить слух (Android разрешает микрофон только так)."
+            }
+        } else if (wantsEar()) micInForeground = true // before Android 11 no type is needed
+        val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
+        ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(listening = micInForeground), type)
+    }
+
+    private fun notification(listening: Boolean): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, OverlayService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
-        val n: Notification = NotificationCompat.Builder(this, CHANNEL)
+        val toggle = PendingIntent.getService(this, 2, Intent(this, OverlayService::class.java).setAction(ACTION_TOGGLE_EAR), PendingIntent.FLAG_IMMUTABLE)
+        val text = when {
+            listening -> "🎤 Слушаю, на устройстве. Скажи «${settings.wakeNameList.firstOrNull() ?: "Искра"}, …»"
+            earProblem != null && settings.alwaysListen -> earProblem!!
+            else -> "Нажми на неё, чтобы поговорить"
+        }
+        val b = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle("Искра на экране")
-            .setContentText("Нажми на неё, чтобы поговорить")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .addAction(0, "Убрать с экрана", stop)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
-            .build()
-        val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
-        ServiceCompat.startForeground(this, NOTIFICATION_ID, n, type)
+        if (hasMic() && SpeechModel.isReady(this)) b.addAction(0, if (settings.alwaysListen) "Не слушать" else "Слушать", toggle)
+        return b.build()
     }
 
-    private fun screenSize(): Pair<Int, Int> {
-        return if (Build.VERSION.SDK_INT >= 30) {
+    // ------------------------------------------------------------------ always-on listening
+
+    private fun syncEar() {
+        val want = wantsEar() && micInForeground
+        if (want && ear == null) {
+            ear = VoiceEar(this, settings.wakeNameList, settings.followUp, this).also { it.start() }
+        } else if (!want && ear != null) {
+            ear?.stop(); ear = null
+            CompanionBus.emit(AvatarCue.Listening(false))
+        }
+        updateEarPause()
+    }
+
+    private fun updateEarPause() {
+        val e = ear ?: return
+        val app = IskraApp.instance
+        e.setPaused(app.speaker.speaking.value || MicArbiter.busy.value || (!screenOn && !settings.listenScreenOff))
+    }
+
+    override fun onPerk() {
+        CompanionBus.emit(AvatarCue.Listening(true))
+        if (IskraApp.instance.speaker.speaking.value) IskraApp.instance.chat.stopSpeaking()
+    }
+
+    override fun onCommand(text: String) {
+        CompanionBus.emit(AvatarCue.Listening(false))
+        val chat = IskraApp.instance.chat
+        if (chat.busy.value) { say("Подожди, я ещё думаю над прошлым…"); return }
+        say("🎤 «$text»")
+        chat.send(text)
+    }
+
+    override fun onStopRequested() {
+        CompanionBus.emit(AvatarCue.Listening(false))
+        IskraApp.instance.chat.cancel()
+    }
+
+    override fun onAttentionLost() = CompanionBus.emit(AvatarCue.Listening(false))
+
+    override fun onEarError(message: String) {
+        earProblem = message
+        ear = null
+        say(message)
+        CompanionBus.emit(AvatarCue.Listening(false))
+    }
+
+    // ------------------------------------------------------------------ window
+
+    private fun readScreen() {
+        if (Build.VERSION.SDK_INT >= 30) {
             val b = wm.currentWindowMetrics.bounds
-            b.width() to b.height()
+            screenW = b.width(); screenH = b.height()
         } else {
-            val dm = resources.displayMetrics
-            dm.widthPixels to dm.heightPixels
+            @Suppress("DEPRECATION")
+            val dm = android.util.DisplayMetrics().also { wm.defaultDisplay.getRealMetrics(it) }
+            screenW = dm.widthPixels; screenH = dm.heightPixels
+        }
+    }
+
+    /** Pick the display mode for the chosen smoothness (same resolution, highest / 60 Hz refresh). */
+    private fun preferredMode(): Display.Mode? {
+        val display = (getSystemService(DISPLAY_SERVICE) as DisplayManager).getDisplay(Display.DEFAULT_DISPLAY) ?: return null
+        val cur = display.mode
+        val same = display.supportedModes.filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+        return when (settings.fpsMode) {
+            FpsMode.AUTO -> same.maxByOrNull { it.refreshRate }
+            else -> same.minByOrNull { kotlin.math.abs(it.refreshRate - 60f) }
         }
     }
 
     private fun showAvatar() {
-        val settings = IskraApp.instance.settings.load()
         sizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, settings.avatarSizeDp.toFloat(), resources.displayMetrics).toInt()
-        val (w, h) = screenSize()
-        val brain = AvatarBrain(w.toFloat(), (h - navBarGuess()).toFloat(), sizePx.toFloat(),
-            startX = (w - sizePx).toFloat(), startY = h * 0.55f)
+        readScreen()
+        val brain = AvatarBrain(screenW.toFloat(), (screenH - navBarGuess()).toFloat(), sizePx.toFloat(),
+            startX = (screenW - sizePx).toFloat(), startY = (screenH - navBarGuess() - sizePx).toFloat())
         brain.wanderEnabled = settings.wander
+        brain.liveliness = settings.liveliness
 
         val lp = WindowManager.LayoutParams(
             sizePx, sizePx,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
             PixelFormat.TRANSLUCENT,
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = brain.x.toInt(); y = brain.y.toInt() }
-        val view = AvatarView(this, brain, this)
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = brain.x.toInt(); y = brain.y.toInt()
+            if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            preferredMode()?.let { preferredDisplayModeId = it.modeId; preferredRefreshRate = it.refreshRate }
+        }
+        val view = AvatarView(this, brain, sizePx, this).apply {
+            when (settings.fpsMode) {
+                FpsMode.AUTO -> { movingFps = 0; idleFps = 60 }
+                FpsMode.HZ60 -> { movingFps = 60; idleFps = 30 }
+                FpsMode.ECO -> { movingFps = 30; idleFps = 20 }
+            }
+        }
         try {
             wm.addView(view, lp)
         } catch (e: Exception) {
@@ -145,17 +283,36 @@ class OverlayService : Service(), AvatarView.Host {
         }
         ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
 
+        val app = IskraApp.instance
         scope.launch {
             CompanionBus.cues.collect { cue ->
                 val b = avatar?.brain ?: return@collect
                 when (cue) {
                     is AvatarCue.Feel -> b.setEmotion(cue.emotion)
-                    is AvatarCue.Talk -> b.talk(cue.text)
+                    is AvatarCue.Talk -> b.talk(cue.text, cue.lipSync)
+                    is AvatarCue.Mouth -> b.setMouthLevel(cue.level)
                     AvatarCue.StopTalking -> b.stopTalking()
                     is AvatarCue.Thinking -> b.setThinking(cue.on)
                     is AvatarCue.Listening -> b.setListening(cue.on)
                     is AvatarCue.Say -> say(cue.text)
                 }
+            }
+        }
+        // Pause the ear while she talks or another recogniser has the mic; re-arm follow-up after a reply.
+        scope.launch {
+            combine(app.speaker.speaking, MicArbiter.busy) { a, b -> a to b }.collect { updateEarPause() }
+        }
+        scope.launch {
+            app.speaker.speaking.drop(1).collect { speaking ->
+                if (!speaking) handler.postDelayed({ ear?.replyFinished() }, 250)
+            }
+        }
+        scope.launch { app.chat.replies.collect { spoken -> if (!spoken) ear?.replyFinished() } }
+        // A dangerous action asked for confirmation, but no chat screen is open (e.g. voice command):
+        // open the quick chat so the dialog is visible. Overlay permission allows this from the background.
+        scope.launch {
+            app.confirm.pending.collect { req ->
+                if (req != null && app.chatScreensResumed.get() == 0) openQuickChat()
             }
         }
     }
@@ -197,25 +354,60 @@ class OverlayService : Service(), AvatarView.Host {
     private fun positionBubble() {
         val tv = bubble ?: return
         val lp = bubbleParams ?: return
-        val p = params ?: return
-        val (w, _) = screenSize()
-        tv.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.AT_MOST), View.MeasureSpec.UNSPECIFIED)
-        lp.x = (p.x + sizePx / 2 - tv.measuredWidth / 2).coerceIn(0, (w - tv.measuredWidth).coerceAtLeast(0))
-        lp.y = (p.y - tv.measuredHeight - 8).coerceAtLeast(0)
-        try { wm.updateViewLayout(tv, lp) } catch (_: Exception) { }
+        tv.measure(View.MeasureSpec.makeMeasureSpec(screenW, View.MeasureSpec.AT_MOST), View.MeasureSpec.UNSPECIFIED)
+        val cx = (boxX + sizePx / 2f).coerceIn(0f, screenW.toFloat())
+        val nx = (cx - tv.measuredWidth / 2f).toInt().coerceIn(0, (screenW - tv.measuredWidth).coerceAtLeast(0))
+        val top = boxY.coerceAtLeast(0f)
+        val ny = (top - tv.measuredHeight - 8).toInt().let { if (it < 0) (top + sizePx * 0.9f).toInt() else it }
+        if (nx != lp.x || ny != lp.y) {
+            lp.x = nx; lp.y = ny
+            try { wm.updateViewLayout(tv, lp) } catch (_: Exception) { }
+        }
     }
 
-    // --- AvatarView.Host ---
-    override fun onMoved(x: Int, y: Int) {
+    // ------------------------------------------------------------------ AvatarView.Host
+
+    /**
+     * The window covers only the visible part of her box: at a screen edge she is clipped (peeking),
+     * and when fully off-screen the window is hidden and lets touches through.
+     */
+    override fun onPose(pose: AvatarPose) {
         val v = avatar ?: return
         val lp = params ?: return
-        lp.x = x; lp.y = y
-        try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
+        boxX = pose.x; boxY = pose.y
+        val left = floor(pose.x).toInt(); val top = floor(pose.y).toInt()
+        val x0 = maxOf(0, left); val y0 = maxOf(0, top)
+        val x1 = minOf(screenW, left + sizePx); val y1 = minOf(screenH, top + sizePx)
+        val hidden = x1 - x0 < 2 || y1 - y0 < 2
+        var changed = false
+        if (hidden != windowHidden) {
+            windowHidden = hidden
+            v.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
+            lp.flags = if (hidden) lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            else lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            changed = true
+        }
+        if (!hidden) {
+            val w = x1 - x0; val h = y1 - y0
+            if (lp.x != x0 || lp.y != y0 || lp.width != w || lp.height != h) {
+                lp.x = x0; lp.y = y0; lp.width = w; lp.height = h
+                changed = true
+            }
+            v.offsetX = (left - x0).toFloat(); v.offsetY = (top - y0).toFloat()
+        }
+        if (changed) try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
         if (bubble?.visibility == View.VISIBLE) positionBubble()
     }
 
-    override fun onTap() {
+    private fun openQuickChat() {
         startActivity(Intent(this, QuickChatActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    override fun onTap() {
+        val app = IskraApp.instance
+        // Tap while she speaks = "shh".
+        if (app.speaker.speaking.value || avatar?.brain?.isTalking == true) { app.chat.stopSpeaking(); return }
+        openQuickChat()
     }
 
     override fun onDoubleTap() = IskraApp.instance.chat.react(MoodEvent.Petted)
@@ -229,11 +421,12 @@ class OverlayService : Service(), AvatarView.Host {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        val (w, h) = screenSize()
-        avatar?.brain?.resize(w.toFloat(), (h - navBarGuess()).toFloat())
+        readScreen()
+        avatar?.brain?.resize(screenW.toFloat(), (screenH - navBarGuess()).toFloat())
     }
 
     override fun onDestroy() {
+        ear?.stop(); ear = null
         scope.cancel()
         handler.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(screenReceiver) }
@@ -247,6 +440,7 @@ class OverlayService : Service(), AvatarView.Host {
         private const val CHANNEL = "overlay"
         private const val NOTIFICATION_ID = 7
         private const val ACTION_STOP = "ru.iskra.app.STOP_OVERLAY"
+        private const val ACTION_TOGGLE_EAR = "ru.iskra.app.TOGGLE_EAR"
 
         fun start(ctx: Context) = ContextCompat.startForegroundService(ctx, Intent(ctx, OverlayService::class.java))
         fun stop(ctx: Context) { ctx.stopService(Intent(ctx, OverlayService::class.java)) }

@@ -193,14 +193,15 @@ private fun SettingsScreen(modifier: Modifier) {
             )
             if (hasKey) TextButton(onClick = { app.vault.clear(); hasKey = false }) { Text("Удалить сохранённый ключ") }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = s.ttsEnabled, onCheckedChange = { s = s.copy(ttsEnabled = it); saved = false })
-            Spacer(Modifier.size(8.dp)); Text("Озвучивать ответы (голос Android)")
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = s.wander, onCheckedChange = { s = s.copy(wander = it); saved = false })
-            Spacer(Modifier.size(8.dp)); Text("Гуляет по экрану сама")
-        }
+        if (s.preset == ProviderPreset.OFFLINE) Text(
+            "Сейчас у Искры нет «мозга»: она понимает только команды телефона. Чтобы она нормально разговаривала, " +
+                "выбери сервис и вставь ключ. Дешевле всего DeepSeek (доли копейки за реплику, оплата картой) " +
+                "или OpenRouter (много моделей через один ключ).",
+            fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary,
+        )
+        VoiceSection(s, onChange = { s = it; saved = false }, persist = { app.settings.save(s.copy(overlayEnabled = app.settings.load().overlayEnabled)) })
+        EarSection(s, onChange = { s = it; saved = false })
+        MotionSection(s, onChange = { s = it; saved = false })
         Text("Размер персонажа: ${s.avatarSizeDp} dp")
         Slider(value = s.avatarSizeDp.toFloat(), onValueChange = { s = s.copy(avatarSizeDp = it.toInt()); saved = false }, valueRange = 72f..220f)
         Button(onClick = {
@@ -208,13 +209,17 @@ private fun SettingsScreen(modifier: Modifier) {
                 s = s.copy(baseUrl = "https://")
                 return@Button
             }
+            // overlayEnabled is owned by the Permissions tab; never overwrite it from this form.
+            s = s.copy(overlayEnabled = app.settings.load().overlayEnabled)
             app.settings.save(s)
             if (key.isNotBlank()) { app.vault.save(key); key = ""; hasKey = true }
             saved = true
-            // Apply size/wander changes to a running overlay.
-            if (s.overlayEnabled && DeviceHelper.canDrawOverlays(ctx)) { OverlayService.stop(ctx); OverlayService.start(ctx) }
+            // Apply size/motion/listening changes to a running overlay.
+            val cur = app.settings.load()
+            if (cur.overlayEnabled && DeviceHelper.canDrawOverlays(ctx)) { OverlayService.stop(ctx); OverlayService.start(ctx) }
         }) { Text("Сохранить") }
         if (saved) Text("Сохранено ✓", color = MaterialTheme.colorScheme.primary)
+        else Text("Изменения применятся после «Сохранить».", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (s.preset == ProviderPreset.CUSTOM) Text("Нужен HTTPS. Обычный http запрещён ради защиты ключа.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
