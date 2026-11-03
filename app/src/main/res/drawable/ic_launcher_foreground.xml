@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cat-girl head silhouette: ears + face, inside the 72dp adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FF7A4FB0" android:pathData="M30,52 L34,24 L50,40 Z" />
+    <path android:fillColor="#FF7A4FB0" android:pathData="M78,52 L74,24 L58,40 Z" />
+    <path android:fillColor="#FFFFE3D6" android:pathData="M54,36 C72,36 80,48 80,60 C80,74 68,84 54,84 C40,84 28,74 28,60 C28,48 36,36 54,36 Z" />
+    <path android:fillColor="#FF7A4FB0" android:pathData="M28,58 C28,42 40,32 54,32 C68,32 80,42 80,58 C72,48 62,46 54,52 C46,46 36,48 28,58 Z" />
+    <path android:fillColor="#FF2B1A3D" android:pathData="M42,62 m-4,0 a4,5 0 1,0 8,0 a4,5 0 1,0 -8,0" />
+    <path android:fillColor="#FF2B1A3D" android:pathData="M66,62 m-4,0 a4,5 0 1,0 8,0 a4,5 0 1,0 -8,0" />
+    <path android:strokeColor="#FF2B1A3D" android:strokeWidth="2" android:pathData="M50,72 Q52,75 54,72 Q56,75 58,72" />
+</vector>
