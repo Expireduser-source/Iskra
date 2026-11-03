@@ -18,6 +18,7 @@ import ru.iskra.core.agent.AgentReply
 import ru.iskra.core.agent.Turn
 import ru.iskra.core.persona.Emotion
 import ru.iskra.core.persona.MoodEvent
+import android.os.SystemClock
 import java.util.concurrent.atomic.AtomicLong
 
 data class UiMessage(
@@ -58,9 +59,15 @@ class ChatController(private val app: IskraApp) {
         append(UiMessage(ids.getAndIncrement(), true, t))
         _busy.value = true
         CompanionBus.emit(AvatarCue.Thinking(true))
+        // "End of command": the moment the typed message was sent or the final voice result arrived.
+        val commandAt = SystemClock.elapsedRealtime()
         current = scope.launch {
             val reply: AgentReply = try {
-                withContext(Dispatchers.IO) { app.agent.handle(t) }
+                withContext(Dispatchers.IO) { app.agent.handle(t) }.also { r ->
+                    val ms = SystemClock.elapsedRealtime() - commandAt
+                    // Sizes and timings only — never the text.
+                    if (r.error == null) Diag.i("timing", (if (r.usedLlm) "LLM ответ" else "Офлайн-ответ") + ": ${r.text.length} симв., $ms мс")
+                }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -70,7 +77,7 @@ class ChatController(private val app: IskraApp) {
                 _busy.value = false
                 CompanionBus.emit(AvatarCue.Thinking(false))
             }
-            deliver(reply)
+            deliver(reply, commandAt)
         }
     }
 
@@ -90,7 +97,7 @@ class ChatController(private val app: IskraApp) {
         }
     }
 
-    private fun deliver(reply: AgentReply) {
+    private fun deliver(reply: AgentReply, commandAt: Long) {
         // The error is technical (HTTP code + service message); the reply text itself is not logged.
         reply.error?.let { Diag.e("llm", it.take(160)) }
         reply.actions.filter { !it.outcome.ok }.forEach { Diag.w("tool", "Действие ${it.tool} не выполнено") /* description may hold a number or query */ }
@@ -103,7 +110,7 @@ class ChatController(private val app: IskraApp) {
         CompanionBus.emit(AvatarCue.Feel(reply.emotion))
         CompanionBus.emit(AvatarCue.Say(reply.text))
         // The speaker emits Talk/StopTalking itself; without a voice the mouth moves briefly.
-        val spoken = app.settings.load().ttsEnabled && app.speaker.speak(reply.text, reply.emotion)
+        val spoken = app.settings.load().ttsEnabled && app.speaker.speak(reply.text, reply.emotion, commandAtMs = commandAt)
         if (!spoken) CompanionBus.emit(AvatarCue.Talk(reply.text.take(80)))
         _replies.tryEmit(spoken)
     }

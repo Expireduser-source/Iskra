@@ -91,6 +91,44 @@ class SettingsRepo(context: Context) {
         liveliness = prefs.getInt("liveliness", 1).coerceIn(0, 2),
     )
 
+    /**
+     * Settings for a backup file. Keys live in [KeyVault], not here, so they cannot get in.
+     * "overlay" is left out: it depends on a system permission on this particular phone.
+     */
+    fun exportMap(s: AppSettings = load()): Map<String, Any> = linkedMapOf(
+        "preset" to s.preset.name, "baseUrl" to s.baseUrl, "model" to s.model,
+        "tts" to s.ttsEnabled, "wander" to s.wander, "avatarSize" to s.avatarSizeDp,
+        "ttsEngine" to s.ttsEngine.name, "ttsVoice" to s.ttsVoice, "ttsModel" to s.ttsModel, "ttsBaseUrl" to s.ttsBaseUrl,
+        "alwaysListen" to s.alwaysListen, "listenScreenOff" to s.listenScreenOff, "followUp" to s.followUp,
+        "wakeNames" to s.wakeNames, "fpsMode" to s.fpsMode.name, "liveliness" to s.liveliness,
+    )
+
+    /** Applies known, well-typed values from a backup over [base]; unknown names and wrong types are ignored. */
+    fun fromMap(m: Map<String, Any>, base: AppSettings = load()): AppSettings {
+        fun str(k: String) = m[k] as? String
+        fun bool(k: String) = m[k] as? Boolean
+        fun int(k: String) = (m[k] as? Int) ?: (m[k] as? Long)?.toInt()
+        fun https(v: String?) = v?.takeIf { it.isEmpty() || it.startsWith("https://") }
+        return base.copy(
+            preset = str("preset")?.let { runCatching { ProviderPreset.valueOf(it) }.getOrNull() } ?: base.preset,
+            baseUrl = https(str("baseUrl")) ?: base.baseUrl,
+            model = str("model")?.take(200) ?: base.model,
+            ttsEnabled = bool("tts") ?: base.ttsEnabled,
+            wander = bool("wander") ?: base.wander,
+            avatarSizeDp = int("avatarSize")?.coerceIn(72, 220) ?: base.avatarSizeDp,
+            ttsEngine = str("ttsEngine")?.let { runCatching { TtsEngine.valueOf(it) }.getOrNull() } ?: base.ttsEngine,
+            ttsVoice = str("ttsVoice")?.take(120) ?: base.ttsVoice,
+            ttsModel = str("ttsModel")?.take(120) ?: base.ttsModel,
+            ttsBaseUrl = https(str("ttsBaseUrl")) ?: base.ttsBaseUrl,
+            alwaysListen = bool("alwaysListen") ?: base.alwaysListen,
+            listenScreenOff = bool("listenScreenOff") ?: base.listenScreenOff,
+            followUp = bool("followUp") ?: base.followUp,
+            wakeNames = str("wakeNames")?.take(120) ?: base.wakeNames,
+            fpsMode = str("fpsMode")?.let { runCatching { FpsMode.valueOf(it) }.getOrNull() } ?: base.fpsMode,
+            liveliness = int("liveliness")?.coerceIn(0, 2) ?: base.liveliness,
+        )
+    }
+
     fun save(s: AppSettings) {
         prefs.edit()
             .putString("preset", s.preset.name)

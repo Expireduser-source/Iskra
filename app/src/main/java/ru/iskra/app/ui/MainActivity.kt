@@ -58,7 +58,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import ru.iskra.app.IskraApp
+import ru.iskra.app.data.Backups
 import ru.iskra.app.data.ProviderPreset
+import ru.iskra.app.diag.Diag
+import ru.iskra.core.backup.BackupException
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import ru.iskra.app.overlay.OverlayService
 import ru.iskra.app.system.CompanionAccessibilityService
 import ru.iskra.app.system.DeviceHelper
@@ -95,12 +100,53 @@ private fun MainScreen() {
             }
         },
     ) { padding ->
-        val m = Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
-        when (tab) {
-            0 -> ChatScreen(m)
-            1 -> MemoryScreen(m)
-            2 -> SettingsScreen(m)
-            else -> PermissionsScreen(m)
+        Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
+            AccessibilityWarning()
+            val m = Modifier.weight(1f)
+            when (tab) {
+                0 -> ChatScreen(m)
+                1 -> MemoryScreen(m)
+                2 -> SettingsScreen(m)
+                else -> PermissionsScreen(m)
+            }
+        }
+    }
+}
+
+/**
+ * The switch in system settings is on, but the system is not running the service (seen on HyperOS
+ * after an app update or when the app was killed in the background). Then "Домой"/"Назад"/screenshot
+ * silently do nothing, so say it plainly and offer the fix: switch it off and on again.
+ */
+@Composable
+private fun AccessibilityWarning() {
+    val ctx = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var broken by remember { mutableStateOf(false) }
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            // Give the system a moment to bind the service after the app process starts.
+            kotlinx.coroutines.delay(2000)
+            val now = CompanionAccessibilityService.state(ctx) == CompanionAccessibilityService.State.ENABLED_NOT_CONNECTED
+            if (now && !broken) Diag.w("access", "Включена в настройках, но не работает — показано предупреждение (${CompanionAccessibilityService.describe(ctx)})")
+            broken = now
+        }
+    }
+    if (!broken) return
+    Card(Modifier.fillMaxWidth().padding(8.dp)) {
+        Column(Modifier.padding(12.dp)) {
+            Text("⚠️ Управление телефоном не работает", fontSize = 16.sp)
+            Text(
+                "«Искра · управление» включена в спецвозможностях, но Android её сейчас не запускает " +
+                    "(так бывает на HyperOS после обновления приложения). Открой спецвозможности, " +
+                    "выключи «Искра · управление» и включи снова." +
+                    if (DeviceHelper.isXiaomi) " Чтобы не повторялось: включи Автозапуск для Искры." else "",
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row {
+                TextButton(onClick = { DeviceHelper.openAccessibilitySettings(ctx) }) { Text("Открыть спецвозможности") }
+                if (DeviceHelper.isXiaomi) TextButton(onClick = { DeviceHelper.openXiaomiAutostart(ctx) }) { Text("Автозапуск") }
+            }
         }
     }
 }
@@ -111,6 +157,34 @@ private fun MemoryScreen(modifier: Modifier) {
     var items by remember { mutableStateOf(app.memory.all()) }
     var confirmWipe by remember { mutableStateOf(false) }
     fun refresh() { items = app.memory.all() }
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var backupMsg by remember { mutableStateOf<String?>(null) }
+    var preview by remember { mutableStateOf<Backups.Preview?>(null) }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            backupMsg = try {
+                val n = Backups.export(ctx, uri)
+                "Сохранено: $n записей памяти и настройки. Ключей API в файле нет."
+            } catch (e: Exception) {
+                Diag.e("backup", "Экспорт не удался", e)
+                "Не удалось сохранить: ${(e as? BackupException)?.userMessage ?: e.javaClass.simpleName}"
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            try {
+                preview = Backups.read(ctx, uri)
+                backupMsg = null
+            } catch (e: Exception) {
+                Diag.w("backup", "Файл копии не принят", e)
+                backupMsg = (e as? BackupException)?.userMessage ?: "Не удалось прочитать файл: ${e.javaClass.simpleName}"
+            }
+        }
+    }
     Column(modifier.fillMaxSize().padding(12.dp)) {
         Text("Что Искра помнит о тебе", fontSize = 20.sp)
         Text(
@@ -122,11 +196,41 @@ private fun MemoryScreen(modifier: Modifier) {
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(items.sortedByDescending { it.createdAtMs }, key = { it.id }) { item -> MemoryRow(item) { app.memory.delete(item.id); refresh() } }
         }
+        backupMsg?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary) }
+        Row {
+            OutlinedButton(onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text("💾 Сохранить копию") }
+            Spacer(Modifier.size(8.dp))
+            OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text("📂 Восстановить") }
+        }
         Row {
             OutlinedButton(onClick = { app.chat.clearHistory() }) { Text("Очистить переписку") }
             Spacer(Modifier.size(8.dp))
             OutlinedButton(onClick = { confirmWipe = true }) { Text("Стереть всё") }
         }
+    }
+    preview?.let { p ->
+        AlertDialog(
+            onDismissRequest = { preview = null },
+            title = { Text("Восстановить из копии?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    p.lines.forEach { Text(it, fontSize = 14.sp) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    preview = null
+                    scope.launch {
+                        val skipped = Backups.apply(p.backup)
+                        refresh()
+                        backupMsg = "Восстановлено." + if (skipped > 0) " Пропущено записей: $skipped (пароли, номера карт или слишком длинные)." else ""
+                        val cur = app.settings.load()
+                        if (cur.overlayEnabled && DeviceHelper.canDrawOverlays(ctx)) { OverlayService.stop(ctx); OverlayService.start(ctx) }
+                    }
+                }) { Text("Заменить") }
+            },
+            dismissButton = { TextButton(onClick = { preview = null }) { Text("Отмена") } },
+        )
     }
     if (confirmWipe) AlertDialog(
         onDismissRequest = { confirmWipe = false },
@@ -236,7 +340,8 @@ private fun PermissionsScreen(modifier: Modifier) {
     // Re-check permissions every time the owner comes back from system settings.
     LaunchedEffect(lifecycle) { lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { tick++ } }
     val overlay = remember(tick) { DeviceHelper.canDrawOverlays(ctx) }
-    val access = remember(tick) { CompanionAccessibilityService.isEnabled(ctx) }
+    // "Granted" only when the system actually runs it; enabled-but-not-running shows as not done.
+    val access = remember(tick) { CompanionAccessibilityService.state(ctx) == CompanionAccessibilityService.State.CONNECTED }
     val battery = remember(tick) { DeviceHelper.isIgnoringBatteryOptimizations(ctx) }
     val notif = remember(tick) {
         Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED

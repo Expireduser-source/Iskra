@@ -82,6 +82,23 @@ class SqliteMemoryStore(private val helper: IskraDb) : MemoryStore {
         helper.writableDatabase.delete("memory", null, null)
     }
 
+    override fun replaceAll(items: List<MemoryItem>) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("memory", null, null)
+            for (m in items) {
+                db.insertOrThrow("memory", null, ContentValues().apply {
+                    put("kind", m.kind.name); put("text", m.text); put("source", m.source.name)
+                    put("importance", m.importance); put("created", m.createdAtMs); put("last_used", m.lastUsedAtMs)
+                })
+            }
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     override fun touch(ids: Collection<Long>, nowMs: Long) {
         if (ids.isEmpty()) return
         val db = helper.writableDatabase

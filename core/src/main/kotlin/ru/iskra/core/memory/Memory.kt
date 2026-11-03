@@ -24,6 +24,8 @@ interface MemoryStore {
     fun delete(id: Long)
     fun deleteAll()
     fun touch(ids: Collection<Long>, nowMs: Long)
+    /** Replaces everything with [items] (restore from backup), keeping their timestamps. Ids are reassigned. */
+    fun replaceAll(items: List<MemoryItem>)
 }
 
 class InMemoryMemoryStore : MemoryStore {
@@ -41,6 +43,10 @@ class InMemoryMemoryStore : MemoryStore {
     @Synchronized override fun deleteAll() { items.clear() }
     @Synchronized override fun touch(ids: Collection<Long>, nowMs: Long) {
         ids.forEach { id -> items[id]?.let { items[id] = it.copy(lastUsedAtMs = nowMs) } }
+    }
+    @Synchronized override fun replaceAll(items: List<MemoryItem>) {
+        this.items.clear()
+        items.forEach { val n = it.copy(id = nextId++); this.items[n.id] = n }
     }
 }
 
@@ -141,6 +147,20 @@ class MemoryManager(
     fun all() = store.all()
     fun delete(id: Long) = store.delete(id)
     fun deleteAll() = store.deleteAll()
+
+    /**
+     * Restore from a backup. The same rules as for new memories apply: no passwords / card numbers,
+     * length and count limits. Returns how many items were skipped.
+     */
+    fun replaceAll(items: List<MemoryItem>): Int {
+        val ok = items.asSequence()
+            .map { it.copy(text = it.text.trim().replace(Regex("\\s+"), " "), importance = it.importance.coerceIn(1, 5)) }
+            .filter { it.text.length in 3..maxTextLength && !looksSensitive(it.text) }
+            .take(maxItems)
+            .toList()
+        store.replaceAll(ok)
+        return items.size - ok.size
+    }
 
     private fun similar(a: Set<String>, b: Set<String>): Boolean {
         if (a.isEmpty() || b.isEmpty()) return false

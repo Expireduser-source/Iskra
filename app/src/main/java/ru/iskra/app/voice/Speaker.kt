@@ -80,7 +80,7 @@ class Speaker(
                 t.setPitch(1.25f)
                 t.setSpeechRate(1.05f)
                 t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) { _speaking.value = true }
+                    override fun onStart(utteranceId: String?) { _speaking.value = true; logFirstSound("системный") }
                     override fun onDone(utteranceId: String?) = finished()
                     @Deprecated("Deprecated in Java")
                     override fun onError(utteranceId: String?) = finished()
@@ -90,8 +90,13 @@ class Speaker(
     }
 
     /** Speaks [text]. Returns false if nothing will be spoken (no voice available / empty text). */
-    fun speak(text: String, emotion: Emotion = Emotion.NEUTRAL): Boolean {
+    /**
+     * [commandAtMs] (elapsedRealtime) is when the owner finished the command; it is only used to log
+     * how long it took until she started speaking (for latency work, stage 2).
+     */
+    fun speak(text: String, emotion: Emotion = Emotion.NEUTRAL, commandAtMs: Long? = null): Boolean {
         stop()
+        timing = Timing(commandAtMs, SystemClock.elapsedRealtime())
         val clean = SpeechText.clean(text)
         if (clean.isEmpty()) return false
         val s = settings()
@@ -164,6 +169,7 @@ class Speaker(
                     t = buildTrack(fmt).also { track = it; it.play() }
                 }) { bytes, n ->
                     val tr = t ?: return@stream
+                    if (framesWritten == 0L) logFirstSound(client.name)
                     // Keep 16-bit alignment across network chunks.
                     var data = bytes; var len = n
                     leftover?.let { lb -> data = byteArrayOf(lb) + bytes.copyOf(n); len = n + 1; leftover = null }
@@ -197,6 +203,20 @@ class Speaker(
                 }
             }
         }
+    }
+
+    private class Timing(val commandAt: Long?, val requestAt: Long) { @Volatile var logged = false }
+    @Volatile private var timing: Timing? = null
+
+    /** First audio handed to the speaker: "TTS: начал говорить, X мс от конца команды". No text is logged. */
+    private fun logFirstSound(engine: String) {
+        val t = timing ?: return
+        if (t.logged) return
+        t.logged = true
+        val now = SystemClock.elapsedRealtime()
+        val synth = now - t.requestAt
+        Diag.i("timing", if (t.commandAt != null) "TTS ($engine): начал говорить, ${now - t.commandAt} мс от конца команды (синтез $synth мс)"
+            else "TTS ($engine): начал говорить через $synth мс после запроса")
     }
 
     private fun cleanupCloud() {
