@@ -20,6 +20,14 @@ android {
     }
 
     signingConfigs {
+        // Fixed debug key committed to the repo so every CI build can be installed over the
+        // previous one without losing data. Debug-only; not a secret.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         // Optional release signing from environment (CI secrets or local shell). Never commit keys.
         create("release") {
             val path = System.getenv("ISKRA_KEYSTORE")
