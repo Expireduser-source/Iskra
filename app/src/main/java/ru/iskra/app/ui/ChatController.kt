@@ -58,6 +58,7 @@ class ChatController(private val app: IskraApp) {
             return
         }
         append(UiMessage(ids.getAndIncrement(), true, t))
+        app.lastContactMs = System.currentTimeMillis()
         _busy.value = true
         CompanionBus.emit(AvatarCue.Thinking(true))
         // "End of command": the moment the typed message was sent or the final voice result arrived.
@@ -122,6 +123,7 @@ class ChatController(private val app: IskraApp) {
 
     /** Touch interactions with the overlay character. */
     fun react(event: MoodEvent) {
+        app.lastContactMs = System.currentTimeMillis()
         scope.launch {
             val r = withContext(Dispatchers.IO) { app.agent.react(event) }
             CompanionBus.emit(AvatarCue.Feel(r.emotion))

@@ -164,7 +164,8 @@ class CompanionAgent(
     }
 
     private suspend fun handleLocally(text: String, llmAvailable: Boolean): AgentReply? {
-        return when (val parsed = CommandParser.parse(text) ?: return null) {
+        val now = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault())
+        return when (val parsed = CommandParser.parse(text, now) ?: return null) {
             is CommandParser.Parsed.Remember -> {
                 when (val r = memory.add(parsed.text, MemoryKind.FACT, MemorySource.USER_EXPLICIT, 4, clock())) {
                     is MemoryManager.AddResult.Added -> AgentReply(Lines.remembered(random, r.item.text), Emotion.HAPPY)
@@ -181,7 +182,9 @@ class CompanionAgent(
                 val record = policy.run(tools[parsed.name], parsed.name, parsed.args)
                 // Fuzzy "открой X" that didn't match an app: let the model figure out what was meant.
                 if (!record.outcome.ok && parsed.name == ToolNames.OPEN_APP && llmAvailable) return null
-                if (record.outcome.ok) AgentReply(Lines.actionDone(random, record.outcome.message), Emotion.HAPPY, listOf(record))
+                val informational = tools[parsed.name]?.informational == true
+                if (record.outcome.ok && informational) AgentReply(record.outcome.message, Emotion.HAPPY, listOf(record))
+                else if (record.outcome.ok) AgentReply(Lines.actionDone(random, record.outcome.message), Emotion.HAPPY, listOf(record))
                 else AgentReply(Lines.actionFailed(random, record.outcome.message), Emotion.SAD, listOf(record))
             }
         }

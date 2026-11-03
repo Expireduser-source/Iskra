@@ -110,3 +110,18 @@ class BackupTest {
         assertFailsWith<BackupException> { BackupCodec.decode("""{"kind":"iskra-backup","format":1,"memory":[1,2]}""") }
     }
 }
+
+class BackupNotesTest {
+    @org.junit.Test fun notesRoundTripAndKeysAreRedacted() {
+        val key = "sk-or-v1-0123456789abcdef0123456789abcdef"
+        val b = ru.iskra.core.backup.Backup(1L, "0.7.0", emptyMap(), emptyList(), null,
+            notes = listOf(ru.iskra.core.skills.Note(1, "купить молоко", 5L), ru.iskra.core.skills.Note(2, "ключ $key", 6L)))
+        val text = ru.iskra.core.backup.BackupCodec.encode(b, listOf(key))
+        kotlin.test.assertFalse(text.contains(key))
+        val back = ru.iskra.core.backup.BackupCodec.decode(text, listOf(key))
+        kotlin.test.assertEquals(listOf("купить молоко", 5L), listOf(back.notes[0].text, back.notes[0].createdAtMs))
+        kotlin.test.assertEquals(2, back.notes.size)
+        // Files without notes (format 1 from 0.6) still load.
+        kotlin.test.assertEquals(emptyList(), ru.iskra.core.backup.BackupCodec.decode(ru.iskra.core.backup.BackupCodec.encode(b.copy(notes = emptyList()))).notes)
+    }
+}

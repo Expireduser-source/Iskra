@@ -34,6 +34,8 @@ data class Backup(
     val memory: List<MemoryItem>,
     val state: CompanionState?,
     val format: Int = BackupCodec.FORMAT,
+    /** Owner's notes (0.7.0+). Older files have none; older apps ignore the field. */
+    val notes: List<ru.iskra.core.skills.Note> = emptyList(),
 )
 
 class BackupException(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
@@ -64,7 +66,8 @@ object BackupCodec {
         val memory = b.memory.map { m ->
             if (hasSecret(m.text)) m.copy(text = Redactor.redact(m.text, secrets)) else m
         }
-        return b.copy(settings = settings, memory = memory)
+        val notes = b.notes.map { n -> if (hasSecret(n.text)) n.copy(text = Redactor.redact(n.text, secrets)) else n }
+        return b.copy(settings = settings, memory = memory, notes = notes)
     }
 
     fun encode(b: Backup, knownSecrets: Collection<String> = emptyList()): String {
@@ -103,6 +106,9 @@ object BackupCodec {
                         put("text", m.text)
                     })
                 }
+            })
+            if (s.notes.isNotEmpty()) put("notes", buildJsonArray {
+                s.notes.forEach { n -> add(buildJsonObject { put("created", n.createdAtMs); put("text", n.text) }) }
             })
         }
         return json.encodeToString(JsonObject.serializer(), root)
@@ -147,6 +153,11 @@ object BackupCodec {
                     lastUsedAtMs = o["lastUsed"]?.jsonPrimitive?.longOrNull ?: 0L,
                 )
             }
+            val notes = (root["notes"] as? JsonArray ?: JsonArray(emptyList())).take(MAX_MEMORY).mapIndexedNotNull { i, el ->
+                val o = el as? JsonObject ?: return@mapIndexedNotNull null
+                val t = o["text"]?.jsonPrimitive?.content?.trim().orEmpty()
+                if (t.isEmpty()) null else ru.iskra.core.skills.Note((i + 1).toLong(), t.take(MAX_TEXT), o["created"]?.jsonPrimitive?.longOrNull ?: 0L)
+            }
             val state = (root["state"] as? JsonObject)?.let { o ->
                 fun d(k: String, def: Double) = o[k]?.jsonPrimitive?.doubleOrNull ?: def
                 CompanionState(
@@ -159,7 +170,7 @@ object BackupCodec {
             val b = Backup(
                 createdAtMs = root["createdAtMs"]?.jsonPrimitive?.longOrNull ?: 0L,
                 appVersion = root["appVersion"]?.jsonPrimitive?.content.orEmpty().take(40),
-                settings = settings, memory = memory, state = state, format = format,
+                settings = settings, memory = memory, state = state, format = format, notes = notes,
             )
             // A file edited by hand must not smuggle a key into the settings either.
             return sanitize(b, knownSecrets)

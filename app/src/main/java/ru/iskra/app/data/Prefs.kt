@@ -1,5 +1,8 @@
 package ru.iskra.app.data
 
+import ru.iskra.core.skills.Place
+import ru.iskra.core.skills.ProactiveFrequency
+
 import android.content.Context
 import android.content.SharedPreferences
 import kotlinx.serialization.json.Json
@@ -71,6 +74,11 @@ data class AppSettings(
     val liveliness: Int = 1,
     val avatarLook: AvatarLook = AvatarLook.RIG,
     val economicalEar: Boolean = true,
+    val weatherCity: String = "",
+    val proactive: ProactiveFrequency = ProactiveFrequency.RARE,
+    val quietFrom: Int = 23,
+    val quietTo: Int = 8,
+    val proactiveVoice: Boolean = false,
 ) {
     val voiceOrDefault get() = ttsVoice.ifBlank { ttsEngine.defaultVoice }
     val ttsModelOrDefault get() = ttsModel.ifBlank { ttsEngine.defaultModel }
@@ -100,7 +108,27 @@ class SettingsRepo(context: Context) {
         liveliness = prefs.getInt("liveliness", 1).coerceIn(0, 2),
         avatarLook = runCatching { AvatarLook.valueOf(prefs.getString("avatarLook", null) ?: "RIG") }.getOrDefault(AvatarLook.RIG),
         economicalEar = prefs.getBoolean("economicalEar", true),
+        weatherCity = prefs.getString("weatherCity", "") ?: "",
+        proactive = runCatching { ProactiveFrequency.valueOf(prefs.getString("proactive", null) ?: "RARE") }.getOrDefault(ProactiveFrequency.RARE),
+        quietFrom = prefs.getInt("quietFrom", 23).coerceIn(0, 23),
+        quietTo = prefs.getInt("quietTo", 8).coerceIn(0, 23),
+        proactiveVoice = prefs.getBoolean("proactiveVoice", false),
     )
+
+    /** Coordinates found for [AppSettings.weatherCity] (geocoded once, on «Найти»). */
+    fun weatherPlace(): Place? {
+        val name = prefs.getString("weatherPlaceName", null) ?: return null
+        val lat = prefs.getString("weatherLat", null)?.toDoubleOrNull() ?: return null
+        val lon = prefs.getString("weatherLon", null)?.toDoubleOrNull() ?: return null
+        return Place(name, lat, lon)
+    }
+
+    fun saveWeatherPlace(p: Place?) {
+        prefs.edit().apply {
+            if (p == null) { remove("weatherPlaceName"); remove("weatherLat"); remove("weatherLon") }
+            else { putString("weatherPlaceName", p.name); putString("weatherLat", p.lat.toString()); putString("weatherLon", p.lon.toString()) }
+        }.apply()
+    }
 
     /**
      * Settings for a backup file. Keys live in [KeyVault], not here, so they cannot get in.
@@ -113,6 +141,8 @@ class SettingsRepo(context: Context) {
         "alwaysListen" to s.alwaysListen, "listenScreenOff" to s.listenScreenOff, "followUp" to s.followUp,
         "wakeNames" to s.wakeNames, "fpsMode" to s.fpsMode.name, "liveliness" to s.liveliness,
         "avatarLook" to s.avatarLook.name, "economicalEar" to s.economicalEar,
+        "weatherCity" to s.weatherCity, "proactive" to s.proactive.name, "quietFrom" to s.quietFrom, "quietTo" to s.quietTo,
+        "proactiveVoice" to s.proactiveVoice,
     )
 
     /** Applies known, well-typed values from a backup over [base]; unknown names and wrong types are ignored. */
@@ -140,6 +170,11 @@ class SettingsRepo(context: Context) {
             liveliness = int("liveliness")?.coerceIn(0, 2) ?: base.liveliness,
             avatarLook = str("avatarLook")?.let { runCatching { AvatarLook.valueOf(it) }.getOrNull() } ?: base.avatarLook,
             economicalEar = bool("economicalEar") ?: base.economicalEar,
+            weatherCity = str("weatherCity")?.take(80) ?: base.weatherCity,
+            proactive = str("proactive")?.let { runCatching { ProactiveFrequency.valueOf(it) }.getOrNull() } ?: base.proactive,
+            quietFrom = int("quietFrom")?.coerceIn(0, 23) ?: base.quietFrom,
+            quietTo = int("quietTo")?.coerceIn(0, 23) ?: base.quietTo,
+            proactiveVoice = bool("proactiveVoice") ?: base.proactiveVoice,
         )
     }
 
@@ -164,6 +199,11 @@ class SettingsRepo(context: Context) {
             .putInt("liveliness", s.liveliness)
             .putString("avatarLook", s.avatarLook.name)
             .putBoolean("economicalEar", s.economicalEar)
+            .putString("weatherCity", s.weatherCity.trim())
+            .putString("proactive", s.proactive.name)
+            .putInt("quietFrom", s.quietFrom)
+            .putInt("quietTo", s.quietTo)
+            .putBoolean("proactiveVoice", s.proactiveVoice)
             .apply()
     }
 }

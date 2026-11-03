@@ -13,6 +13,9 @@
     <!-- Voice input; requested at runtime only when the owner taps the microphone or enables listening. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- Reminders (stage 3): exact time if the owner allows «Будильники и напоминания»; re-armed after a reboot. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
@@ -77,6 +80,15 @@
             android:taskAffinity="${applicationId}.quick"
             android:theme="@style/Theme.Iskra.Floating"
             android:windowSoftInputMode="adjustResize" />
+
+        <receiver android:name=".skills.ReminderReceiver" android:exported="false" />
+        <!-- Only the system sends these (protected broadcasts). -->
+        <receiver android:name=".skills.ReminderBootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <service
             android:name=".overlay.OverlayService"

@@ -34,6 +34,8 @@ object Backups {
         "alwaysListen" to "Слушать постоянно", "listenScreenOff" to "Слушать при выключенном экране",
         "followUp" to "Продолжать без имени", "wakeNames" to "Имена", "fpsMode" to "Частота кадров", "liveliness" to "Непоседливость",
         "avatarLook" to "Вид персонажа", "economicalEar" to "Экономный слух",
+        "weatherCity" to "Город для погоды", "proactive" to "Сама заговаривает", "quietFrom" to "Тихие часы с",
+        "quietTo" to "Тихие часы до", "proactiveVoice" to "Заговаривает голосом",
     )
 
     /** Returns the number of memory items written. */
@@ -45,6 +47,7 @@ object Backups {
             settings = app.settings.exportMap(),
             memory = app.memory.all(),
             state = app.stateStore.load(),
+            notes = app.notes.all(),
         )
         val text = BackupCodec.encode(b, knownSecrets = DiagCollector.knownSecrets(app))
         val out = ctx.contentResolver.openOutputStream(uri, "wt") ?: throw BackupException("Не удалось открыть файл для записи.")
@@ -82,6 +85,7 @@ object Backups {
         return buildList {
             add("Копия от $date, версия ${b.appVersion.ifBlank { "?" }}.")
             add("Память: сейчас $now ${plural(now)} → будет ${b.memory.size}. Текущие записи удалятся.")
+            if (b.notes.isNotEmpty()) add("Заметки: сейчас ${app.notes.all().size} → будет ${b.notes.size}.")
             add(if (changed.isEmpty()) "Настройки: не изменятся." else "Настройки: изменятся ${changed.size} — ${changed.joinToString(", ")}.")
             if (b.state != null) add("Настроение, привязанность и стиль общения: заменятся сохранёнными.")
             add("Не меняются: ключи API, переписка, разрешения, показ Искры на экране.")
@@ -94,7 +98,13 @@ object Backups {
         val cur = app.settings.load()
         app.settings.save(app.settings.fromMap(b.settings, cur).copy(overlayEnabled = cur.overlayEnabled))
         val skipped = app.memory.replaceAll(b.memory)
+        if (b.notes.isNotEmpty()) app.notes.replaceAll(b.notes)
         b.state?.let { app.stateStore.save(it) }
+        // The city comes as a name; find its coordinates again (only the name goes to open-meteo).
+        val city = app.settings.load().weatherCity
+        if (city.isNotBlank() && app.settings.weatherPlace() == null) {
+            runCatching { ru.iskra.core.skills.WeatherClient().geocode(city) }.getOrNull()?.let(app.settings::saveWeatherPlace)
+        }
         Diag.i("backup", "Импорт: память ${b.memory.size - skipped} ${plural(b.memory.size - skipped)}, пропущено $skipped, ${b.settings.size} настроек")
         skipped
     }

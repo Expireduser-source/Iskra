@@ -39,11 +39,16 @@ import kotlinx.coroutines.launch
 import ru.iskra.app.AvatarCue
 import ru.iskra.app.CompanionBus
 import ru.iskra.app.IskraApp
+import ru.iskra.core.persona.Emotion
 import ru.iskra.app.R
 import ru.iskra.app.data.AppSettings
 import ru.iskra.app.data.AvatarLook
 import ru.iskra.app.data.FpsMode
 import ru.iskra.app.diag.PowerWatch
+import ru.iskra.core.skills.ProactiveFrequency
+import ru.iskra.core.skills.ProactivePolicy
+import ru.iskra.core.skills.ProactiveState
+import ru.iskra.core.skills.ProactiveTrigger
 import ru.iskra.app.diag.Diag
 import ru.iskra.app.system.DeviceHelper
 import ru.iskra.app.ui.MainActivity
@@ -81,14 +86,23 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private var micInForeground = false
     private var earProblem: String? = null
     private var screenOn = true
+    private var screenOnSince: Long? = System.currentTimeMillis()
+    private val proactiveCheck = Runnable { checkProactive() }
+    private val proactiveTick = object : Runnable {
+        override fun run() { checkProactive(); handler.postDelayed(this, 3 * 60_000L) }
+    }
     private var settings = AppSettings()
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_SCREEN_OFF -> { screenOn = false; avatar?.stop(); PowerWatch.sample("экран выключен") }
-                Intent.ACTION_SCREEN_ON -> { screenOn = true; avatar?.start(); PowerWatch.sample("экран включён") }
-                Intent.ACTION_USER_PRESENT -> { screenOn = true; avatar?.start() }
+                Intent.ACTION_SCREEN_OFF -> { screenOn = false; screenOnSince = null; avatar?.stop(); PowerWatch.sample("экран выключен") }
+                Intent.ACTION_SCREEN_ON -> { screenOn = true; screenOnSince = System.currentTimeMillis(); avatar?.start(); PowerWatch.sample("экран включён") }
+                Intent.ACTION_USER_PRESENT -> {
+                    screenOn = true; avatar?.start()
+                    // Morning greeting / "welcome back" a moment after unlocking, not in the middle of it.
+                    handler.removeCallbacks(proactiveCheck); handler.postDelayed(proactiveCheck, 15_000)
+                }
             }
             updateEarPause()
         }
@@ -344,6 +358,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         avatar = view; params = lp
         view.start()
         createBubble()
+        handler.postDelayed(proactiveTick, 60_000)
 
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT)
@@ -468,6 +483,35 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
 
     private fun openQuickChat() {
         startActivity(Intent(this, QuickChatActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /** Stage 3: a line of her own, within [ProactivePolicy]'s limits (frequency, quiet hours, screen on). */
+    private fun checkProactive() {
+        val s = settings
+        if (s.proactive == ProactiveFrequency.OFF || avatar == null || !screenOn) return
+        val app = IskraApp.instance
+        if (app.speaker.speaking.value || app.chat.busy.value) return
+        val prefs = getSharedPreferences("proactive", MODE_PRIVATE)
+        val st = ProactiveState(
+            prefs.getString("day", "") ?: "", prefs.getInt("count", 0), prefs.getLong("last", 0),
+            prefs.getString("morning", "") ?: "", prefs.getString("evening", "") ?: "",
+        )
+        val policy = ProactivePolicy(s.proactive, s.quietFrom, s.quietTo)
+        val now = java.time.LocalDateTime.now()
+        val ms = System.currentTimeMillis()
+        val trigger = policy.decide(now, ms, st, app.lastContactMs, screenOnSince, kotlin.random.Random.Default) ?: return
+        val next = policy.record(trigger, now, ms, st)
+        prefs.edit().putString("day", next.day).putInt("count", next.countToday).putLong("last", next.lastAtMs)
+            .putString("morning", next.morningDay).putString("evening", next.eveningDay).apply()
+        val line = app.phrases.proactive(trigger)
+        val emotion = if (trigger == ProactiveTrigger.EVENING) Emotion.SLEEPY else Emotion.HAPPY
+        CompanionBus.emit(AvatarCue.Feel(emotion))
+        CompanionBus.emit(AvatarCue.Say(line))
+        avatar?.brain?.wave()
+        val music = (getSystemService(AUDIO_SERVICE) as android.media.AudioManager).isMusicActive
+        val voice = s.proactiveVoice && s.ttsEnabled && !music
+        if (voice) app.speaker.speak(line, emotion)
+        Diag.i("proactive", "Сама заговорила: ${trigger.name}${if (voice) ", голосом" else ", облачком"} (${next.countToday} за день)")
     }
 
     override fun onTap() {

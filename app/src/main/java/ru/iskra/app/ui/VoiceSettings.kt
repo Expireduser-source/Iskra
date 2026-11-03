@@ -219,3 +219,76 @@ fun MotionSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
         }
     }
 }
+
+/** Stage 3: weather city, proactive lines, exact reminders. */
+@Composable
+fun SkillsSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
+    val app = IskraApp.instance
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var place by remember { mutableStateOf(app.settings.weatherPlace()) }
+    var status by remember { mutableStateOf<String?>(null) }
+    Section("Погода") {
+        OutlinedTextField(
+            value = s.weatherCity, onValueChange = { onChange(s.copy(weatherCity = it.take(80))); status = null },
+            label = { Text("Твой город") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = {
+                status = "Ищу…"
+                scope.launch {
+                    status = try {
+                        val p = ru.iskra.core.skills.WeatherClient().geocode(s.weatherCity)
+                        app.settings.saveWeatherPlace(p); place = p
+                        if (p == null) "Не нашла такой город" else "Нашла: ${p.name}"
+                    } catch (e: Exception) { "Нет связи с сервисом погоды" }
+                }
+            }, enabled = s.weatherCity.isNotBlank()) { Text("Найти город") }
+            Spacer(Modifier.size(8.dp))
+            Text(status ?: place?.let { "Сейчас: ${it.name}" } ?: "Город не задан", fontSize = 13.sp)
+        }
+        Hint("«Искра, какая погода», «погода завтра», «нужен ли зонт». Данные: open-meteo.com — туда уходят только координаты города, без ключа и без доступа к местоположению.")
+    }
+    Section("Сама заговаривает") {
+        ru.iskra.core.skills.ProactiveFrequency.entries.forEach { f ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = s.proactive == f, onClick = { onChange(s.copy(proactive = f)) })
+                Text(f.title)
+            }
+        }
+        if (s.proactive != ru.iskra.core.skills.ProactiveFrequency.OFF) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Тихие часы: с ")
+                HourField(s.quietFrom) { onChange(s.copy(quietFrom = it)) }
+                Text(" до ")
+                HourField(s.quietTo) { onChange(s.copy(quietTo = it)) }
+            }
+            SwitchRow(s.proactiveVoice, "Говорить голосом (иначе только облачко)") { onChange(s.copy(proactiveVoice = it)) }
+            Hint("Утром при первом включении экрана, когда ты вернулся после долгого перерыва, иногда вечером. Никогда — в тихие часы, при выключенном экране и чаще, чем выбрано. Голосом — только если не играет музыка.")
+        }
+    }
+    Section("Напоминания") {
+        val exact = app.reminderScheduler.exact
+        Text(if (exact) "✅ Напоминания приходят точно в срок" else "⚠️ Android может прислать напоминание на несколько минут позже", fontSize = 14.sp)
+        if (!exact && android.os.Build.VERSION.SDK_INT >= 31) {
+            OutlinedButton(onClick = {
+                runCatching {
+                    ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                        android.net.Uri.parse("package:" + ctx.packageName)))
+                }
+            }) { Text("Разрешить «Будильники и напоминания»") }
+        }
+        Hint("«Напомни через 10 минут позвонить маме», «напомни завтра в 9 про встречу», «какие напоминания». Переживают перезагрузку телефона. Список и удаление — во вкладке «Память».")
+    }
+}
+
+@Composable
+private fun HourField(value: Int, onValue: (Int) -> Unit) {
+    var text by remember(value) { mutableStateOf(value.toString()) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { v -> text = v.filter(Char::isDigit).take(2); text.toIntOrNull()?.takeIf { it in 0..23 }?.let(onValue) },
+        singleLine = true, modifier = Modifier.size(width = 72.dp, height = 56.dp),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+    )
+}

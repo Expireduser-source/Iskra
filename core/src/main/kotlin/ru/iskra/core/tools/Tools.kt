@@ -18,6 +18,8 @@ interface Tool {
     /** Human-readable description of what this call will do, used in confirmation dialogs. */
     fun describe(args: JsonObject): String
     suspend fun execute(args: JsonObject): ToolOutcome
+    /** The outcome message is the answer itself (weather, a list), not a "done" report. */
+    val informational: Boolean get() = false
 }
 
 class ToolRegistry(tools: List<Tool> = emptyList()) {

@@ -29,20 +29,20 @@ object ToolNames {
 }
 
 object ToolSchemas {
-    private fun obj(required: List<String>, props: Map<String, JsonObject>): JsonObject = buildJsonObject {
+    internal fun obj(required: List<String>, props: Map<String, JsonObject>): JsonObject = buildJsonObject {
         put("type", "object")
         put("properties", JsonObject(props))
         put("required", buildJsonArray { required.forEach { add(JsonPrimitive(it)) } })
         put("additionalProperties", false)
     }
-    private fun str(desc: String, enum: List<String>? = null) = buildJsonObject {
+    internal fun str(desc: String, enum: List<String>? = null) = buildJsonObject {
         put("type", "string"); put("description", desc)
         if (enum != null) put("enum", buildJsonArray { enum.forEach { add(JsonPrimitive(it)) } })
     }
-    private fun int(desc: String, min: Int, max: Int) = buildJsonObject {
+    internal fun int(desc: String, min: Int, max: Int) = buildJsonObject {
         put("type", "integer"); put("description", desc); put("minimum", min); put("maximum", max)
     }
-    private fun bool(desc: String) = buildJsonObject { put("type", "boolean"); put("description", desc) }
+    internal fun bool(desc: String) = buildJsonObject { put("type", "boolean"); put("description", desc) }
 
     val SETTINGS_SECTIONS = listOf("main", "wifi", "bluetooth", "display", "battery", "sound", "apps", "notifications", "accessibility", "internet")
     val GLOBAL_ACTIONS = listOf("home", "back", "recents", "notifications", "quick_settings", "lock_screen", "screenshot")

@@ -170,8 +170,11 @@ private fun AccessibilityWarning() {
 private fun MemoryScreen(modifier: Modifier) {
     val app = IskraApp.instance
     var items by remember { mutableStateOf(app.memory.all()) }
+    var notes by remember { mutableStateOf(app.notes.all()) }
+    var reminders by remember { mutableStateOf(app.reminders.pending()) }
     var confirmWipe by remember { mutableStateOf(false) }
-    fun refresh() { items = app.memory.all() }
+    fun refresh() { items = app.memory.all(); notes = app.notes.all(); reminders = app.reminders.pending() }
+    val timeFmt = remember { java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.ROOT) }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     var backupMsg by remember { mutableStateOf<String?>(null) }
@@ -213,6 +216,22 @@ private fun MemoryScreen(modifier: Modifier) {
                 MemoryRow(item) {
                     app.memory.delete(item.id); refresh()
                     Diag.i("memory", "Запись удалена владельцем, осталось ${items.size}")
+                }
+            }
+            item(key = "rem-h") { Text("⏰ Напоминания (${reminders.size})", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
+            if (reminders.isEmpty()) item(key = "rem-e") { Text("«Напомни через 10 минут позвонить маме»", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            items(reminders, key = { "r" + it.id }) { r ->
+                SimpleRow("${timeFmt.format(java.util.Date(r.atMs))} — ${r.text}") {
+                    app.reminderScheduler.cancel(r.id); app.reminders.delete(r.id); refresh()
+                    Diag.i("remind", "Напоминание удалено владельцем, осталось ${reminders.size}")
+                }
+            }
+            item(key = "note-h") { Text("📝 Заметки (${notes.size})", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
+            if (notes.isEmpty()) item(key = "note-e") { Text("«Запиши заметку: купить молоко»", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            items(notes, key = { "n" + it.id }) { n ->
+                SimpleRow(n.text) {
+                    app.notes.delete(n.id); refresh()
+                    Diag.i("notes", "Заметка удалена владельцем, осталось ${notes.size}")
                 }
             }
         }
@@ -329,6 +348,7 @@ private fun SettingsScreen(modifier: Modifier) {
         VoiceSection(s, onChange = { s = it; saved = false }, persist = { app.settings.save(s.copy(overlayEnabled = app.settings.load().overlayEnabled)) })
         EarSection(s, onChange = { s = it; saved = false })
         MotionSection(s, onChange = { s = it; saved = false })
+        SkillsSection(s, onChange = { s = it; saved = false })
         Text("Размер персонажа: ${s.avatarSizeDp} dp")
         Slider(value = s.avatarSizeDp.toFloat(), onValueChange = { s = s.copy(avatarSizeDp = it.toInt()); saved = false }, valueRange = 72f..220f)
         Button(onClick = {
@@ -427,6 +447,16 @@ private fun PermCard(title: String, text: String, granted: Boolean, onOpen: () -
                 if (!granted) TextButton(onClick = onOpen) { Text("Открыть") }
             }
             Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun SimpleRow(text: String, onDelete: () -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text, Modifier.weight(1f), fontSize = 14.sp)
+            TextButton(onClick = onDelete) { Text("✕") }
         }
     }
 }

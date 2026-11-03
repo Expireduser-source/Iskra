@@ -16,7 +16,7 @@ import ru.iskra.core.persona.Emotion
  * Local SQLite database in the app's private storage (protected by Android file-based encryption
  * and the app sandbox; excluded from backups). Schema migrations go through [onUpgrade].
  */
-class IskraDb(context: Context) : SQLiteOpenHelper(context, "iskra.db", null, 1) {
+class IskraDb(context: Context) : SQLiteOpenHelper(context, "iskra.db", null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE memory(
@@ -29,10 +29,22 @@ class IskraDb(context: Context) : SQLiteOpenHelper(context, "iskra.db", null, 1)
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 role TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL, emotion TEXT)"""
         )
+        createV2(db)
+    }
+
+    /** v2 (0.7.0): notes and reminders. */
+    private fun createV2(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS notes(id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created INTEGER NOT NULL)")
+        db.execSQL(
+            """CREATE TABLE IF NOT EXISTS reminders(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                text TEXT NOT NULL, at INTEGER NOT NULL, created INTEGER NOT NULL, done INTEGER NOT NULL DEFAULT 0)"""
+        )
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // v1 is the first schema. Future versions add explicit migrations here — never drop user data.
+        // Explicit migrations only — never drop user data.
+        if (oldVersion < 2) createV2(db)
     }
 }
 
@@ -160,4 +172,57 @@ class SqliteConversationStore(private val helper: IskraDb) : ConversationStore {
     override fun clear() {
         helper.writableDatabase.delete("turns", null, null)
     }
+}
+
+class SqliteNoteStore(private val helper: IskraDb) : ru.iskra.core.skills.NoteStore {
+    override fun add(text: String, atMs: Long): ru.iskra.core.skills.Note {
+        val id = helper.writableDatabase.insertOrThrow("notes", null, ContentValues().apply { put("text", text); put("created", atMs) })
+        return ru.iskra.core.skills.Note(id, text, atMs)
+    }
+
+    override fun all(): List<ru.iskra.core.skills.Note> {
+        val out = ArrayList<ru.iskra.core.skills.Note>()
+        helper.readableDatabase.rawQuery("SELECT id, text, created FROM notes ORDER BY created DESC, id DESC", null).use { c ->
+            while (c.moveToNext()) out += ru.iskra.core.skills.Note(c.getLong(0), c.getString(1), c.getLong(2))
+        }
+        return out
+    }
+
+    override fun delete(id: Long) { helper.writableDatabase.delete("notes", "id = ?", arrayOf(id.toString())) }
+    override fun deleteAll() { helper.writableDatabase.delete("notes", null, null) }
+
+    override fun replaceAll(notes: List<ru.iskra.core.skills.Note>) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("notes", null, null)
+            for (n in notes) db.insertOrThrow("notes", null, ContentValues().apply { put("text", n.text); put("created", n.createdAtMs) })
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+}
+
+class SqliteReminderStore(private val helper: IskraDb) : ru.iskra.core.skills.ReminderStore {
+    override fun add(text: String, atMs: Long, createdAtMs: Long): ru.iskra.core.skills.Reminder {
+        val id = helper.writableDatabase.insertOrThrow("reminders", null, ContentValues().apply {
+            put("text", text); put("at", atMs); put("created", createdAtMs); put("done", 0)
+        })
+        return ru.iskra.core.skills.Reminder(id, text, atMs, createdAtMs)
+    }
+
+    private fun query(where: String?, args: Array<String>?): List<ru.iskra.core.skills.Reminder> {
+        val out = ArrayList<ru.iskra.core.skills.Reminder>()
+        helper.readableDatabase.rawQuery(
+            "SELECT id, text, at, created, done FROM reminders" + (where?.let { " WHERE $it" } ?: "") + " ORDER BY at", args
+        ).use { c ->
+            while (c.moveToNext()) out += ru.iskra.core.skills.Reminder(c.getLong(0), c.getString(1), c.getLong(2), c.getLong(3), c.getInt(4) != 0)
+        }
+        return out
+    }
+
+    override fun get(id: Long) = query("id = ?", arrayOf(id.toString())).firstOrNull()
+    override fun pending() = query("done = 0", null)
+    override fun markDone(id: Long) { helper.writableDatabase.update("reminders", ContentValues().apply { put("done", 1) }, "id = ?", arrayOf(id.toString())) }
+    override fun delete(id: Long) { helper.writableDatabase.delete("reminders", "id = ?", arrayOf(id.toString())) }
+    fun deleteAll() { helper.writableDatabase.delete("reminders", null, null) }
 }

@@ -10,6 +10,18 @@ import ru.iskra.app.data.ProviderPreset
 import ru.iskra.app.data.SettingsRepo
 import ru.iskra.app.data.SqliteConversationStore
 import ru.iskra.app.data.SqliteMemoryStore
+import ru.iskra.app.data.SqliteNoteStore
+import ru.iskra.app.data.SqliteReminderStore
+import ru.iskra.app.skills.AndroidReminderScheduler
+import ru.iskra.core.skills.AddNoteTool
+import ru.iskra.core.skills.CancelRemindersTool
+import ru.iskra.core.skills.DeleteNotesTool
+import ru.iskra.core.skills.ListNotesTool
+import ru.iskra.core.skills.ListRemindersTool
+import ru.iskra.core.skills.PhraseBank
+import ru.iskra.core.skills.SetReminderTool
+import ru.iskra.core.skills.WeatherClient
+import ru.iskra.core.skills.WeatherTool
 import ru.iskra.app.system.CompanionAccessibilityService
 import ru.iskra.app.tools.AndroidTools
 import ru.iskra.app.ui.ChatController
@@ -39,6 +51,12 @@ class IskraApp : Application() {
     lateinit var agent: CompanionAgent; private set
     lateinit var chat: ChatController; private set
     lateinit var speaker: Speaker; private set
+    lateinit var notes: SqliteNoteStore; private set
+    lateinit var reminders: SqliteReminderStore; private set
+    lateinit var reminderScheduler: AndroidReminderScheduler; private set
+    val phrases = PhraseBank()
+    /** Last message or touch from the owner (for proactive lines). */
+    @Volatile var lastContactMs = System.currentTimeMillis()
 
     override fun onCreate() {
         super.onCreate()
@@ -61,13 +79,24 @@ class IskraApp : Application() {
         conversation = SqliteConversationStore(db)
         stateStore = PrefsStateStore(this)
         confirm = ConfirmBridge()
+        notes = SqliteNoteStore(db)
+        reminders = SqliteReminderStore(db)
+        reminderScheduler = AndroidReminderScheduler(this)
+        val weather = WeatherClient()
+        val skills = listOf(
+            AddNoteTool(notes) { System.currentTimeMillis() }, ListNotesTool(notes), DeleteNotesTool(notes),
+            SetReminderTool(reminders, reminderScheduler, { System.currentTimeMillis() }),
+            ListRemindersTool(reminders, { System.currentTimeMillis() }),
+            CancelRemindersTool(reminders, reminderScheduler),
+            WeatherTool(weather, homePlace = { settings.weatherPlace() }),
+        )
         val disabledTools = emptySet<String>()
         agent = CompanionAgent(
             persona = Personas.ISKRA,
             memory = memory,
             conversation = conversation,
             stateStore = stateStore,
-            tools = ToolRegistry(AndroidTools.all(this)),
+            tools = ToolRegistry(AndroidTools.all(this) + skills),
             policy = SafetyPolicy(gate = confirm, disabled = { disabledTools }),
             providerFactory = ::currentProvider,
             deviceContext = {
@@ -108,6 +137,9 @@ class IskraApp : Application() {
         vault.clear()
         ttsVault.clear()
         speaker.clearCache()
+        notes.deleteAll()
+        reminders.pending().forEach { reminderScheduler.cancel(it.id) }
+        reminders.deleteAll()
         Diag.clear()
         chat.reload()
         Diag.i("app", "Все данные стёрты владельцем")
