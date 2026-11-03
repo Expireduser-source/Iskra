@@ -52,15 +52,16 @@ class CatgirlRenderer {
         if (p.wallSide != 0) c.translate(p.wallSide * 26f, 0f)
         if (onFloor(p.activity)) drawShadow(c)
         if (p.facingRight) c.scale(-1f, 1f)
-        val sitDrop = if (p.activity == Activity.SITTING) 8f else 0f
+        val sitDrop = if (p.activity == Activity.SITTING) 3f else 0f
         val lean = if (p.activity == Activity.RUNNING) -8f else 0f
         c.translate(0f, -2f + p.bob * 0.6f + sitDrop)
         if (lean != 0f) c.rotate(lean, 0f, 0f)
 
         drawTail(c, p)
         if (p.activity == Activity.HANGING) drawArms(c, p) // behind the head, reaching up
-        drawLegs(c, p)
+        if (p.activity != Activity.SITTING) drawLegs(c, p)
         drawDress(c)
+        if (p.activity == Activity.SITTING) drawLegs(c, p) // legs stick out in front of the dress
         if (p.activity != Activity.HANGING) drawArms(c, p)
         c.save()
         c.rotate(p.tilt, 0f, -42f)
@@ -118,8 +119,8 @@ class CatgirlRenderer {
                 foot(c, -5f, -4f); foot(c, 6f, -2f)
             }
             Activity.SITTING -> { // legs stretched forward (towards -x)
-                c.drawLine(-5f, -12f, -16f, -6f, stroke); c.drawLine(4f, -12f, -10f, -4f, stroke)
-                foot(c, -17f, -6f); foot(c, -11f, -4f)
+                c.drawLine(-5f, -10f, -20f, -6f, stroke); c.drawLine(4f, -10f, -15f, -3f, stroke)
+                foot(c, -22f, -7f); foot(c, -17f, -3f)
             }
             Activity.CLIMBING -> { // feet against the wall (towards -x)
                 val a = sin(ph) * 4f
