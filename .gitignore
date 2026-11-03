@@ -8,5 +8,7 @@ local.properties
 *.keystore
 !app/debug.keystore
 *.jks
+.env
+.env.*
 captures/
 .kotlin/
