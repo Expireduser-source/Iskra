@@ -209,9 +209,19 @@ class Speaker(
         return AudioTrack.Builder()
             .setAudioAttributes(attributes)
             .setAudioFormat(AudioFormat.Builder().setSampleRate(fmt.sampleRate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(mask).build())
-            .setBufferSizeInBytes(maxOf(min, fmt.sampleRate * 2 * fmt.channels / 4)) // ~250 ms
+            .setBufferSizeInBytes(bufferBytes(fmt, min))
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+    }
+
+    /**
+     * ~250 ms of audio, rounded to whole frames: AudioTrack rejects sizes that are not a multiple of
+     * the frame size ("Invalid audio buffer size" — e.g. 22050 Hz / 4 = 11025 bytes, odd).
+     */
+    private fun bufferBytes(fmt: PcmFormat, min: Int): Int {
+        val frame = 2 * fmt.channels
+        val wanted = maxOf(if (min > 0) min else 0, fmt.sampleRate * frame / 4)
+        return (wanted + frame - 1) / frame * frame
     }
 
     /**
