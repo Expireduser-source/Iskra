@@ -118,6 +118,8 @@ private fun MainScreen() {
  * after an app update or when the app was killed in the background). Then "Домой"/"Назад"/screenshot
  * silently do nothing, so say it plainly and offer the fix: switch it off and on again.
  */
+private var lastLoggedAccess: CompanionAccessibilityService.State? = null
+
 @Composable
 private fun AccessibilityWarning() {
     val ctx = LocalContext.current
@@ -127,7 +129,12 @@ private fun AccessibilityWarning() {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             // Give the system a moment to bind the service after the app process starts.
             kotlinx.coroutines.delay(2000)
-            val now = CompanionAccessibilityService.state(ctx) == CompanionAccessibilityService.State.ENABLED_NOT_CONNECTED
+            val state = CompanionAccessibilityService.state(ctx)
+            if (state != lastLoggedAccess) {
+                lastLoggedAccess = state
+                Diag.i("access", "Проверка при открытии: ${CompanionAccessibilityService.describe(ctx)}")
+            }
+            val now = state == CompanionAccessibilityService.State.ENABLED_NOT_CONNECTED
             if (now && !broken) Diag.w("access", "Включена в настройках, но не работает — показано предупреждение (${CompanionAccessibilityService.describe(ctx)})")
             broken = now
         }

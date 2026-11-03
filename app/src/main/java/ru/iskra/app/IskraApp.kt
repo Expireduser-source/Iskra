@@ -48,6 +48,11 @@ class IskraApp : Application() {
         ttsVault = KeyVault(this, "tts_key")
         Diag.init(this) { DiagCollector.knownSecrets(this) }
         Diag.i("app", "Запуск ${BuildConfig.VERSION_NAME}, сборка ${DiagCollector.build()}")
+        // After an update HyperOS may not restart the accessibility service: record its state a bit
+        // after start (the system needs a moment to bind it) to tell "switched off" from "not running".
+        android.os.Handler(mainLooper).postDelayed({
+            Diag.i("access", "Через 5 с после запуска: ${CompanionAccessibilityService.describe(this)}")
+        }, 5000)
         db = IskraDb(this)
         memory = MemoryManager(SqliteMemoryStore(db))
         conversation = SqliteConversationStore(db)

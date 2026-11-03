@@ -463,6 +463,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
 
     override fun onDestroy() {
         Diag.i("overlay", "Служба остановлена")
+        if (ear != null) Diag.i("ear", "Слух остановлен вместе со службой")
         if (Diag.overlayState == "на экране") Diag.overlayState = "не запущен"
         ear?.stop(); ear = null
         Diag.earState = if (settings.alwaysListen) "не работает: Искра не на экране" else "выключен в настройках"

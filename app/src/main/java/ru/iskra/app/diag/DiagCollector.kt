@@ -100,6 +100,7 @@ object DiagCollector {
         if (Build.VERSION.SDK_INT < 28) return "—"
         val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return "?"
         return when (val b = usm.appStandbyBucket) {
+            5 /* EXEMPTED */ -> "освобождено от ограничений (лучшее)"
             UsageStatsManager.STANDBY_BUCKET_ACTIVE -> "активное"
             UsageStatsManager.STANDBY_BUCKET_WORKING_SET -> "рабочий набор"
             UsageStatsManager.STANDBY_BUCKET_FREQUENT -> "частое"

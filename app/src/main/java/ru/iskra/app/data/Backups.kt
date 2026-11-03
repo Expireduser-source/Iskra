@@ -48,7 +48,7 @@ object Backups {
         val text = BackupCodec.encode(b, knownSecrets = DiagCollector.knownSecrets(app))
         val out = ctx.contentResolver.openOutputStream(uri, "wt") ?: throw BackupException("Не удалось открыть файл для записи.")
         out.use { it.write(text.toByteArray(Charsets.UTF_8)) }
-        Diag.i("backup", "Экспорт: ${b.memory.size} записей памяти, ${b.settings.size} настроек, ${text.length} байт")
+        Diag.i("backup", "Экспорт: память ${b.memory.size} ${plural(b.memory.size)}, ${b.settings.size} настроек, ${text.length} байт")
         b.memory.size
     }
 
@@ -94,7 +94,7 @@ object Backups {
         app.settings.save(app.settings.fromMap(b.settings, cur).copy(overlayEnabled = cur.overlayEnabled))
         val skipped = app.memory.replaceAll(b.memory)
         b.state?.let { app.stateStore.save(it) }
-        Diag.i("backup", "Импорт: ${b.memory.size - skipped} записей памяти, пропущено $skipped, ${b.settings.size} настроек")
+        Diag.i("backup", "Импорт: память ${b.memory.size - skipped} ${plural(b.memory.size - skipped)}, пропущено $skipped, ${b.settings.size} настроек")
         skipped
     }
 
