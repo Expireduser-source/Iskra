@@ -15,8 +15,11 @@ android {
         applicationId = "ru.iskra.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.3.1"
+        // Shown on the diagnostics screen: which CI run and commit this APK came from.
+        buildConfigField("String", "CI_BUILD", "\"${System.getenv("GITHUB_RUN_NUMBER") ?: "local"}\"")
+        buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA")?.take(7) ?: ""}\"")
         // Redmi Note 14 and nearly all current phones are arm64; armeabi-v7a kept for old devices.
         // Dropping x86 keeps the speech engine from adding ~20 MB.
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
@@ -61,7 +64,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     packaging {
         resources { excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "META-INF/versions/9/previous-compilation-data.bin") }
     }

@@ -2,6 +2,8 @@ package ru.iskra.app
 
 import android.app.Application
 import ru.iskra.app.data.IskraDb
+import ru.iskra.app.diag.Diag
+import ru.iskra.app.diag.DiagCollector
 import ru.iskra.app.data.KeyVault
 import ru.iskra.app.data.PrefsStateStore
 import ru.iskra.app.data.ProviderPreset
@@ -44,6 +46,8 @@ class IskraApp : Application() {
         settings = SettingsRepo(this)
         vault = KeyVault(this)
         ttsVault = KeyVault(this, "tts_key")
+        Diag.init(this) { DiagCollector.knownSecrets(this) }
+        Diag.i("app", "Запуск ${BuildConfig.VERSION_NAME}, сборка ${DiagCollector.build()}")
         db = IskraDb(this)
         memory = MemoryManager(SqliteMemoryStore(db))
         conversation = SqliteConversationStore(db)
@@ -88,14 +92,16 @@ class IskraApp : Application() {
         )
     }
 
-    /** "Forget everything": memory, dialogue, mood, keys. Settings stay. */
+    /** "Forget everything": memory, dialogue, mood, keys, diagnostics journal. Settings stay. */
     fun wipeAllData() {
         memory.deleteAll()
         conversation.clear()
         stateStore.reset()
         vault.clear()
         ttsVault.clear()
+        Diag.clear()
         chat.reload()
+        Diag.i("app", "Все данные стёрты владельцем")
     }
 
     companion object {

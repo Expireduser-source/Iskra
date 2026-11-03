@@ -131,7 +131,7 @@ private fun MemoryScreen(modifier: Modifier) {
     if (confirmWipe) AlertDialog(
         onDismissRequest = { confirmWipe = false },
         title = { Text("Стереть все данные?") },
-        text = { Text("Будут удалены память, переписка, настроение и ключ API. Это необратимо.") },
+        text = { Text("Будут удалены память, переписка, настроение, ключи API и журнал диагностики. Это необратимо.") },
         confirmButton = { TextButton(onClick = { app.wipeAllData(); refresh(); confirmWipe = false }) { Text("Стереть") } },
         dismissButton = { TextButton(onClick = { confirmWipe = false }) { Text("Отмена") } },
     )
@@ -160,8 +160,11 @@ private fun SettingsScreen(modifier: Modifier) {
     var key by remember { mutableStateOf("") }
     var hasKey by remember { mutableStateOf(app.vault.hasKey()) }
     var saved by remember { mutableStateOf(false) }
+    var diagnostics by rememberSaveable { mutableStateOf(false) }
+    if (diagnostics) { DiagnosticsScreen(modifier) { diagnostics = false }; return }
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { diagnostics = true }, modifier = Modifier.fillMaxWidth()) { Text("🩺 Диагностика и отчёт об ошибках") }
         Text("Мозг Искры", fontSize = 20.sp)
         Text(
             "Ключ API хранится зашифрованным (Android Keystore) и отправляется только выбранному сервису. " +

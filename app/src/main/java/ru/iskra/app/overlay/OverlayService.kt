@@ -42,6 +42,7 @@ import ru.iskra.app.IskraApp
 import ru.iskra.app.R
 import ru.iskra.app.data.AppSettings
 import ru.iskra.app.data.FpsMode
+import ru.iskra.app.diag.Diag
 import ru.iskra.app.system.DeviceHelper
 import ru.iskra.app.ui.MainActivity
 import ru.iskra.app.ui.QuickChatActivity
@@ -96,11 +97,13 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         screenOn = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+        Diag.i("overlay", "Служба создана")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                Diag.i("overlay", "Убрана с экрана кнопкой в уведомлении")
                 IskraApp.instance.settings.let { it.save(it.load().copy(overlayEnabled = false)) }
                 stopSelf()
                 return START_NOT_STICKY
@@ -113,6 +116,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         settings = IskraApp.instance.settings.load()
         startInForeground()
         if (!DeviceHelper.canDrawOverlays(this)) {
+            Diag.w("overlay", "Нет разрешения «поверх приложений» — служба остановлена")
+            Diag.overlayState = "остановлен: нет разрешения поверх приложений"
             stopSelf()
             return START_NOT_STICKY
         }
@@ -143,6 +148,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
                 return
             } catch (e: Exception) {
                 earProblem = "Открой приложение Искры, чтобы включить слух (Android разрешает микрофон только так)."
+                Diag.w("ear", "Android не дал микрофон в фоне (служба запущена не из открытого приложения)", e)
             }
         } else if (wantsEar()) micInForeground = true // before Android 11 no type is needed
         val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
@@ -177,17 +183,39 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val want = wantsEar() && micInForeground
         if (want && ear == null) {
             ear = VoiceEar(this, settings.wakeNameList, settings.followUp, this).also { it.start() }
+            if (ear?.isRunning == true) Diag.i("ear", "Слух включён")
         } else if (!want && ear != null) {
             ear?.stop(); ear = null
+            Diag.i("ear", "Слух выключен")
             CompanionBus.emit(AvatarCue.Listening(false))
         }
         updateEarPause()
     }
 
     private fun updateEarPause() {
-        val e = ear ?: return
+        val e = ear ?: return updateEarState()
         val app = IskraApp.instance
-        e.setPaused(app.speaker.speaking.value || MicArbiter.busy.value || (!screenOn && !settings.listenScreenOff))
+        val speaking = app.speaker.speaking.value
+        val micBusy = MicArbiter.busy.value
+        val screenOff = !screenOn && !settings.listenScreenOff
+        e.setPaused(speaking || micBusy || screenOff)
+        updateEarState(when {
+            speaking -> "пауза: Искра говорит"
+            micBusy -> "пауза: микрофон занят чатом"
+            screenOff -> "пауза: экран выключен"
+            else -> "слушает"
+        })
+    }
+
+    private fun updateEarState(state: String? = null) {
+        Diag.earState = when {
+            ear?.isRunning == true -> state ?: "слушает"
+            settings.alwaysListen && earProblem != null -> "не работает: $earProblem"
+            settings.alwaysListen && !hasMic() -> "не работает: нет доступа к микрофону"
+            settings.alwaysListen && !SpeechModel.isReady(this) -> "не работает: модель не скачана"
+            settings.alwaysListen -> "не запущен"
+            else -> "выключен в настройках"
+        }
     }
 
     override fun onPerk() {
@@ -197,6 +225,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
 
     override fun onCommand(text: String) {
         CompanionBus.emit(AvatarCue.Listening(false))
+        // Only the length — what the owner said never goes into the journal.
+        Diag.i("ear", "Голосовая команда распознана (${text.length} симв.)")
         val chat = IskraApp.instance.chat
         if (chat.busy.value) { say("Подожди, я ещё думаю над прошлым…"); return }
         say("🎤 «$text»")
@@ -213,6 +243,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     override fun onEarError(message: String) {
         earProblem = message
         ear = null
+        Diag.e("ear", message)
+        updateEarState()
         say(message)
         CompanionBus.emit(AvatarCue.Listening(false))
     }
@@ -272,8 +304,12 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             wm.addView(view, lp)
         } catch (e: Exception) {
             // Permission revoked between the check and now, or HyperOS blocked the window.
+            Diag.e("overlay", "Окно Искры не добавлено", e)
+            Diag.overlayState = "ошибка: окно не добавлено"
             stopSelf(); return
         }
+        Diag.overlayState = "на экране"
+        Diag.i("overlay", "Искра на экране, ${sizePx}px, режим кадров ${settings.fpsMode.name}")
         avatar = view; params = lp
         view.start()
         createBubble()
@@ -426,7 +462,10 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     }
 
     override fun onDestroy() {
+        Diag.i("overlay", "Служба остановлена")
+        if (Diag.overlayState == "на экране") Diag.overlayState = "не запущен"
         ear?.stop(); ear = null
+        Diag.earState = if (settings.alwaysListen) "не работает: Искра не на экране" else "выключен в настройках"
         scope.cancel()
         handler.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(screenReceiver) }

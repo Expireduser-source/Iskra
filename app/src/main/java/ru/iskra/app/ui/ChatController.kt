@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import ru.iskra.app.AvatarCue
 import ru.iskra.app.CompanionBus
 import ru.iskra.app.IskraApp
+import ru.iskra.app.diag.Diag
 import ru.iskra.core.agent.AgentReply
 import ru.iskra.core.agent.Turn
 import ru.iskra.core.persona.Emotion
@@ -63,6 +64,7 @@ class ChatController(private val app: IskraApp) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
+                Diag.e("chat", "Сбой при обработке сообщения", e)
                 AgentReply("Что-то сломалось: ${e.message ?: e.javaClass.simpleName}", Emotion.SAD, error = e.toString())
             } finally {
                 _busy.value = false
@@ -89,6 +91,9 @@ class ChatController(private val app: IskraApp) {
     }
 
     private fun deliver(reply: AgentReply) {
+        // The error is technical (HTTP code + service message); the reply text itself is not logged.
+        reply.error?.let { Diag.e("llm", it.take(160)) }
+        reply.actions.filter { !it.outcome.ok }.forEach { Diag.w("tool", "Действие ${it.tool} не выполнено") /* description may hold a number or query */ }
         if (reply.text.isBlank() && reply.actions.isEmpty()) return
         append(UiMessage(
             id = ids.getAndIncrement(), fromUser = false, text = reply.text, emotion = reply.emotion,

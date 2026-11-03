@@ -81,6 +81,7 @@ object SpeechModel {
             _state.value = State.Ready
         } catch (e: Exception) {
             _state.value = State.Failed(e.message ?: e.javaClass.simpleName)
+            ru.iskra.app.diag.Diag.e("model", "Модель распознавания не скачалась", e)
         } finally {
             zip.delete()
             tmp.deleteRecursively()

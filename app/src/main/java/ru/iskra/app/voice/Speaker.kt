@@ -22,6 +22,7 @@ import ru.iskra.app.AvatarCue
 import ru.iskra.app.CompanionBus
 import ru.iskra.app.data.AppSettings
 import ru.iskra.app.data.TtsEngine
+import ru.iskra.app.diag.Diag
 import ru.iskra.core.llm.LlmException
 import ru.iskra.core.persona.Emotion
 import ru.iskra.core.voice.ElevenLabsTts
@@ -71,9 +72,11 @@ class Speaker(
     init {
         tts = TextToSpeech(appContext) { status ->
             val t = tts ?: return@TextToSpeech
+            if (status != TextToSpeech.SUCCESS) Diag.e("tts", "Системный синтез речи не запустился (код $status)")
             if (status == TextToSpeech.SUCCESS) {
                 val r = t.setLanguage(Locale.forLanguageTag("ru-RU"))
                 sysReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+                if (!sysReady) Diag.w("tts", "Системный голос: нет русского языка (код $r)")
                 t.setPitch(1.25f)
                 t.setSpeechRate(1.05f)
                 t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -91,7 +94,9 @@ class Speaker(
         stop()
         val clean = SpeechText.clean(text)
         if (clean.isEmpty()) return false
-        val client = runCatching { cloudClient(settings()) }.getOrNull()
+        val s = settings()
+        val client = runCatching { cloudClient(s) }.getOrNull()
+        if (client == null && s.ttsEngine != TtsEngine.SYSTEM) Diag.w("tts", "${s.ttsEngine.title} не настроен (нет ключа или адреса) — говорю системным")
         if (client == null) return speakSystem(clean)
         startCloud(client, clean, emotion)
         return true
@@ -118,7 +123,7 @@ class Speaker(
 
     private fun speakSystem(clean: String): Boolean {
         val t = tts ?: return false
-        if (!sysReady) return false
+        if (!sysReady) { Diag.w("tts", "Системный голос недоступен — ответ не озвучен"); return false }
         CompanionBus.emit(AvatarCue.Talk(clean, lipSync = false))
         _speaking.value = true
         t.speak(clean, TextToSpeech.QUEUE_FLUSH, null, "iskra-${System.nanoTime()}")
@@ -183,6 +188,7 @@ class Speaker(
                 val msg = (e as? LlmException)?.let { "${client.name}: ${it.userMessage()} (${it.message?.take(120)})" }
                     ?: "${client.name}: ${e.message ?: e.javaClass.simpleName}"
                 _lastError.value = msg
+                Diag.e("tts", "$msg — переключаюсь на системный голос")
                 main.post {
                     if (myToken !== token) return@post
                     releaseTrack()
