@@ -52,6 +52,9 @@ class IskraApp : Application() {
         // after start (the system needs a moment to bind it) to tell "switched off" from "not running".
         android.os.Handler(mainLooper).postDelayed({
             Diag.i("access", "Через 5 с после запуска: ${CompanionAccessibilityService.describe(this)}")
+            // Counts only: lets an update check show whether memory and chat survived.
+            Diag.i("app", "Данные: память ${runCatching { memory.all().size }.getOrDefault(-1)}, " +
+                "реплик в переписке ${runCatching { conversation.count() }.getOrDefault(-1)}")
         }, 5000)
         db = IskraDb(this)
         memory = MemoryManager(SqliteMemoryStore(db))

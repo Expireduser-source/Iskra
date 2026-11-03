@@ -19,6 +19,7 @@ import ru.iskra.app.diag.Diag
 class CompanionAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
+        setExpected(this, true)
         Diag.i("access", "Служба спецвозможностей подключена системой")
     }
 
@@ -37,8 +38,13 @@ class CompanionAccessibilityService : AccessibilityService() {
     }
 
     enum class State {
-        /** Switched off in system settings. */
+        /** Switched off in system settings (and the owner did not use it before). */
         OFF,
+        /**
+         * Switched off, although it worked before. Seen on HyperOS: installing an update turns the
+         * owner's switch off in system settings. The owner has to switch it on again.
+         */
+        TURNED_OFF_BY_SYSTEM,
         /** On, and the system runs it: global actions work. */
         CONNECTED,
         /** On in settings, but the system does not run it now. Toggling it off and on fixes it. */
@@ -66,8 +72,14 @@ class CompanionAccessibilityService : AccessibilityService() {
         fun state(ctx: Context): State = when {
             isConnected() -> State.CONNECTED
             isEnabled(ctx) -> State.ENABLED_NOT_CONNECTED
+            isExpected(ctx) -> State.TURNED_OFF_BY_SYSTEM
             else -> State.OFF
         }
+
+        private fun prefs(ctx: Context) = ctx.getSharedPreferences("access_state", Context.MODE_PRIVATE)
+        /** True once the service has run; cleared when the owner says they do not need it. */
+        fun isExpected(ctx: Context) = prefs(ctx).getBoolean("expected", false)
+        fun setExpected(ctx: Context, v: Boolean) = prefs(ctx).edit().putBoolean("expected", v).apply()
 
         /** One line for diagnostics: the three independent signals. */
         fun describe(ctx: Context): String =

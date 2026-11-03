@@ -124,7 +124,7 @@ private var lastLoggedAccess: CompanionAccessibilityService.State? = null
 private fun AccessibilityWarning() {
     val ctx = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    var broken by remember { mutableStateOf(false) }
+    var problem by remember { mutableStateOf<CompanionAccessibilityService.State?>(null) }
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             // Give the system a moment to bind the service after the app process starts.
@@ -134,25 +134,33 @@ private fun AccessibilityWarning() {
                 lastLoggedAccess = state
                 Diag.i("access", "Проверка при открытии: ${CompanionAccessibilityService.describe(ctx)}")
             }
-            val now = state == CompanionAccessibilityService.State.ENABLED_NOT_CONNECTED
-            if (now && !broken) Diag.w("access", "Включена в настройках, но не работает — показано предупреждение (${CompanionAccessibilityService.describe(ctx)})")
-            broken = now
+            val now = state == CompanionAccessibilityService.State.ENABLED_NOT_CONNECTED ||
+                state == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM
+            if (now && problem != state) Diag.w("access", "Показано предупреждение: ${if (state == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM) "служба выключена, хотя раньше работала" else "включена, но не работает"} (${CompanionAccessibilityService.describe(ctx)})")
+            problem = if (now) state else null
         }
     }
-    if (!broken) return
+    val p = problem ?: return
+    val turnedOff = p == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM
     Card(Modifier.fillMaxWidth().padding(8.dp)) {
         Column(Modifier.padding(12.dp)) {
-            Text("⚠️ Управление телефоном не работает", fontSize = 16.sp)
+            Text(if (turnedOff) "⚠️ Управление телефоном выключено" else "⚠️ Управление телефоном не работает", fontSize = 16.sp)
             Text(
-                "«Искра · управление» включена в спецвозможностях, но Android её сейчас не запускает " +
-                    "(так бывает на HyperOS после обновления приложения). Открой спецвозможности, " +
-                    "выключи «Искра · управление» и включи снова." +
+                if (turnedOff) "После обновления приложения HyperOS выключила «Искра · управление» в спецвозможностях. " +
+                    "Без неё не работают «домой», «назад», шторка, скриншот. Открой спецвозможности и включи её снова."
+                else "«Искра · управление» включена в спецвозможностях, но Android её сейчас не запускает. " +
+                    "Открой спецвозможности, выключи «Искра · управление» и включи снова." +
                     if (DeviceHelper.isXiaomi) " Чтобы не повторялось: включи Автозапуск для Искры." else "",
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row {
                 TextButton(onClick = { DeviceHelper.openAccessibilitySettings(ctx) }) { Text("Открыть спецвозможности") }
-                if (DeviceHelper.isXiaomi) TextButton(onClick = { DeviceHelper.openXiaomiAutostart(ctx) }) { Text("Автозапуск") }
+                if (turnedOff) TextButton(onClick = {
+                    CompanionAccessibilityService.setExpected(ctx, false)
+                    Diag.i("access", "Владелец: управление телефоном не нужно, не напоминать")
+                    problem = null
+                }) { Text("Не нужно") }
+                else if (DeviceHelper.isXiaomi) TextButton(onClick = { DeviceHelper.openXiaomiAutostart(ctx) }) { Text("Автозапуск") }
             }
         }
     }
@@ -201,7 +209,12 @@ private fun MemoryScreen(modifier: Modifier) {
         )
         Spacer(Modifier.size(8.dp))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(items.sortedByDescending { it.createdAtMs }, key = { it.id }) { item -> MemoryRow(item) { app.memory.delete(item.id); refresh() } }
+            items(items.sortedByDescending { it.createdAtMs }, key = { it.id }) { item ->
+                MemoryRow(item) {
+                    app.memory.delete(item.id); refresh()
+                    Diag.i("memory", "Запись удалена владельцем, осталось ${items.size}")
+                }
+            }
         }
         backupMsg?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary) }
         Row {
@@ -210,7 +223,7 @@ private fun MemoryScreen(modifier: Modifier) {
             OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text("📂 Восстановить") }
         }
         Row {
-            OutlinedButton(onClick = { app.chat.clearHistory() }) { Text("Очистить переписку") }
+            OutlinedButton(onClick = { app.chat.clearHistory(); Diag.i("memory", "Переписка очищена владельцем") }) { Text("Очистить переписку") }
             Spacer(Modifier.size(8.dp))
             OutlinedButton(onClick = { confirmWipe = true }) { Text("Стереть всё") }
         }

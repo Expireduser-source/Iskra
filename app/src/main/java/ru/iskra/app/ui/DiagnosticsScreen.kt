@@ -4,6 +4,11 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import android.os.Build
 import android.os.PersistableBundle
 import androidx.activity.compose.BackHandler
@@ -53,7 +58,24 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
     var refresh by remember { mutableIntStateOf(0) }
     var info by remember { mutableStateOf<DiagInfo?>(null) }
     var entries by remember { mutableStateOf(emptyList<DiagEntry>()) }
-    var copied by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val saveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            status = try {
+                withContext(Dispatchers.IO) {
+                    val text = DiagCollector.report(ctx, maxLog = Diag.log.capacity)
+                    ctx.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
+                        ?: error("нет доступа к файлу")
+                }
+                "Сохранено ✓"
+            } catch (e: Exception) {
+                Diag.e("diag", "Не удалось сохранить отчёт", e)
+                "Не получилось сохранить: ${e.message ?: e.javaClass.simpleName}"
+            }
+        }
+    }
     var showAll by remember { mutableStateOf(false) }
     LaunchedEffect(refresh) {
         info = withContext(Dispatchers.IO) { DiagCollector.collect(ctx) }
@@ -68,7 +90,7 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
         Row {
             TextButton(onClick = onBack) { Text("← Назад") }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = { refresh++; copied = false }) { Text("Обновить") }
+            TextButton(onClick = { refresh++; status = null }) { Text("Обновить") }
         }
         Text("Диагностика", fontSize = 20.sp)
         Text(
@@ -77,11 +99,35 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(onClick = {
-            val text = DiagCollector.report(ctx)
-            copyToClipboard(ctx, text)
-            copied = true
-        }, modifier = Modifier.fillMaxWidth()) { Text("Скопировать отчёт") }
-        if (copied) Text("Скопировано ✓ Вставь в чат или в заметку.", color = MaterialTheme.colorScheme.primary, fontSize = 13.sp)
+            scope.launch {
+                status = try {
+                    val uri = withContext(Dispatchers.IO) { DiagCollector.reportFile(ctx) }
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        putExtra(Intent.EXTRA_SUBJECT, "Искра: отчёт диагностики")
+                        clipData = ClipData.newRawUri("report", uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    ctx.startActivity(Intent.createChooser(send, "Отправить отчёт").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    null
+                } catch (e: Exception) {
+                    Diag.e("diag", "Не удалось подготовить файл отчёта", e)
+                    "Не получилось: ${e.javaClass.simpleName}"
+                }
+            }
+        }, modifier = Modifier.fillMaxWidth()) { Text("📤 Отправить отчёт файлом") }
+        Row {
+            OutlinedButton(onClick = { saveLauncher.launch(DiagCollector.reportFileName()) }) { Text("💾 В папку") }
+            Spacer(Modifier.size(8.dp))
+            TextButton(onClick = {
+                copyToClipboard(ctx, DiagCollector.report(ctx))
+                status = "Скопировано текстом ✓ (последние 60 событий)"
+            }) { Text("Скопировать текстом") }
+        }
+        Text("Файл .txt содержит весь журнал (до ${Diag.log.capacity} событий) — прикрепи его в чат вместо вставки текста.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        status?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp) }
 
         val i = info
         if (i == null) Text("Собираю…") else {

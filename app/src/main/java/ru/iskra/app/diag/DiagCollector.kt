@@ -87,9 +87,25 @@ object DiagCollector {
         )
     }
 
-    fun report(ctx: Context): String {
+    /** [maxLog]: 60 lines for the clipboard; the file version carries the whole journal. */
+    fun report(ctx: Context, maxLog: Int = 60): String {
         val fmt = SimpleDateFormat("dd.MM HH:mm:ss", Locale.ROOT)
-        return DiagReport.build(collect(ctx), Diag.log.entries(), knownSecrets(IskraApp.instance), time = { fmt.format(Date(it)) })
+        return DiagReport.build(collect(ctx), Diag.log.entries(), knownSecrets(IskraApp.instance), maxLog = maxLog, time = { fmt.format(Date(it)) })
+    }
+
+    fun reportFileName(nowMs: Long = System.currentTimeMillis()): String =
+        "iskra-diag-${SimpleDateFormat("yyyy-MM-dd_HH-mm", Locale.ROOT).format(Date(nowMs))}.txt"
+
+    /**
+     * Writes the full report to cache/reports (old reports there are removed) and returns a
+     * content:// link that only the app the owner picks in the share sheet can read.
+     */
+    fun reportFile(ctx: Context): android.net.Uri {
+        val dir = java.io.File(ctx.cacheDir, "reports").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val f = java.io.File(dir, reportFileName())
+        f.writeText(report(ctx, maxLog = Diag.log.capacity))
+        return androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
     }
 
     private fun keyState(key: String?) = if (key.isNullOrBlank()) "не сохранён" else "сохранён, ${Redactor.mask(key)}"
