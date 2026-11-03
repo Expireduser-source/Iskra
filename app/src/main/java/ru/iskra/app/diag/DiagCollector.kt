@@ -56,9 +56,10 @@ object DiagCollector {
                 if (ttsError != null) append(", последняя ошибка: ").append(ttsError)
             },
             "Служба спец. возможностей" to CompanionAccessibilityService.describe(ctx),
-            "Кадры/с у Искры" to if (FrameStats.hz > 0) "~${FrameStats.hz}" else "нет данных (Искра не на экране)",
+            "Кадры/с у Искры" to if (FrameStats.hz > 0) "экран ~${FrameStats.hz}, отрисовка ~${FrameStats.drawnHz}" else "нет данных (Искра не на экране)",
             "Режим кадров" to s.fpsMode.title,
             "Группа ожидания Android" to standbyBucket(ctx),
+            "Расход в покое" to (PowerWatch.summary() ?: "пока нет данных: нужно ≥ 2 замеров без зарядки (замер раз в 5 мин, пока Искра на экране)"),
             "Записей в памяти" to runCatching { app.memory.all().size.toString() }.getOrDefault("?"),
         )
 
@@ -73,6 +74,7 @@ object DiagCollector {
             "Продолжение без имени" to yesNo(s.followUp),
             "Гуляет сама" to yesNo(s.wander) + ", непоседливость ${s.liveliness}",
             "Размер" to "${s.avatarSizeDp} dp",
+            "Вид" to s.avatarLook.title,
         )
 
         return DiagInfo(

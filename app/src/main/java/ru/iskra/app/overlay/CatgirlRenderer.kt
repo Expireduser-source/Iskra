@@ -19,7 +19,8 @@ import kotlin.math.sin
  * Local coordinates: origin at the bottom centre of the box, y up is negative, she faces -x
  * (the canvas is mirrored when she faces right).
  */
-class CatgirlRenderer {
+class CatgirlRenderer : AvatarRenderer {
+    private val effects = AvatarEffects()
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
@@ -43,7 +44,9 @@ class CatgirlRenderer {
         a == Activity.SITTING || a == Activity.SLEEPING
 
     /** Draws the character into a [box] x [box] square whose top-left is the canvas origin. */
-    fun draw(c: Canvas, box: Float, p: AvatarPose) {
+    override fun wantsFullRate(p: AvatarPose) = p.moving || p.talking
+
+    override fun draw(c: Canvas, box: Float, p: AvatarPose) {
         val s = box / 100f
         c.save()
         c.translate(box / 2f, box)
@@ -74,7 +77,7 @@ class CatgirlRenderer {
             c.save()
             c.translate(box / 2f, box)
             c.scale(s, s)
-            drawEffects(c, p)
+            effects.draw(c, p, sprites = false)
             c.restore()
         }
     }
@@ -285,39 +288,6 @@ class CatgirlRenderer {
             else -> { // cat mouth "ω"
                 oval.set(-4f, my - 2f, 0f, my + 2f); c.drawArc(oval, 0f, 180f, false, stroke)
                 oval.set(0f, my - 2f, 4f, my + 2f); c.drawArc(oval, 0f, 180f, false, stroke)
-            }
-        }
-    }
-
-    private fun drawEffects(c: Canvas, p: AvatarPose) {
-        text.textSize = 9f
-        when {
-            p.activity == Activity.SLEEPING -> {
-                val k = (p.tailPhase % 3f) / 3f
-                text.color = Color.argb((255 * (1 - k)).toInt(), 200, 190, 255)
-                c.drawText("z", 18f + k * 6f, -80f - k * 10f, text)
-                text.textSize = 6f; c.drawText("z", 13f, -74f, text)
-            }
-            p.thinking -> {
-                text.color = Color.WHITE
-                val dots = ".".repeat(1 + ((p.tailPhase * 0.8f).toInt() % 3))
-                c.drawText(dots, 0f, -84f, text)
-            }
-            p.listening -> {
-                stroke.color = accent; stroke.strokeWidth = 1.5f
-                for (i in 1..2) {
-                    val r = 6f + i * 4f + (sin(p.tailPhase * 3f) + 1f) * 1.5f
-                    oval.set(24f - r, -60f - r, 24f + r, -60f + r); c.drawArc(oval, -40f, 80f, false, stroke)
-                }
-            }
-            p.emotion == Emotion.CURIOUS -> { text.color = Color.WHITE; c.drawText("?", 26f, -78f, text) }
-            p.emotion == Emotion.SURPRISED -> { text.color = Color.WHITE; c.drawText("!", 26f, -78f, text) }
-            p.emotion == Emotion.EXCITED || p.emotion == Emotion.SHY -> {
-                fill.color = accent
-                for (i in 0 until 3) {
-                    val a = p.tailPhase * 0.7f + i * 2.1f
-                    c.drawCircle(cos(a) * 30f, -60f + sin(a) * 22f, 1.6f, fill)
-                }
             }
         }
     }

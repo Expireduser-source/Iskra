@@ -32,7 +32,8 @@ data class AvatarPose(
     val wallSide: Int = 0,      // -1 clinging to the left edge, +1 right, 0 none
     val rotation: Float = 0f,   // whole-body rotation around the box centre, degrees
     val lookX: Float = 0f,      // -1 .. 1, where the eyes look (screen space)
-    val moving: Boolean = false // position or limbs change every frame → render at full refresh rate
+    val moving: Boolean = false, // position or limbs change every frame → render at full refresh rate
+    val waving: Boolean = false, // greeting: on appearing and when tapped while standing
 )
 
 /**
@@ -70,6 +71,7 @@ class AvatarBrain(
     private var earTwitchT = -1f
     private var lookX = 0f
     private var lookUntil = 0f
+    private var waveUntil = 2.5f           // she waves when she appears
 
     // Expression flags
     var isTalking = false; private set
@@ -141,7 +143,11 @@ class AvatarBrain(
     fun stopTalking() { talkUntil = 0f; isTalking = false; lipSync = false; mouthLevel = 0f }
     fun setMouthLevel(level: Float) { mouthLevel = level.coerceIn(0f, 1f) }
 
+    /** Wave for [sec] seconds (shown while she stands). */
+    fun wave(sec: Float = 1.5f) { waveUntil = t + sec }
+
     fun tapped() {
+        if (activity == Activity.IDLE) wave()
         wake(); earTwitchT = 0f
         if (activity == Activity.PEEKING) { emotion = Emotion.SURPRISED; emotionUntil = t + 2f; comeBack() }
     }
@@ -474,6 +480,7 @@ class AvatarBrain(
             rotation = if (activity == Activity.PEEKING && peekEdge == Edge.TOP) 180f else peekLean,
             lookX = look,
             moving = moving || activity == Activity.DRAGGED,
+            waving = activity == Activity.IDLE && t < waveUntil && !isThinking,
         )
     }
 

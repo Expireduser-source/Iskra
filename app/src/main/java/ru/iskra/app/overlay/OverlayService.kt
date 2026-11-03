@@ -41,7 +41,9 @@ import ru.iskra.app.CompanionBus
 import ru.iskra.app.IskraApp
 import ru.iskra.app.R
 import ru.iskra.app.data.AppSettings
+import ru.iskra.app.data.AvatarLook
 import ru.iskra.app.data.FpsMode
+import ru.iskra.app.diag.PowerWatch
 import ru.iskra.app.diag.Diag
 import ru.iskra.app.system.DeviceHelper
 import ru.iskra.app.ui.MainActivity
@@ -84,8 +86,9 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_SCREEN_OFF -> { screenOn = false; avatar?.stop() }
-                Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> { screenOn = true; avatar?.start() }
+                Intent.ACTION_SCREEN_OFF -> { screenOn = false; avatar?.stop(); PowerWatch.sample("экран выключен") }
+                Intent.ACTION_SCREEN_ON -> { screenOn = true; avatar?.start(); PowerWatch.sample("экран включён") }
+                Intent.ACTION_USER_PRESENT -> { screenOn = true; avatar?.start() }
             }
             updateEarPause()
         }
@@ -273,6 +276,32 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         }
     }
 
+    /** Name of the look actually drawn (after a fallback it differs from the setting). */
+    private var lookName = AvatarLook.CLASSIC.name
+
+    /** The chosen look; if its pictures cannot be loaded, the next simpler one, with a journal entry. */
+    private fun createRenderer(): AvatarRenderer {
+        val order = when (settings.avatarLook) {
+            AvatarLook.RIG -> listOf(AvatarLook.RIG, AvatarLook.SPRITES)
+            AvatarLook.SPRITES -> listOf(AvatarLook.SPRITES)
+            AvatarLook.CLASSIC -> emptyList()
+        }
+        for (look in order) {
+            try {
+                val r = when (look) {
+                    AvatarLook.RIG -> RigRenderer(this, sizePx)
+                    else -> SpriteRenderer(this, sizePx)
+                }
+                lookName = look.name
+                return r
+            } catch (e: Throwable) {
+                Diag.e("avatar", "Вид ${look.name} не загрузился, беру попроще", e)
+            }
+        }
+        lookName = AvatarLook.CLASSIC.name
+        return CatgirlRenderer()
+    }
+
     private fun showAvatar() {
         sizePx = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, settings.avatarSizeDp.toFloat(), resources.displayMetrics).toInt()
         readScreen()
@@ -293,11 +322,12 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
             preferredMode()?.let { preferredDisplayModeId = it.modeId; preferredRefreshRate = it.refreshRate }
         }
-        val view = AvatarView(this, brain, sizePx, this).apply {
+        val view = AvatarView(this, brain, sizePx, this, createRenderer()).apply {
+            // Standing still: 24–30 fps is enough for breathing and blinking and saves battery.
             when (settings.fpsMode) {
-                FpsMode.AUTO -> { movingFps = 0; idleFps = 60 }
+                FpsMode.AUTO -> { movingFps = 0; idleFps = 30 }
                 FpsMode.HZ60 -> { movingFps = 60; idleFps = 30 }
-                FpsMode.ECO -> { movingFps = 30; idleFps = 20 }
+                FpsMode.ECO -> { movingFps = 30; idleFps = 24 }
             }
         }
         try {
@@ -309,7 +339,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             stopSelf(); return
         }
         Diag.overlayState = "на экране"
-        Diag.i("overlay", "Искра на экране, ${sizePx}px, режим кадров ${settings.fpsMode.name}")
+        Diag.i("overlay", "Искра на экране, ${sizePx}px, вид ${lookName}, режим кадров ${settings.fpsMode.name}")
+        PowerWatch.start(this) { lookName }
         avatar = view; params = lp
         view.start()
         createBubble()
@@ -463,6 +494,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
 
     override fun onDestroy() {
         Diag.i("overlay", "Служба остановлена")
+        PowerWatch.stop()
         if (ear != null) Diag.i("ear", "Слух остановлен вместе со службой")
         if (Diag.overlayState == "на экране") Diag.overlayState = "не запущен"
         ear?.stop(); ear = null

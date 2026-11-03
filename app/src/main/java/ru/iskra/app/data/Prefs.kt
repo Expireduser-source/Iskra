@@ -44,6 +44,13 @@ enum class FpsMode(val title: String) {
     ECO("Экономия (30 кадров/с)"),
 }
 
+/** How the character is drawn. */
+enum class AvatarLook(val title: String) {
+    RIG("Живой риг (мимика, уши, хвост)"),
+    SPRITES("Спрайты (рисованные кадры)"),
+    CLASSIC("Старый вид (рисунок кодом)"),
+}
+
 data class AppSettings(
     val preset: ProviderPreset = ProviderPreset.OFFLINE,
     val baseUrl: String = "",
@@ -62,6 +69,7 @@ data class AppSettings(
     val wakeNames: String = "Искра, Искорка",
     val fpsMode: FpsMode = FpsMode.AUTO,
     val liveliness: Int = 1,
+    val avatarLook: AvatarLook = AvatarLook.RIG,
 ) {
     val voiceOrDefault get() = ttsVoice.ifBlank { ttsEngine.defaultVoice }
     val ttsModelOrDefault get() = ttsModel.ifBlank { ttsEngine.defaultModel }
@@ -89,6 +97,7 @@ class SettingsRepo(context: Context) {
         wakeNames = prefs.getString("wakeNames", null) ?: "Искра, Искорка",
         fpsMode = runCatching { FpsMode.valueOf(prefs.getString("fpsMode", null) ?: "AUTO") }.getOrDefault(FpsMode.AUTO),
         liveliness = prefs.getInt("liveliness", 1).coerceIn(0, 2),
+        avatarLook = runCatching { AvatarLook.valueOf(prefs.getString("avatarLook", null) ?: "RIG") }.getOrDefault(AvatarLook.RIG),
     )
 
     /**
@@ -101,6 +110,7 @@ class SettingsRepo(context: Context) {
         "ttsEngine" to s.ttsEngine.name, "ttsVoice" to s.ttsVoice, "ttsModel" to s.ttsModel, "ttsBaseUrl" to s.ttsBaseUrl,
         "alwaysListen" to s.alwaysListen, "listenScreenOff" to s.listenScreenOff, "followUp" to s.followUp,
         "wakeNames" to s.wakeNames, "fpsMode" to s.fpsMode.name, "liveliness" to s.liveliness,
+        "avatarLook" to s.avatarLook.name,
     )
 
     /** Applies known, well-typed values from a backup over [base]; unknown names and wrong types are ignored. */
@@ -126,6 +136,7 @@ class SettingsRepo(context: Context) {
             wakeNames = str("wakeNames")?.take(120) ?: base.wakeNames,
             fpsMode = str("fpsMode")?.let { runCatching { FpsMode.valueOf(it) }.getOrNull() } ?: base.fpsMode,
             liveliness = int("liveliness")?.coerceIn(0, 2) ?: base.liveliness,
+            avatarLook = str("avatarLook")?.let { runCatching { AvatarLook.valueOf(it) }.getOrNull() } ?: base.avatarLook,
         )
     }
 
@@ -148,6 +159,7 @@ class SettingsRepo(context: Context) {
             .putString("wakeNames", s.wakeNames)
             .putString("fpsMode", s.fpsMode.name)
             .putInt("liveliness", s.liveliness)
+            .putString("avatarLook", s.avatarLook.name)
             .apply()
     }
 }

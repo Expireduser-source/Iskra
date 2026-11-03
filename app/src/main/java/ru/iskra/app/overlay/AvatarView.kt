@@ -16,7 +16,9 @@ import kotlin.math.hypot
 
 /**
  * The character's window content. Runs the [AvatarBrain] simulation on Choreographer (vsync) frames:
- * every display refresh while she moves, a lower rate while she stands still, 10 fps asleep.
+ * every display refresh while she moves, [idleFps] (30) while she stands still, 10 fps asleep.
+ * Between idle frames it does not ask for every vsync: the next callback is posted with a delay,
+ * so the process sleeps instead of waking up 120 times a second.
  *
  * The window may show only part of her (at a screen edge); [offsetX]/[offsetY] place the full
  * [box]-sized character relative to the window.
@@ -27,6 +29,7 @@ class AvatarView(
     val brain: AvatarBrain,
     private val box: Int,
     private val host: Host,
+    private val renderer: AvatarRenderer = CatgirlRenderer(),
 ) : View(context), Choreographer.FrameCallback {
 
     interface Host {
@@ -40,16 +43,16 @@ class AvatarView(
     /** Max frames per second while moving; 0 = every vsync (the display's refresh rate). */
     var movingFps = 0
     /** Max frames per second while standing still. */
-    var idleFps = 60
+    var idleFps = 30
 
     var offsetX = 0f
     var offsetY = 0f
 
-    private val renderer = CatgirlRenderer()
     private var pose: AvatarPose = brain.update(0f)
     private var lastFrameNs = 0L
     private var lastVsyncNs = 0L
     private var running = false
+    private var postedDelayed = false
 
     // Drag state (raw screen coordinates, because the window itself moves under the finger).
     private var dragging = false
@@ -78,37 +81,51 @@ class AvatarView(
         Choreographer.getInstance().postFrameCallback(this)
     }
 
+    /** A touch should not wait for a delayed idle frame. */
+    private fun kick() {
+        if (!running || !postedDelayed) return
+        Choreographer.getInstance().removeFrameCallback(this)
+        postedDelayed = false
+        Choreographer.getInstance().postFrameCallback(this)
+    }
+
     fun stop() {
         running = false
         Choreographer.getInstance().removeFrameCallback(this)
     }
 
-    override fun onDetachedFromWindow() { stop(); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() { stop(); renderer.release(); super.onDetachedFromWindow() }
 
     override fun doFrame(frameTimeNanos: Long) {
         if (!running) return
         // Measure the real vsync rate (what the display gives us) for the settings screen.
-        if (lastVsyncNs != 0L) {
+        if (lastVsyncNs != 0L && !postedDelayed) {
             val dt = frameTimeNanos - lastVsyncNs
             if (dt in 4_000_000L..50_000_000L) FrameStats.addVsync(dt)
         }
         lastVsyncNs = frameTimeNanos
 
         val fps = when {
+            dragging || renderer.wantsFullRate(pose) -> movingFps
             pose.activity == Activity.SLEEPING -> 10
-            pose.moving || pose.talking || dragging -> movingFps
             else -> idleFps
         }
         // 1.5 ms slack so vsync jitter does not make us skip every other frame.
         val minIntervalNs = if (fps <= 0) 0L else 1_000_000_000L / fps - 1_500_000L
         if (lastFrameNs == 0L || frameTimeNanos - lastFrameNs >= minIntervalNs) {
             val dt = if (lastFrameNs == 0L) 0f else (frameTimeNanos - lastFrameNs) / 1e9f
+            if (lastFrameNs != 0L) FrameStats.addDrawn(frameTimeNanos - lastFrameNs)
             lastFrameNs = frameTimeNanos
             pose = brain.update(dt)
+            renderer.advance(dt, pose)
             host.onPose(pose)
             invalidate()
         }
-        Choreographer.getInstance().postFrameCallback(this)
+        // Low rate: sleep until shortly before the next frame is due instead of waking on every vsync.
+        val waitMs = if (fps <= 0 || dragging) 0L else (minIntervalNs - (frameTimeNanos - lastFrameNs)) / 1_000_000L - 6L
+        postedDelayed = waitMs > 0
+        if (postedDelayed) Choreographer.getInstance().postFrameCallbackDelayed(this, waitMs)
+        else Choreographer.getInstance().postFrameCallback(this)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -123,6 +140,7 @@ class AvatarView(
         gestures.onTouchEvent(e)
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                kick()
                 downRawX = e.rawX; downRawY = e.rawY
                 grabDx = e.rawX - brain.x; grabDy = e.rawY - brain.y
                 samples.clear(); sample(e)
@@ -165,9 +183,15 @@ class AvatarView(
     }
 }
 
-/** Measured display refresh (from vsync spacing), shown in settings so the owner can verify 120 Hz. */
+/**
+ * Measured display refresh (from vsync spacing), shown in settings so the owner can verify 120 Hz,
+ * and how often she is actually redrawn (30 when still, up to the display rate when moving).
+ */
 object FrameStats {
     @Volatile private var avgNs = 0.0
+    @Volatile private var drawnNs = 0.0
     fun addVsync(ns: Long) { avgNs = if (avgNs == 0.0) ns.toDouble() else avgNs * 0.95 + ns * 0.05 }
+    fun addDrawn(ns: Long) { if (ns in 1_000_000L..500_000_000L) drawnNs = if (drawnNs == 0.0) ns.toDouble() else drawnNs * 0.9 + ns * 0.1 }
     val hz: Int get() = if (avgNs <= 0.0) 0 else (1e9 / avgNs).toInt()
+    val drawnHz: Int get() = if (drawnNs <= 0.0) 0 else (1e9 / drawnNs).toInt()
 }

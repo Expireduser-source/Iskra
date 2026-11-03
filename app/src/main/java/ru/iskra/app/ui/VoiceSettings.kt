@@ -42,6 +42,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import ru.iskra.app.IskraApp
 import ru.iskra.app.data.AppSettings
+import ru.iskra.app.data.AvatarLook
 import ru.iskra.app.data.FpsMode
 import ru.iskra.app.data.TtsEngine
 import ru.iskra.app.overlay.FrameStats
@@ -187,6 +188,14 @@ fun MotionSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
     var hz by remember { mutableIntStateOf(FrameStats.hz) }
     LaunchedEffect(Unit) { while (true) { hz = FrameStats.hz; delay(1000) } }
     Section("Движение") {
+        Text("Вид")
+        AvatarLook.entries.forEach { m ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = s.avatarLook == m, onClick = { onChange(s.copy(avatarLook = m)) })
+                Text(m.title)
+            }
+        }
+        Text("Плавность")
         FpsMode.entries.forEach { m ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 RadioButton(selected = s.fpsMode == m, onClick = { onChange(s.copy(fpsMode = m)) })
@@ -194,6 +203,7 @@ fun MotionSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
             }
         }
         Hint(if (hz > 0) "Сейчас экран отдаёт Искре ~$hz кадров/с. HyperOS сама снижает частоту в некоторых приложениях и при экономии энергии." else "Частота появится, когда Искра будет на экране.")
+        Hint("Когда Искра стоит на месте, она перерисовывается 30 раз в секунду (в «Экономии» — 24): так меньше тратится батарея. В движении — с выбранной частотой. Расход батареи — в Диагностике.")
         SwitchRow(s.wander, "Живёт своей жизнью (гуляет, прыгает, лазает)") { onChange(s.copy(wander = it)) }
         if (s.wander) {
             Text("Непоседливость")

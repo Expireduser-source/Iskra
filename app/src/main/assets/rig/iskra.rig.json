@@ -1,0 +1,152 @@
+{
+  "format": "iskra-rig-1",
+  "canvas": [
+    1280,
+    1280
+  ],
+  "reference": "Iskra lavender variant 3",
+  "parts": {
+    "tail": {
+      "file": "layers/tail.png",
+      "rect": [
+        759,
+        745,
+        1084,
+        1088
+      ],
+      "pivot": [
+        790,
+        1020
+      ]
+    },
+    "legL": {
+      "file": "layers/legL.png",
+      "rect": [
+        407,
+        973,
+        623,
+        1267
+      ],
+      "pivot": [
+        522,
+        977
+      ]
+    },
+    "legR": {
+      "file": "layers/legR.png",
+      "rect": [
+        612,
+        973,
+        819,
+        1267
+      ],
+      "pivot": [
+        673,
+        977
+      ]
+    },
+    "torso": {
+      "file": "layers/torso.png",
+      "rect": [
+        463,
+        706,
+        790,
+        999
+      ],
+      "pivot": [
+        610,
+        952
+      ]
+    },
+    "armL": {
+      "file": "layers/armL.png",
+      "rect": [
+        311,
+        718,
+        549,
+        961
+      ],
+      "pivot": [
+        514,
+        755
+      ]
+    },
+    "armR": {
+      "file": "layers/armR.png",
+      "rect": [
+        673,
+        699,
+        918,
+        960
+      ],
+      "pivot": [
+        708,
+        755
+      ]
+    },
+    "head": {
+      "file": "layers/head.png",
+      "rect": [
+        178,
+        98,
+        1061,
+        753
+      ],
+      "pivot": [
+        615,
+        700
+      ]
+    },
+    "earL": {
+      "file": "layers/earL.png",
+      "rect": [
+        224,
+        29,
+        530,
+        342
+      ],
+      "pivot": [
+        343,
+        225
+      ]
+    },
+    "earR": {
+      "file": "layers/earR.png",
+      "rect": [
+        715,
+        28,
+        1016,
+        375
+      ],
+      "pivot": [
+        858,
+        202
+      ]
+    },
+    "pony": {
+      "file": "layers/pony.png",
+      "rect": [
+        975,
+        270,
+        1174,
+        615
+      ],
+      "pivot": [
+        973,
+        375
+      ]
+    }
+  },
+  "renderScale": 0.6,
+  "expressions": [
+    "neutral",
+    "joy",
+    "sad",
+    "surprise",
+    "angry",
+    "shy",
+    "thoughtful",
+    "sleepy",
+    "sly"
+  ]
+}
