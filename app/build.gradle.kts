@@ -11,12 +11,12 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        // New application id: does not collide with the earlier ru.iskra.companion prototype.
+        // Release: ru.iskra.app. Debug: ru.iskra.app.debug (suffix below), so both can be installed side by side.
         applicationId = "ru.iskra.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.3.4"
+        versionCode = 9
+        versionName = "0.4.0"
         // Shown on the diagnostics screen: which CI run and commit this APK came from.
         buildConfigField("String", "CI_BUILD", "\"${System.getenv("GITHUB_RUN_NUMBER") ?: "local"}\"")
         buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA")?.take(7) ?: ""}\"")
@@ -34,7 +34,8 @@ android {
             keyAlias = "androiddebugkey"
             keyPassword = "android"
         }
-        // Optional release signing from environment (CI secrets or local shell). Never commit keys.
+        // Release signing from the environment only (CI secrets on a v* tag, or a local shell).
+        // The key is never in the repo. Without it the release APK stays unsigned — never debug-signed.
         create("release") {
             val path = System.getenv("ISKRA_KEYSTORE")
             if (path != null) {
@@ -51,8 +52,7 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = if (System.getenv("ISKRA_KEYSTORE") != null) signingConfigs.getByName("release")
-            else signingConfigs.getByName("debug")
+            signingConfig = if (System.getenv("ISKRA_KEYSTORE") != null) signingConfigs.getByName("release") else null
         }
         debug {
             applicationIdSuffix = ".debug"

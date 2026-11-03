@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug build (ru.iskra.app.debug) is installed next to the release one: different names in the
+     launcher and in the accessibility settings, so the owner can tell them apart. -->
+<resources>
+    <string name="app_name">Искра debug</string>
+    <string name="accessibility_label">Искра debug · управление</string>
+    <string name="overlay_channel">Искра debug на экране</string>
+</resources>

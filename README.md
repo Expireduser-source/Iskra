@@ -55,9 +55,9 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 Только ядро (без Android SDK): `ISKRA_CORE_ONLY=1 ./gradlew :core:test`.
 
-Release-сборка с собственным ключом: задай `ISKRA_KEYSTORE`, `ISKRA_KEYSTORE_PASSWORD`,
-`ISKRA_KEY_ALIAS`, `ISKRA_KEY_PASSWORD` и выполни `./gradlew :app:assembleRelease`. Без них release
-подписывается debug-ключом (годится только для себя).
+Release-сборка (`ru.iskra.app`, ставится рядом с debug `ru.iskra.app.debug`) собирается в CI по тегу `v*`
+и подписывается ключом владельца из GitHub Secrets — см. [docs/RELEASE.md](docs/RELEASE.md). Без ключа release
+остаётся неподписанным, debug-ключом он не подписывается никогда.
 
 ## Первый запуск на Redmi Note 14
 1. Установи APK (разреши установку из этого источника).

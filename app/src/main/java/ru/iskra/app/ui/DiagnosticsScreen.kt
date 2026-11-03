@@ -133,6 +133,7 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
         if (i == null) Text("Собираю…") else {
             Block("Приложение и телефон", listOf(
                 "Версия" to "${i.appVersion} (сборка ${i.build})",
+                "Сборка и подпись" to i.signing,
                 "Телефон" to i.device,
                 "Android" to i.android,
                 "Оболочка" to i.vendorOs,

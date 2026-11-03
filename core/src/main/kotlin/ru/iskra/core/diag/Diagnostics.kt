@@ -118,6 +118,8 @@ data class DiagInfo(
     val permissions: List<Pair<String, Boolean>>,
     val services: List<Pair<String, String>>,
     val settings: List<Pair<String, String>>,
+    /** Build type, package and signing certificate, e.g. "release · ru.iskra.app · свой ключ, SHA-256 AE:2D…". */
+    val signing: String = "",
 )
 
 object DiagReport {
@@ -135,6 +137,7 @@ object DiagReport {
         val sb = StringBuilder()
         sb.appendLine("=== Искра: отчёт диагностики ===")
         sb.appendLine("Версия: ${info.appVersion} (сборка ${info.build})")
+        if (info.signing.isNotEmpty()) sb.appendLine("Сборка и подпись: ${info.signing}")
         sb.appendLine("Телефон: ${info.device}")
         sb.appendLine("Android: ${info.android}")
         sb.appendLine("Оболочка: ${info.vendorOs}")

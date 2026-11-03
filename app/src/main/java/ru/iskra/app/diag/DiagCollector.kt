@@ -84,7 +84,34 @@ object DiagCollector {
             permissions = permissions,
             services = services,
             settings = settings,
+            signing = signing(ctx),
         )
+    }
+
+    /**
+     * "release" or "debug", the package, and who signed the APK: a debug key (the repo's
+     * app/debug.keystore "CN=Iskra Debug", or any "Android Debug" key) or the release key, with the start of its SHA-256.
+     */
+    fun signing(ctx: Context): String {
+        val type = if (BuildConfig.DEBUG) "debug" else "release"
+        val cert = runCatching {
+            val pm = ctx.packageManager
+            val sig = if (Build.VERSION.SDK_INT >= 28) {
+                val info = pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+                info.signingInfo?.apkContentsSigners?.firstOrNull()
+            } else {
+                @Suppress("DEPRECATION")
+                pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES).signatures?.firstOrNull()
+            } ?: return@runCatching "подпись не прочитана"
+            val x509 = java.security.cert.CertificateFactory.getInstance("X.509")
+                .generateCertificate(sig.toByteArray().inputStream()) as java.security.cert.X509Certificate
+            val sha = java.security.MessageDigest.getInstance("SHA-256").digest(sig.toByteArray())
+                .joinToString(":") { "%02X".format(it) }
+            val subject = x509.subjectX500Principal.name
+            val debugKey = sha.startsWith(DEBUG_CERT_SHA256) || subject.contains("Debug", ignoreCase = true)
+            (if (debugKey) "debug-ключ" else "release-ключ") + ", SHA-256 ${sha.take(11)}…"
+        }.getOrElse { "подпись не прочитана: ${it.javaClass.simpleName}" }
+        return "$type · ${ctx.packageName} · $cert"
     }
 
     /** [maxLog]: 60 lines for the clipboard; the file version carries the whole journal. */
@@ -107,6 +134,9 @@ object DiagCollector {
         f.writeText(report(ctx, maxLog = Diag.log.capacity))
         return androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
     }
+
+    /** SHA-256 of app/debug.keystore's certificate (public, as is the debug key itself). */
+    private const val DEBUG_CERT_SHA256 = "15:AD:00:1F:99:5A:A0:A5"
 
     private fun keyState(key: String?) = if (key.isNullOrBlank()) "не сохранён" else "сохранён, ${Redactor.mask(key)}"
     private fun yesNo(b: Boolean) = if (b) "да" else "нет"

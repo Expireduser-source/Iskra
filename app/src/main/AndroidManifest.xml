@@ -74,7 +74,7 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
-            android:taskAffinity="ru.iskra.app.quick"
+            android:taskAffinity="${applicationId}.quick"
             android:theme="@style/Theme.Iskra.Floating"
             android:windowSoftInputMode="adjustResize" />
 
