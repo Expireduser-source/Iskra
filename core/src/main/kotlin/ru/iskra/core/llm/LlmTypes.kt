@@ -38,6 +38,14 @@ data class LlmResponse(
 interface LlmProvider {
     val id: String
     suspend fun complete(request: LlmRequest): LlmResponse
+
+    /**
+     * Same as [complete], but hands the reply text to [onText] piece by piece as it arrives, so speech
+     * can start before the whole answer is ready. [onText] may be called from a network thread.
+     * Providers without streaming deliver the whole text at once.
+     */
+    suspend fun stream(request: LlmRequest, onText: (String) -> Unit): LlmResponse =
+        complete(request).also { if (it.text.isNotEmpty()) onText(it.text) }
 }
 
 class LlmException(
@@ -45,15 +53,23 @@ class LlmException(
     val kind: Kind,
     cause: Throwable? = null,
 ) : Exception(message, cause) {
-    enum class Kind { AUTH, RATE_LIMIT, NETWORK, SERVER, BAD_RESPONSE, NOT_CONFIGURED }
+    enum class Kind { AUTH, RATE_LIMIT, NETWORK, SERVER, BAD_RESPONSE, NOT_CONFIGURED, BALANCE }
 
     /** Message suitable for the user (Russian). Never contains the API key. */
     fun userMessage(): String = when (kind) {
-        Kind.AUTH -> "Ключ API не подошёл. Проверь его в настройках."
+        Kind.AUTH -> "Ключ API не подошёл. Проверь его в настройках. $OFFLINE"
         Kind.RATE_LIMIT -> "Сервис модели просит подождать (лимит запросов). Попробуй через минуту."
-        Kind.NETWORK -> "Нет связи с сервисом модели. Проверь интернет."
+        Kind.NETWORK -> "Нет связи с сервисом модели. Проверь интернет. $OFFLINE"
         Kind.SERVER -> "Сервис модели сейчас отвечает ошибкой. Попробуй позже."
         Kind.BAD_RESPONSE -> "Модель ответила в непонятном формате."
         Kind.NOT_CONFIGURED -> "Облачная модель не настроена — я работаю в простом офлайн-режиме."
+        Kind.BALANCE -> "На счёте сервиса модели закончились деньги или лимит. Пополни баланс. $OFFLINE"
+    }
+
+    /** Errors that will repeat on the next try: no point in asking again right away. */
+    val persistent get() = kind == Kind.AUTH || kind == Kind.BALANCE || kind == Kind.NOT_CONFIGURED
+
+    private companion object {
+        const val OFFLINE = "Пока работаю без облака: будильники, таймеры, фонарик, приложения, заметки и напоминания — как обычно."
     }
 }

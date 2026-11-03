@@ -340,6 +340,7 @@ private fun SettingsScreen(modifier: Modifier) {
             s = s.copy(overlayEnabled = app.settings.load().overlayEnabled)
             app.settings.save(s)
             if (key.isNotBlank()) { app.vault.save(key); key = ""; hasKey = true }
+            app.agent.resumeCloud() // new key or service: try the cloud again right away
             saved = true
             // Apply size/motion/listening changes to a running overlay.
             val cur = app.settings.load()

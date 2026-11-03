@@ -177,6 +177,7 @@ fun EarSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
             label = { Text("На какие имена отзываться (через запятую)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
         )
         SwitchRow(s.followUp, "Продолжать разговор без имени (6 с после ответа)") { onChange(s.copy(followUp = it)) }
+        SwitchRow(s.economicalEar, "Экономный слух: в тишине не распознавать, в ожидании слушать только имя") { onChange(s.copy(economicalEar = it)) }
         SwitchRow(s.listenScreenOff, "Слушать и при выключенном экране") { onChange(s.copy(listenScreenOff = it)) }
         Hint("Скажи «Искра, стоп», чтобы прервать ответ. Тап по Искре во время речи — тоже замолчит.")
     }

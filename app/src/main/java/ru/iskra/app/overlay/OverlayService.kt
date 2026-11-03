@@ -185,7 +185,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private fun syncEar() {
         val want = wantsEar() && micInForeground
         if (want && ear == null) {
-            ear = VoiceEar(this, settings.wakeNameList, settings.followUp, this).also { it.start() }
+            ear = VoiceEar(this, settings.wakeNameList, settings.followUp, this, economical = settings.economicalEar).also { it.start() }
             if (ear?.isRunning == true) Diag.i("ear", "Слух включён")
         } else if (!want && ear != null) {
             ear?.stop(); ear = null

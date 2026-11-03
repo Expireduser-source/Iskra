@@ -33,7 +33,7 @@ object Backups {
         "ttsEngine" to "Голос (сервис)", "ttsVoice" to "Голос", "ttsModel" to "Модель голоса", "ttsBaseUrl" to "Адрес сервера голоса",
         "alwaysListen" to "Слушать постоянно", "listenScreenOff" to "Слушать при выключенном экране",
         "followUp" to "Продолжать без имени", "wakeNames" to "Имена", "fpsMode" to "Частота кадров", "liveliness" to "Непоседливость",
-        "avatarLook" to "Вид персонажа",
+        "avatarLook" to "Вид персонажа", "economicalEar" to "Экономный слух",
     )
 
     /** Returns the number of memory items written. */

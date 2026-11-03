@@ -47,7 +47,7 @@ object DiagCollector {
         val ttsError = app.speaker.lastError.value
         val services = listOf(
             "Оверлей (Искра на экране)" to Diag.overlayState,
-            "Слух" to Diag.earState,
+            "Слух" to Diag.earState + " · " + ru.iskra.app.voice.EarStats.describe(),
             "Модель распознавания" to if (SpeechModel.isReady(ctx)) "скачана" else "нет",
             "Голос (TTS)" to buildString {
                 append(s.ttsEngine.title)
@@ -60,6 +60,10 @@ object DiagCollector {
             "Режим кадров" to s.fpsMode.title,
             "Группа ожидания Android" to standbyBucket(ctx),
             "Расход в покое" to (PowerWatch.summary() ?: "пока нет данных: нужно ≥ 2 замеров без зарядки (замер раз в 5 мин, пока Искра на экране)"),
+            "Кэш голоса" to runCatching {
+                val c = app.speaker.cache
+                "${c.count()} фраз, ${c.sizeBytes() / 1024} КБ; за запуск из кэша ${app.speaker.cacheHits} из ${app.speaker.phrases}"
+            }.getOrDefault("?"),
             "Записей в памяти" to runCatching { app.memory.all().size.toString() }.getOrDefault("?"),
         )
 

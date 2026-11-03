@@ -28,6 +28,8 @@ import ru.iskra.core.tools.ToolRegistry
 import ru.iskra.core.tools.ToolSchemas
 import ru.iskra.core.tools.int
 import ru.iskra.core.tools.str
+import ru.iskra.core.voice.ReplySink
+import ru.iskra.core.voice.ReplyStream
 import kotlin.random.Random
 
 data class AgentReply(
@@ -36,6 +38,7 @@ data class AgentReply(
     val actions: List<ActionRecord> = emptyList(),
     val usedLlm: Boolean = false,
     val error: String? = null,
+    val errorKind: LlmException.Kind? = null,
 )
 
 /**
@@ -64,6 +67,15 @@ class CompanionAgent(
 ) {
     private val moodEngine = MoodEngine(persona.traits)
     private val mutex = Mutex()
+
+    /**
+     * After a key or balance error the cloud is skipped for [cloudPauseMs]: replies come at once from
+     * the offline mode instead of waiting for the same error again. [resumeCloud] (new key saved) ends it.
+     */
+    @Volatile private var cloudPause: Pair<Long, LlmException.Kind>? = null
+    private val cloudPauseMs = 5 * 60_000L
+
+    fun resumeCloud() { cloudPause = null }
 
     init {
         if (tools[ToolNames.REMEMBER] == null) tools.register(RememberTool(memory, clock))
@@ -95,7 +107,11 @@ class CompanionAgent(
         AgentReply(line, emotion)
     }
 
-    suspend fun handle(userText: String): AgentReply = mutex.withLock {
+    /**
+     * [sink]: receives the model's reply while it is generated (emotion, then speakable chunks), so
+     * the voice can start before the answer is complete. Local commands and errors do not use it.
+     */
+    suspend fun handle(userText: String, sink: ReplySink? = null): AgentReply = mutex.withLock {
         val text = userText.trim()
         if (text.isEmpty()) return@withLock AgentReply("", currentState().mood.dominantEmotion())
         require(text.length <= 4000) { "message too long" }
@@ -114,12 +130,16 @@ class CompanionAgent(
         StyleFeedback.detect(text, state.style)?.let { state = state.copy(style = it) }
         stateStore.save(state)
 
-        val provider = providerFactory()
+        val pause = cloudPause?.takeIf { now < it.first }
+        val provider = if (pause != null) null else providerFactory()
         val local = handleLocally(text, provider != null)
-        val reply = local ?: if (provider == null) {
-            AgentReply(Lines.offline(random), Emotion.NEUTRAL)
-        } else {
-            askModel(provider, text, state)
+        val reply = local ?: when {
+            pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
+            provider == null -> AgentReply(Lines.offline(random), Emotion.NEUTRAL)
+            else -> askModel(provider, text, state, sink).also { r ->
+                if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE)
+                    cloudPause = (clock() + cloudPauseMs) to r.errorKind
+            }
         }
 
         // Persist outcome.
@@ -135,6 +155,12 @@ class CompanionAgent(
         if (reply.text.isNotBlank()) conversation.append(Turn(Turn.Role.ASSISTANT, reply.text, clock(), reply.emotion))
         if (provider != null) maybeSummarize(provider)
         reply
+    }
+
+    private fun pausedLine(kind: LlmException.Kind, minutes: Long): String {
+        val why = if (kind == LlmException.Kind.BALANCE) "на счёте сервиса закончились деньги" else "ключ API не подошёл"
+        return "Облако пока недоступно: $why. Без него я умею команды — будильник, таймер, фонарик, приложения, " +
+            "заметки, напоминания. Снова попробую через $minutes мин или сразу после нового ключа в настройках."
     }
 
     private suspend fun handleLocally(text: String, llmAvailable: Boolean): AgentReply? {
@@ -161,7 +187,7 @@ class CompanionAgent(
         }
     }
 
-    private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState): AgentReply {
+    private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?): AgentReply {
         val now = clock()
         val memories = memory.relevant(text, limit = 8, nowMs = now)
         val system = composer.system(
@@ -178,22 +204,30 @@ class CompanionAgent(
         messages += ChatMessage.User(text)
 
         val actions = mutableListOf<ActionRecord>()
+        // Text the model already said in tool rounds ("Ставлю таймер…"): heard, so also shown.
+        val said = StringBuilder()
+        var emotion: Emotion? = null
         try {
             repeat(maxToolRounds) { round ->
                 val offerTools = round < maxToolRounds - 1
-                val response = provider.complete(
-                    LlmRequest(system = system, messages = messages, tools = if (offerTools) tools.specs() else emptyList())
-                )
+                val request = LlmRequest(system = system, messages = messages, tools = if (offerTools) tools.specs() else emptyList())
+                val response = if (sink == null) provider.complete(request) else {
+                    val stream = ReplyStream(sink, state.mood.dominantEmotion())
+                    provider.stream(request) { stream.feed(it) }.also { stream.finish() }
+                }
+                val parsed = ReplyParser.parse(response.text)
+                if (parsed.emotion != null) emotion = parsed.emotion
                 if (response.toolCalls.isEmpty() || !offerTools) {
-                    val parsed = ReplyParser.parse(response.text)
                     val fallback = if (actions.isNotEmpty()) actions.joinToString("; ") { it.outcome.message } else "…"
+                    val full = listOf(said.toString().trim(), parsed.text).filter { it.isNotBlank() }.joinToString(" ").trim()
                     return AgentReply(
-                        text = parsed.text.ifBlank { fallback },
-                        emotion = parsed.emotion ?: state.mood.dominantEmotion(),
+                        text = full.ifBlank { fallback },
+                        emotion = emotion ?: state.mood.dominantEmotion(),
                         actions = actions,
                         usedLlm = true,
                     )
                 }
+                if (parsed.text.isNotBlank()) said.append(parsed.text).append(' ')
                 messages += ChatMessage.Assistant(response.text, response.toolCalls)
                 for (call in response.toolCalls) {
                     val record = policy.run(tools[call.name], call.name, call.arguments)
@@ -209,7 +243,7 @@ class CompanionAgent(
         } catch (e: CancellationException) {
             throw e
         } catch (e: LlmException) {
-            return AgentReply(e.userMessage(), Emotion.SAD, actions, error = e.message)
+            return AgentReply(e.userMessage(), Emotion.SAD, actions, error = e.message, errorKind = e.kind)
         }
     }
 

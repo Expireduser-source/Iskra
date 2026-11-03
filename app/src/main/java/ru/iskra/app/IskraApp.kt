@@ -107,6 +107,7 @@ class IskraApp : Application() {
         stateStore.reset()
         vault.clear()
         ttsVault.clear()
+        speaker.clearCache()
         Diag.clear()
         chat.reload()
         Diag.i("app", "Все данные стёрты владельцем")
