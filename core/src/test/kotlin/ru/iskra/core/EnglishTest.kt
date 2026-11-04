@@ -182,4 +182,18 @@ class EnglishTest {
             assertIs<CommandParser.Parsed.Tool>(rem, "$lang").let { assertEquals(SkillNames.SET_REMINDER, it.name); assertEquals(60, it.int("in_minutes")) }
         }
     }
+
+    @Test fun updateCheckReadsTheLatestRelease() {
+        val json = """{"tag_name":"v0.10.1","draft":false,"prerelease":false,"html_url":"https://github.com/Expireduser-source/Iskra/releases/tag/v0.10.1",
+            "body":"## What's new\n- English everywhere\n- Free brain\n- Share to Iskra\n- More","assets":[
+            {"name":"Iskra.apk.sha256","browser_download_url":"https://x/Iskra.apk.sha256"},{"name":"Iskra.apk","browser_download_url":"https://x/Iskra.apk"}]}"""
+        val r = ru.iskra.core.update.UpdateCheck.parse(json)!!
+        assertEquals("0.10.1", r.version); assertEquals("https://x/Iskra.apk", r.apkUrl)
+        assertEquals("• English everywhere\n• Free brain\n• Share to Iskra", ru.iskra.core.update.UpdateCheck.shortNotes(r.notes))
+        assertTrue(ru.iskra.core.update.UpdateCheck.isNewer("0.10.1", "0.10.0"))
+        assertTrue(ru.iskra.core.update.UpdateCheck.isNewer("0.10.0", "0.9.3"))
+        assertTrue(!ru.iskra.core.update.UpdateCheck.isNewer("0.10.0", "0.10.0-debug"))
+        assertTrue(!ru.iskra.core.update.UpdateCheck.isNewer("0.9.9", "0.10.0"))
+        assertNull(ru.iskra.core.update.UpdateCheck.parse("""{"tag_name":"build-40","prerelease":true}"""))
+    }
 }

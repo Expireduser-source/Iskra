@@ -123,6 +123,7 @@ class MainActivity : ComponentActivity() {
         // Restore the overlay if the owner enabled it and the permission is still granted.
         val s = IskraApp.instance.settings.load()
         if (s.overlayEnabled && DeviceHelper.canDrawOverlays(this)) OverlayService.start(this)
+        ru.iskra.app.data.Updates.maybeCheck(this)
     }
 }
 
@@ -146,6 +147,7 @@ private fun MainScreen(requestedTab: Int, tabRequests: Int) {
             Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
                 AccessibilityWarning()
                 CrashBanner()
+                UpdateBanner()
                 val m = Modifier.weight(1f)
                 when (tab) {
                     0 -> ChatScreen(m)
@@ -454,6 +456,8 @@ private fun SettingsScreen(modifier: Modifier) {
         if (saved) Text(tr("Сохранено ✓", "Saved ✓"), color = MaterialTheme.colorScheme.primary)
         else Text(tr("Изменения применятся после «Сохранить».", "Changes apply after “Save”."), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (s.preset == ProviderPreset.CUSTOM) Text(tr("Нужен HTTPS. Обычный http запрещён ради защиты ключа.", "HTTPS is required. Plain http is not allowed, to protect the key."), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.size(12.dp))
+        AboutSection()
     }
 }
 
