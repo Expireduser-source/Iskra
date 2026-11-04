@@ -96,19 +96,44 @@ jobs:
       - name: Unit tests (core)
         run: ./gradlew --no-daemon :core:test
 
+      # Tolerates what a pasted secret often carries (spaces, line breaks, the "NAME =" prefix from
+      # iskra-release-secrets.txt) and says exactly which secret is wrong. Values are never printed.
       - name: Restore release key
         env:
           KEYSTORE_B64: ${{ secrets.ISKRA_KEYSTORE_BASE64 }}
+          STORE_PASS: ${{ secrets.ISKRA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ISKRA_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ISKRA_KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_B64" ]; then echo "::error::Secret ISKRA_KEYSTORE_BASE64 is not set"; exit 1; fi
-          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/iskra-release.jks"
+          for n in KEYSTORE_B64:ISKRA_KEYSTORE_BASE64 STORE_PASS:ISKRA_KEYSTORE_PASSWORD KEY_ALIAS:ISKRA_KEY_ALIAS KEY_PASS:ISKRA_KEY_PASSWORD; do
+            v="${n%%:*}"; if [ -z "${!v}" ]; then echo "::error::Secret ${n#*:} is not set (Settings → Secrets and variables → Actions → Repository secrets)"; exit 1; fi
+          done
+          b64=$(printf '%s' "$KEYSTORE_B64" | sed -E 's/^[[:space:]]*ISKRA_KEYSTORE_BASE64[[:space:]]*=//' | tr -d ' \t\r\n')
+          if ! printf '%s' "$b64" | base64 -d > "$RUNNER_TEMP/iskra-release.jks" 2>/dev/null; then
+            echo "::error::ISKRA_KEYSTORE_BASE64 is not valid base64 (${#b64} characters, expected about 5664). Paste the whole text of ISKRA_KEYSTORE_BASE64.txt"; exit 1
+          fi
+          pass=$(printf '%s' "$STORE_PASS" | sed -E 's/^[[:space:]]*ISKRA_KEYSTORE_PASSWORD[[:space:]]*=//; s/^[[:space:]]+//; s/[[:space:]]+$//')
+          alias=$(printf '%s' "$KEY_ALIAS" | sed -E 's/^[[:space:]]*ISKRA_KEY_ALIAS[[:space:]]*=//; s/^[[:space:]]+//; s/[[:space:]]+$//')
+          keypass=$(printf '%s' "$KEY_PASS" | sed -E 's/^[[:space:]]*ISKRA_KEY_PASSWORD[[:space:]]*=//; s/^[[:space:]]+//; s/[[:space:]]+$//')
+          if ! keytool -list -keystore "$RUNNER_TEMP/iskra-release.jks" -storepass "$pass" >/dev/null 2>&1; then
+            echo "::error::The key file does not open: ISKRA_KEYSTORE_BASE64 is incomplete (${#b64} characters, expected about 5664) or ISKRA_KEYSTORE_PASSWORD is wrong"; exit 1
+          fi
+          if ! keytool -list -keystore "$RUNNER_TEMP/iskra-release.jks" -storepass "$pass" -alias "$alias" >/dev/null 2>&1; then
+            echo "::error::ISKRA_KEY_ALIAS is not in the key file (expected: iskra)"; exit 1
+          fi
+          # Cleaned values for the build step.
+          { echo "ISKRA_CLEAN_STORE_PASS<<EOF_PASS"; echo "$pass"; echo "EOF_PASS"
+            echo "ISKRA_CLEAN_ALIAS=$alias"
+            echo "ISKRA_CLEAN_KEY_PASS<<EOF_KEY"; echo "$keypass"; echo "EOF_KEY"; } >> "$GITHUB_ENV"
+          echo "::add-mask::$pass"; echo "::add-mask::$keypass"
+          echo "Key file restored and opened ($(stat -c%s "$RUNNER_TEMP/iskra-release.jks") bytes)"
 
       - name: Build release APK
         env:
           ISKRA_KEYSTORE: ${{ runner.temp }}/iskra-release.jks
-          ISKRA_KEYSTORE_PASSWORD: ${{ secrets.ISKRA_KEYSTORE_PASSWORD }}
-          ISKRA_KEY_ALIAS: ${{ secrets.ISKRA_KEY_ALIAS }}
-          ISKRA_KEY_PASSWORD: ${{ secrets.ISKRA_KEY_PASSWORD }}
+          ISKRA_KEYSTORE_PASSWORD: ${{ env.ISKRA_CLEAN_STORE_PASS }}
+          ISKRA_KEY_ALIAS: ${{ env.ISKRA_CLEAN_ALIAS }}
+          ISKRA_KEY_PASSWORD: ${{ env.ISKRA_CLEAN_KEY_PASS }}
         run: ./gradlew --no-daemon :app:assembleRelease
 
       - name: Remove release key
