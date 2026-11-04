@@ -98,10 +98,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { api: 26, target: default, lang: en }
-          - { api: 30, target: google_apis, lang: en }
-          - { api: 36, target: google_apis, lang: en }
-          - { api: 36, target: google_apis, lang: ru }
+          # Android 8 on the small default screen (cramped layouts); the newer ones as a Pixel 6 (1080×2400),
+          # which also gives store-quality screenshots.
+          - { api: 26, target: default, lang: en, profile: "" }
+          - { api: 30, target: google_apis, lang: en, profile: pixel_6 }
+          - { api: 36, target: google_apis, lang: en, profile: pixel_6 }
+          - { api: 36, target: google_apis, lang: ru, profile: pixel_6 }
     steps:
       - uses: actions/checkout@v5
 
@@ -122,6 +124,8 @@ jobs:
           api-level: ${{ matrix.api }}
           target: ${{ matrix.target }}
           arch: x86_64
+          profile: ${{ matrix.profile }}
+          ram-size: 3072M
           disable-animations: true
           emulator-boot-timeout: 900
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none

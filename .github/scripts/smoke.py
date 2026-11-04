@@ -141,11 +141,7 @@ def main():
             break
         time.sleep(5)
     sh("settings put global window_animation_scale 0; settings put global transition_animation_scale 0; settings put global animator_duration_scale 0")
-    # Store-quality screenshots on the newer emulators (a modern 1080×2400 phone); Android 8 keeps its small
-    # default screen, so cramped layouts are checked too.
-    if a.api >= 30:
-        sh("wm size 1080x2400; wm density 420")
-        time.sleep(2)
+
     sh("input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard")
     sh("am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS")
 
