@@ -1,5 +1,7 @@
 package ru.iskra.app.ui
 
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -121,11 +123,14 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
     }
 
     // Following the tail is the owner's choice. A drag pauses it; reaching the end resumes it.
-    LaunchedEffect(dragging, listState.canScrollForward) {
-        if (dragging) followReply = false
-        else if (!listState.canScrollForward) followReply = true
+    // Read scroll state in a snapshot flow, not in composition: scrolling must not recompose the chat.
+    LaunchedEffect(listState) {
+        snapshotFlow { dragging to listState.canScrollForward }.collect { (drag, more) ->
+            if (drag) followReply = false else if (!more) followReply = true
+        }
     }
-    LaunchedEffect(messages.lastOrNull(), busy, followReply, listState.layoutInfo.viewportSize.height) {
+    val viewportHeight by remember { derivedStateOf { listState.layoutInfo.viewportSize.height } }
+    LaunchedEffect(messages.lastOrNull(), busy, followReply, viewportHeight) {
         if (followReply && !dragging && messages.isNotEmpty()) {
             // A trailing item also keeps the end of a message taller than the viewport visible.
             listState.scrollToItem(messages.size)

@@ -198,8 +198,10 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         micInForeground = false
         if (wantsEar() && Build.VERSION.SDK_INT >= 30) {
             try {
+                // "specialUse" exists from Android 14; on 11–13 only the microphone type is passed.
+                val special = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
                 ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(listening = true),
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                    special or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
                 micInForeground = true
                 earProblem = null
                 return

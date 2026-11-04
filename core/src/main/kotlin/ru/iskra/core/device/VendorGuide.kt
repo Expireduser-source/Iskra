@@ -70,7 +70,6 @@ object VendorGuide {
             GuideStep("Батарея → «Ограничения фона» → «Приложения, которые никогда не переходят в спящий режим» → добавь Искру.", "Батарея", listOf(
                 ScreenRef("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"),
                 ScreenRef("com.samsung.android.sm", "com.samsung.android.sm.battery.ui.BatteryActivity"))),
-            GuideStep("Там же выключи «Переводить неиспользуемые приложения в спящий режим» — или оставь, если Искра уже в списке исключений."),
             GuideStep("Приложения → Искра → Батарея → «Без ограничений»."),
         )
         Vendor.HUAWEI -> listOf(

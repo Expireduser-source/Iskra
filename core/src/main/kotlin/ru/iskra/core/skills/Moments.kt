@@ -18,7 +18,8 @@ object Moments {
      */
     fun morning(greeting: String, weatherNow: String?, remindersToday: Int): String {
         val parts = ArrayList<String>()
-        parts += greeting.trim()
+        // A greeting that offers the weather would sound odd right before telling it.
+        parts += if (!weatherNow.isNullOrBlank() && greeting.contains("погод", ignoreCase = true)) "Доброе утро!" else greeting.trim()
         if (!weatherNow.isNullOrBlank()) parts += "За окном ${weatherNow.trim().trimEnd('.')}."
         if (remindersToday > 0) parts += "На сегодня ${count(remindersToday, "напоминание", "напоминания", "напоминаний")} — я прослежу."
         return parts.joinToString(" ")

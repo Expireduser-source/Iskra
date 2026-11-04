@@ -5,7 +5,12 @@
 
 Первое целевое устройство — Xiaomi Redmi Note 14 (HyperOS, Android 14/15). Работает на Android 8.0+.
 
+**Для любого телефона и человека (0.9):** подсказки для прошивок Xiaomi, Samsung, Huawei, Honor, OPPO/realme, OnePlus,
+vivo, Tecno/Infinix, ASUS, Meizu; режимы «Экономии» (на слабых телефонах и при низком заряде — сама); TalkBack и
+крупный шрифт; светлая и тёмная тема; знакомство при первом запуске; голосовой ввод без сервисов Google.
+
 * Аудит прототипа ChatGPT, архитектура и план: [`docs/AUDIT.md`](docs/AUDIT.md)
+* Новое в 0.9.0: [для всех телефонов и людей](docs/reports/2026-11-04-0.9.0.md)
 * Новое в 0.8.1: [внимательное общение и «Удиви меня»](docs/POLISH-0.8.1.md)
 * Ручной чек-лист проверки на телефоне: [`docs/TESTING.md`](docs/TESTING.md)
 
@@ -27,7 +32,7 @@ iskra/
 │       ├── overlay/           OverlayService (поверх приложений), AvatarView, CatgirlRenderer
 │       ├── ui/                Compose: чат, память, настройки, разрешения, быстрый чат
 │       ├── tools/             реализации инструментов через Intent/CameraManager/AudioManager
-│       ├── system/            AccessibilityService (только глобальные действия), Xiaomi-хелперы
+│       ├── system/            AccessibilityService (только глобальные действия), DeviceHelper (экраны прошивок)
 │       ├── voice/             TTS и распознавание речи
 │       └── data/              SQLite (память, диалог), настройки, KeyVault (Android Keystore)
 └── .github/workflows/android.yml   сборка APK в GitHub Actions

@@ -123,6 +123,7 @@ class EveryPhoneTest {
         assertEquals("Доброе утро! За окном +3°, пасмурно. На сегодня два напоминания — я прослежу.",
             Moments.morning("Доброе утро!", "+3°, пасмурно", 2))
         assertEquals("Утро! На сегодня одно напоминание — я прослежу.", Moments.morning("Утро!", " ", 1))
+        assertEquals("Доброе утро! За окном +1°, ясно.", Moments.morning("Мрр… утро. Спросить погоду на сегодня?", "+1°, ясно", 0))
         val f = Forecast(Place("Москва", 0.0, 0.0), tempNow = -2.4, codeNow = 71, windNow = null, days = listOf(DayWeather(-5.0, 0.0, 3, null)))
         assertEquals("−2°, небольшой снег", Moments.weatherNow(f))
         assertEquals(null, Moments.weatherNow(f.copy(tempNow = null)))

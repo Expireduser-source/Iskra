@@ -1,5 +1,6 @@
 package ru.iskra.app.diag
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -17,6 +18,7 @@ import ru.iskra.core.diag.PowerStats
  * Reads only the sticky battery broadcast (no permission). The diagnostics screen shows the drain per hour
  * for the last stretch without charging; the journal gets one line every 15 min.
  */
+@SuppressLint("StaticFieldLeak") // only the application context is kept
 object PowerWatch {
     val stats = PowerStats()
     private const val PERIOD_MS = 5 * 60_000L
