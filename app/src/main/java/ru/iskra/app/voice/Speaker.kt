@@ -1,5 +1,7 @@
 package ru.iskra.app.voice
 
+import ru.iskra.core.skills.Script
+import ru.iskra.core.skills.Scripts
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
@@ -127,8 +129,9 @@ class Speaker(
             val t = tts ?: return@TextToSpeech
             if (status != TextToSpeech.SUCCESS) Diag.e("tts", "Системный синтез речи не запустился (код $status)")
             if (status == TextToSpeech.SUCCESS) {
-                val r = t.setLanguage(Locale.forLanguageTag("ru-RU"))
+                val r = t.setLanguage(RU)
                 sysReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+                systemVoiceMissing = !sysReady
                 if (!sysReady) Diag.w("tts", "Системный голос: нет русского языка (код $r)")
                 t.setPitch(1.25f)
                 t.setSpeechRate(1.05f)
@@ -382,7 +385,7 @@ class Speaker(
     private fun speakSystem(ss: Session, text: String) {
         if (session !== ss) return
         val t = tts
-        if (t == null || !sysReady) {
+        if (t == null || !languageFor(t, text)) {
             Diag.w("tts", "Системный голос недоступен — фраза не озвучена")
             maybeFinish(ss); return
         }
@@ -390,6 +393,25 @@ class Speaker(
         sysTexts[id] = text
         ss.sysOutstanding++
         t.speak(text, TextToSpeech.QUEUE_ADD, null, id)
+    }
+
+    /** True when Android has no Russian voice: the settings screen offers to install one. */
+    @Volatile var systemVoiceMissing = false
+        private set
+    private var sysLang = "ru"
+
+    /**
+     * A reply in English (the owner wrote in English) is read by an English voice if the phone has one;
+     * otherwise by the Russian one rather than not at all.
+     */
+    private fun languageFor(t: TextToSpeech, text: String): Boolean {
+        val english = Scripts.dominant(text) == Script.LATIN
+        val lang = if (english) "en" else "ru"
+        if (lang == sysLang) return english || sysReady
+        val r = t.setLanguage(if (english) Locale.US else RU)
+        if (r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED) { sysLang = lang; return true }
+        if (english && sysReady) { t.setLanguage(RU); sysLang = "ru"; return true }
+        return false
     }
 
     private fun sysStarted(id: String?) {
@@ -496,5 +518,8 @@ class Speaker(
 
     private class Skipped : Exception("skipped")
 
-    private companion object { val MOUTH = Any() }
+    private companion object {
+        private val RU: Locale = Locale.forLanguageTag("ru-RU")
+        val MOUTH = Any()
+    }
 }

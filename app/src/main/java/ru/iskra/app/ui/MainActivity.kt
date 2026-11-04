@@ -1,5 +1,11 @@
 package ru.iskra.app.ui
 
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -32,10 +38,8 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.collectAsState
@@ -78,7 +82,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContent { IskraTheme { MainScreen() } }
+        setContent {
+            IskraTheme {
+                var intro by remember { mutableStateOf(OnboardingState.needed(this)) }
+                if (intro) Onboarding { OnboardingState.done(this); intro = false } else MainScreen()
+            }
+        }
     }
 
     override fun onResume() {
@@ -98,20 +107,23 @@ private fun MainScreen() {
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 tabs.forEachIndexed { i, (icon, label) ->
-                    NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Text(icon) }, label = { Text(label) })
+                    NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Text(icon, Modifier.clearAndSetSemantics {}) }, label = { Text(label) })
                 }
             }
         },
     ) { padding ->
-        Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
-            AccessibilityWarning()
-            CrashBanner()
-            val m = Modifier.weight(1f)
-            when (tab) {
-                0 -> ChatScreen(m)
-                1 -> MemoryScreen(m)
-                2 -> SettingsScreen(m)
-                else -> PermissionsScreen(m)
+        // Tablets and unfolded foldables: a readable column instead of lines across the whole screen.
+        Box(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.widthIn(max = 720.dp).fillMaxSize()) {
+                AccessibilityWarning()
+                CrashBanner()
+                val m = Modifier.weight(1f)
+                when (tab) {
+                    0 -> ChatScreen(m)
+                    1 -> MemoryScreen(m)
+                    2 -> SettingsScreen(m)
+                    else -> PermissionsScreen(m)
+                }
             }
         }
     }
@@ -174,7 +186,7 @@ private fun AccessibilityWarning() {
                     "Без неё не работают «домой», «назад», шторка, скриншот. Открой спецвозможности и включи её снова."
                 else "«Искра · управление» включена в спецвозможностях, но Android её сейчас не запускает. " +
                     "Открой спецвозможности, выключи «Искра · управление» и включи снова." +
-                    if (DeviceHelper.isXiaomi) " Чтобы не повторялось: включи Автозапуск для Искры." else "",
+                    if (DeviceHelper.guide.any { it.button == "Автозапуск" }) " Чтобы не повторялось: включи Автозапуск для Искры." else "",
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row {
@@ -184,7 +196,7 @@ private fun AccessibilityWarning() {
                     Diag.i("access", "Владелец: управление телефоном не нужно, не напоминать")
                     problem = null
                 }) { Text("Не нужно") }
-                else if (DeviceHelper.isXiaomi) TextButton(onClick = { DeviceHelper.openXiaomiAutostart(ctx) }) { Text("Автозапуск") }
+                else if (DeviceHelper.guide.any { it.button == "Автозапуск" }) TextButton(onClick = { DeviceHelper.openAutostart(ctx) }) { Text("Автозапуск") }
             }
         }
     }
@@ -330,7 +342,9 @@ private fun MemoryRow(item: MemoryItem, enabled: Boolean = true, onDelete: () ->
                 else -> "🤖"
             }
             Text("$badge ${item.text}", Modifier.weight(1f))
-            TextButton(enabled = enabled, onClick = onDelete) { Text("✕") }
+            TextButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = "Удалить: ${item.text}" }) {
+                Text("✕", Modifier.clearAndSetSemantics {})
+            }
         }
     }
 }
@@ -348,6 +362,7 @@ private fun SettingsScreen(modifier: Modifier) {
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { diagnostics = true }, modifier = Modifier.fillMaxWidth()) { Text("🩺 Диагностика и отчёт об ошибках") }
+        TextButton(onClick = { OnboardingState.again(ctx); (ctx as? android.app.Activity)?.recreate() }) { Text("Пройти знакомство заново") }
         Text("Мозг Искры", fontSize = 20.sp)
         Text(
             "Ключ API хранится зашифрованным (Android Keystore) и отправляется только выбранному сервису. " +
@@ -356,10 +371,7 @@ private fun SettingsScreen(modifier: Modifier) {
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         ProviderPreset.entries.forEach { p ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = s.preset == p, onClick = { s = s.copy(preset = p, baseUrl = p.baseUrl, model = p.defaultModel); saved = false })
-                Text(p.title)
-            }
+            RadioRow(s.preset == p, p.title) { s = s.copy(preset = p, baseUrl = p.baseUrl, model = p.defaultModel); saved = false }
         }
         if (s.preset != ProviderPreset.OFFLINE) {
             if (s.preset == ProviderPreset.CUSTOM) OutlinedTextField(
@@ -438,42 +450,40 @@ private fun PermissionsScreen(modifier: Modifier) {
         PermCard("Поверх других приложений", "Нужно, чтобы Искра жила на экране, а не только в приложении.", overlay) {
             DeviceHelper.openOverlaySettings(ctx)
         }
-        if (overlay) Row(verticalAlignment = Alignment.CenterVertically) {
-            Switch(checked = overlayOn, onCheckedChange = { on ->
-                overlayOn = on
-                app.settings.save(app.settings.load().copy(overlayEnabled = on))
-                if (on) {
-                    if (!notif && Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    OverlayService.start(ctx)
-                } else OverlayService.stop(ctx)
-            })
-            Spacer(Modifier.size(8.dp)); Text("Показать Искру на экране")
+        if (overlay) SwitchRow(overlayOn, "Показать Искру на экране") { on ->
+            overlayOn = on
+            app.settings.save(app.settings.load().copy(overlayEnabled = on))
+            if (on) {
+                if (!notif && Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                OverlayService.start(ctx)
+            } else OverlayService.stop(ctx)
         }
         PermCard("Уведомления", "Android показывает значок, пока Искра на экране. Без него HyperOS чаще её выгружает.", notif) {
             if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
         PermCard("Управление телефоном", "Специальные возможности → «Искра · управление». Даёт только «Домой», «Назад», «Недавние», шторку, блокировку и скриншот. " +
-            if (DeviceHelper.isXiaomi) "На Xiaomi для APK не из магазина сначала: О приложении → ⋮ → «Разрешить ограниченные настройки»." else "", access) {
+            if (Build.VERSION.SDK_INT >= 33) "Если переключатель серый: О приложении → ⋮ → «Разрешить ограниченные настройки» (Android так защищает APK не из магазина)." else "", access) {
             DeviceHelper.openAccessibilitySettings(ctx)
         }
         PermCard("Работа в фоне", "Снимает ограничение батареи, чтобы Искра не исчезала.", battery) {
             DeviceHelper.openBatterySettings(ctx)
         }
-        if (DeviceHelper.isXiaomi) {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Xiaomi / HyperOS", fontSize = 16.sp)
-                    Text("1) Автозапуск — включить. 2) Контроль активности → «Нет ограничений». " +
-                        "3) Другие разрешения → «Всплывающие окна в фоне» и «Отображать на экране блокировки». " +
-                        "4) В недавних приложениях потяни карточку Искры вниз и закрепи замком.",
-                        fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row {
-                        TextButton(onClick = { DeviceHelper.openXiaomiAutostart(ctx) }) { Text("Автозапуск") }
-                        TextButton(onClick = { DeviceHelper.openXiaomiOtherPermissions(ctx) }) { Text("Другие разрешения") }
-                        TextButton(onClick = { DeviceHelper.openAppDetails(ctx) }) { Text("О приложении") }
-                    }
-                }
+        VendorCard()
+    }
+}
+
+/** What this phone's maker needs switched on so the firmware does not unload Iskra (core VendorGuide). */
+@Composable
+private fun VendorCard() {
+    val ctx = LocalContext.current
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Чтобы ${DeviceHelper.vendor.title} не выгружал Искру", fontSize = 16.sp)
+            DeviceHelper.guide.forEachIndexed { i, step ->
+                Text("${i + 1}. ${step.text}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                step.button?.let { b -> TextButton(onClick = { DeviceHelper.open(ctx, step) }) { Text(b) } }
             }
+            TextButton(onClick = { DeviceHelper.openAppDetails(ctx) }) { Text("О приложении") }
         }
     }
 }
@@ -483,7 +493,9 @@ private fun PermCard(title: String, text: String, granted: Boolean, onOpen: () -
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text((if (granted) "✅ " else "⬜ ") + title, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                Text((if (granted) "✅ " else "⬜ ") + title, fontSize = 16.sp, modifier = Modifier.weight(1f).clearAndSetSemantics {
+                    contentDescription = title; stateDescription = if (granted) "разрешено" else "не разрешено"
+                })
                 if (!granted) TextButton(onClick = onOpen) { Text("Открыть") }
             }
             Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -496,7 +508,9 @@ private fun SimpleRow(text: String, enabled: Boolean = true, onDelete: () -> Uni
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(text, Modifier.weight(1f), fontSize = 14.sp)
-            TextButton(enabled = enabled, onClick = onDelete) { Text("✕") }
+            TextButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = "Удалить: $text" }) {
+                Text("✕", Modifier.clearAndSetSemantics {})
+            }
         }
     }
 }

@@ -1,5 +1,7 @@
 package ru.iskra.app.data
 
+import ru.iskra.core.power.EconomyMode
+import ru.iskra.core.power.EconomyPolicy
 import ru.iskra.core.skills.Place
 import ru.iskra.core.skills.ProactiveFrequency
 
@@ -40,13 +42,6 @@ enum class TtsEngine(val title: String, val defaultVoice: String, val defaultMod
         "Например, свой сервер с Silero/XTTS, отвечающий на /v1/audio/speech. Только https."),
 }
 
-/** How often the character is redrawn. */
-enum class FpsMode(val title: String) {
-    AUTO("Как у экрана (до 120 Гц)"),
-    HZ60("60 кадров/с"),
-    ECO("Экономия (30 кадров/с)"),
-}
-
 /** How the character is drawn. */
 enum class AvatarLook(val title: String) {
     RIG("Живой риг (мимика, уши, хвост)"),
@@ -70,7 +65,12 @@ data class AppSettings(
     val listenScreenOff: Boolean = false,
     val followUp: Boolean = true,
     val wakeNames: String = "Искра, Искорка",
-    val fpsMode: FpsMode = FpsMode.AUTO,
+    /** «Экономия»: frame rate, display refresh, hearing; replaces the 0.8 frame-rate choice. */
+    val economy: EconomyMode = EconomyMode.AUTO,
+    /** Fewer big movements (no walking around); also on when Android's "remove animations" is set. */
+    val calmMotion: Boolean = false,
+    /** Chat microphone through the on-phone model only (the system recognizer may send audio to a server). */
+    val voiceInputOffline: Boolean = false,
     val liveliness: Int = 1,
     val avatarLook: AvatarLook = AvatarLook.RIG,
     val economicalEar: Boolean = true,
@@ -104,7 +104,10 @@ class SettingsRepo(context: Context) {
         listenScreenOff = prefs.getBoolean("listenScreenOff", false),
         followUp = prefs.getBoolean("followUp", true),
         wakeNames = prefs.getString("wakeNames", null) ?: "Искра, Искорка",
-        fpsMode = runCatching { FpsMode.valueOf(prefs.getString("fpsMode", null) ?: "AUTO") }.getOrDefault(FpsMode.AUTO),
+        economy = prefs.getString("economy", null)?.let { runCatching { EconomyMode.valueOf(it) }.getOrNull() }
+            ?: EconomyPolicy.fromLegacyFps(prefs.getString("fpsMode", null)),
+        calmMotion = prefs.getBoolean("calmMotion", false),
+        voiceInputOffline = prefs.getBoolean("voiceInputOffline", false),
         liveliness = prefs.getInt("liveliness", 1).coerceIn(0, 2),
         avatarLook = runCatching { AvatarLook.valueOf(prefs.getString("avatarLook", null) ?: "RIG") }.getOrDefault(AvatarLook.RIG),
         economicalEar = prefs.getBoolean("economicalEar", true),
@@ -139,7 +142,8 @@ class SettingsRepo(context: Context) {
         "tts" to s.ttsEnabled, "wander" to s.wander, "avatarSize" to s.avatarSizeDp,
         "ttsEngine" to s.ttsEngine.name, "ttsVoice" to s.ttsVoice, "ttsModel" to s.ttsModel, "ttsBaseUrl" to s.ttsBaseUrl,
         "alwaysListen" to s.alwaysListen, "listenScreenOff" to s.listenScreenOff, "followUp" to s.followUp,
-        "wakeNames" to s.wakeNames, "fpsMode" to s.fpsMode.name, "liveliness" to s.liveliness,
+        "wakeNames" to s.wakeNames, "economy" to s.economy.name, "calmMotion" to s.calmMotion,
+        "voiceInputOffline" to s.voiceInputOffline, "liveliness" to s.liveliness,
         "avatarLook" to s.avatarLook.name, "economicalEar" to s.economicalEar,
         "weatherCity" to s.weatherCity, "proactive" to s.proactive.name, "quietFrom" to s.quietFrom, "quietTo" to s.quietTo,
         "proactiveVoice" to s.proactiveVoice,
@@ -166,7 +170,10 @@ class SettingsRepo(context: Context) {
             listenScreenOff = bool("listenScreenOff") ?: base.listenScreenOff,
             followUp = bool("followUp") ?: base.followUp,
             wakeNames = str("wakeNames")?.take(120) ?: base.wakeNames,
-            fpsMode = str("fpsMode")?.let { runCatching { FpsMode.valueOf(it) }.getOrNull() } ?: base.fpsMode,
+            economy = str("economy")?.let { runCatching { EconomyMode.valueOf(it) }.getOrNull() }
+                ?: str("fpsMode")?.let { EconomyPolicy.fromLegacyFps(it) } ?: base.economy,
+            calmMotion = bool("calmMotion") ?: base.calmMotion,
+            voiceInputOffline = bool("voiceInputOffline") ?: base.voiceInputOffline,
             liveliness = int("liveliness")?.coerceIn(0, 2) ?: base.liveliness,
             avatarLook = str("avatarLook")?.let { runCatching { AvatarLook.valueOf(it) }.getOrNull() } ?: base.avatarLook,
             economicalEar = bool("economicalEar") ?: base.economicalEar,
@@ -195,7 +202,9 @@ class SettingsRepo(context: Context) {
             .putBoolean("listenScreenOff", s.listenScreenOff)
             .putBoolean("followUp", s.followUp)
             .putString("wakeNames", s.wakeNames)
-            .putString("fpsMode", s.fpsMode.name)
+            .putString("economy", s.economy.name)
+            .putBoolean("calmMotion", s.calmMotion)
+            .putBoolean("voiceInputOffline", s.voiceInputOffline)
             .putInt("liveliness", s.liveliness)
             .putString("avatarLook", s.avatarLook.name)
             .putBoolean("economicalEar", s.economicalEar)

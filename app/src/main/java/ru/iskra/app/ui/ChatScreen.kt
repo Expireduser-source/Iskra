@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -54,6 +55,7 @@ import ru.iskra.app.CompanionBus
 import ru.iskra.app.IskraApp
 import ru.iskra.app.voice.Listener
 import ru.iskra.app.voice.MicArbiter
+import ru.iskra.app.voice.OfflineDictation
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -83,17 +85,17 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
     val dragging by listState.interactionSource.collectIsDraggedAsState()
     var followReply by remember { mutableStateOf(true) }
 
-    val listener = remember {
-        Listener(ctx,
-            onResult = { app.chat.send(it) },
-            onState = { on ->
-                listening = on
-                CompanionBus.emit(AvatarCue.Listening(on))
-                if (!on) MicArbiter.set(false)
-            },
-            onError = { voiceError = it; MicArbiter.set(false) })
+    val onVoiceState: (Boolean) -> Unit = { on ->
+        listening = on
+        CompanionBus.emit(AvatarCue.Listening(on))
+        if (!on) MicArbiter.set(false)
     }
-    DisposableEffect(Unit) { onDispose { listener.destroy(); MicArbiter.set(false) } }
+    val onVoiceError: (String) -> Unit = { voiceError = it; MicArbiter.set(false) }
+    val listener = remember { Listener(ctx, onResult = { app.chat.send(it) }, onState = onVoiceState, onError = onVoiceError) }
+    // On-phone recognition: phones without a system recognizer, or the owner wants audio to stay on the phone.
+    val offline = remember { OfflineDictation(ctx, onResult = { app.chat.send(it) }, onState = onVoiceState, onError = onVoiceError) }
+    var offlineActive by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { listener.destroy(); offline.destroy(); MicArbiter.set(false) } }
 
     // Confirmation dialogs are shown here; the overlay opens the quick chat if no chat screen is visible.
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -111,7 +113,7 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
     fun startListening() {
         // Let the always-on ear release the microphone first.
         MicArbiter.set(true)
-        scope.launch { delay(250); listener.start() }
+        scope.launch { delay(250); if (offlineActive) offline.start() else listener.start() }
     }
 
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -176,15 +178,22 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
                 contentDescription = if (listening) "Остановить запись" else "Голосовое сообщение"
             }, onClick = {
                 voiceError = null
-                if (listening) { listener.stop(); return@IconButton }
-                if (!listener.available()) { voiceError = "На телефоне нет службы распознавания речи."; return@IconButton }
+                if (listening) { if (offlineActive) offline.stop() else listener.stop(); return@IconButton }
+                val system = listener.available()
+                offlineActive = app.settings.load().voiceInputOffline || !system
+                if (offlineActive && !offline.available()) {
+                    voiceError = if (!system) "На телефоне нет системного распознавания речи. Скачай модель в «Настройки» → «Слух» — " +
+                        "и микрофон заработает прямо на телефоне, без интернета."
+                    else "Для ввода только на телефоне скачай модель в «Настройки» → «Слух»."
+                    return@IconButton
+                }
                 if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
                 else micPermission.launch(Manifest.permission.RECORD_AUDIO)
-            }) { Text(if (listening) "■" else "🎤") }
+            }) { Text(if (listening) "■" else "🎤", Modifier.clearAndSetSemantics {}) }
             Spacer(Modifier.size(6.dp))
             IconButton(enabled = !busy && input.isNotBlank(),
                 modifier = Modifier.semantics { contentDescription = "Отправить сообщение" },
-                onClick = { send(input); input = "" }) { Text("➤", color = if (!busy && input.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
+                onClick = { send(input); input = "" }) { Text("➤", Modifier.clearAndSetSemantics {}, color = if (!busy && input.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 

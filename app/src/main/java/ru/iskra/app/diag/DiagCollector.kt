@@ -57,7 +57,10 @@ object DiagCollector {
             },
             "Служба спец. возможностей" to CompanionAccessibilityService.describe(ctx),
             "Кадры/с у Искры" to if (FrameStats.hz > 0) "экран ~${FrameStats.hz}, отрисовка ~${FrameStats.drawnHz}" else "нет данных (Искра не на экране)",
-            "Режим кадров" to s.fpsMode.title,
+            "Экономия" to "${s.economy.title} → ${Diag.economyState}",
+            "Телефон" to "${DeviceHelper.vendor.title}, ${DeviceHelper.deviceClass(ctx).title}, " +
+                "${DeviceHelper.totalRamMb(ctx)} МБ ОЗУ, ${Runtime.getRuntime().availableProcessors()} ядер" +
+                (if (DeviceHelper.animationsOff(ctx)) ", анимации выключены в системе" else ""),
             "Группа ожидания Android" to standbyBucket(ctx),
             "Падения" to ru.iskra.core.diag.CrashHistory.summary(Diag.crashTimes(), System.currentTimeMillis(), installedAt(ctx)),
             "Ежедневная копия" to ru.iskra.app.data.AutoBackup.describe(ctx),
