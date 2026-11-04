@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Искра</string>
+    <string name="accessibility_label">Искра · управление</string>
+    <string name="accessibility_description">Искра выполняет только системные действия, о которых вы попросили: «Домой», «Назад», «Недавние», «Уведомления», «Быстрые настройки», «Заблокировать экран», «Скриншот». Служба не читает содержимое экрана и не нажимает кнопки в других приложениях. Её можно отключить в любой момент.</string>
+    <string name="overlay_channel">Искра на экране</string>
+</resources>

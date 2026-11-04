@@ -1,5 +1,6 @@
 package ru.iskra.app.overlay
 
+import ru.iskra.core.i18n.tr
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -94,7 +95,7 @@ class RigRenderer(ctx: Context, private val boxPx: Int) : AvatarRenderer {
             if (tw < raw.width) Bitmap.createScaledBitmap(raw, tw, th, true).also { if (it !== raw) raw.recycle() } else raw
         }
         painter = CanvasRigPainter(tex)
-        Diag.i("avatar", "Риг загружен: ${tex.size} слоёв, ${boxPx}px")
+        Diag.i("avatar", tr("Риг загружен: ${tex.size} слоёв, ${boxPx}px", "Rig loaded: ${tex.size} layers, ${boxPx}px"))
     }
 
     override fun advance(dt: Float, pose: AvatarPose) {

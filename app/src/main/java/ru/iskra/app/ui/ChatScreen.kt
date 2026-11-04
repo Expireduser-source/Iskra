@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import ru.iskra.core.i18n.tr
 import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
@@ -120,7 +121,7 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
     }
 
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) startListening() else voiceError = "Без доступа к микрофону голосовой ввод не работает."
+        if (granted) startListening() else voiceError = tr("Без доступа к микрофону голосовой ввод не работает.", "Voice input doesn't work without microphone access.")
     }
 
     // Following the tail is the owner's choice. A drag pauses it; reaching the end resumes it.
@@ -160,15 +161,15 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
                 if (busy) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.size(8.dp))
-                    Text("Думаю…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(tr("Думаю…", "Thinking…"), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.weight(1f))
-                    TextButton(onClick = { app.chat.cancel() }) { Text("Стоп") }
+                    TextButton(onClick = { app.chat.cancel() }) { Text(tr("Стоп", "Stop")) }
                 } else Spacer(Modifier.size(1.dp))
             }
         }
         if (!followReply && messages.isNotEmpty()) {
             TextButton(onClick = { followReply = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Text("К последнему сообщению ↓")
+                Text(tr("К последнему сообщению ↓", "To the latest message ↓"))
             }
         }
         voiceError?.let {
@@ -177,20 +178,20 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
             OutlinedTextField(
                 value = input, onValueChange = { input = it.take(4000) },
-                modifier = Modifier.weight(1f).testTag("chat_input"), placeholder = { Text("Напиши Искре…") }, maxLines = 4,
+                modifier = Modifier.weight(1f).testTag("chat_input"), placeholder = { Text(tr("Напиши Искре…", "Write to Iskra…")) }, maxLines = 4,
             )
             Spacer(Modifier.size(6.dp))
             IconButton(enabled = !busy || listening, modifier = Modifier.testTag("chat_mic").semantics {
-                contentDescription = if (listening) "Остановить запись" else "Голосовое сообщение"
+                contentDescription = if (listening) tr("Остановить запись", "Stop recording") else tr("Голосовое сообщение", "Voice message")
             }, onClick = {
                 voiceError = null
                 if (listening) { if (offlineActive) offline.stop() else listener.stop(); return@IconButton }
                 val system = listener.available()
                 offlineActive = app.settings.load().voiceInputOffline || !system
                 if (offlineActive && !offline.available()) {
-                    voiceError = if (!system) "На телефоне нет системного распознавания речи. Скачай модель в «Настройки» → «Слух» — " +
-                        "и микрофон заработает прямо на телефоне, без интернета."
-                    else "Для ввода только на телефоне скачай модель в «Настройки» → «Слух»."
+                    voiceError = if (!system) tr("На телефоне нет системного распознавания речи. Скачай модель в «Настройки» → «Слух» — " +
+                        "и микрофон заработает прямо на телефоне, без интернета.", "This phone has no system speech recognition. Download the model in “Settings” → “Hearing” — and the microphone will work right on the phone, offline.")
+                    else tr("Для ввода только на телефоне скачай модель в «Настройки» → «Слух».", "For on-phone-only input, download the model in “Settings” → “Hearing”.")
                     return@IconButton
                 }
                 if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
@@ -198,7 +199,7 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
             }) { Text(if (listening) "■" else "🎤", Modifier.clearAndSetSemantics {}) }
             Spacer(Modifier.size(6.dp))
             IconButton(enabled = !busy && input.isNotBlank(),
-                modifier = Modifier.testTag("chat_send").semantics { contentDescription = "Отправить сообщение" },
+                modifier = Modifier.testTag("chat_send").semantics { contentDescription = tr("Отправить сообщение", "Send message") },
                 onClick = { send(input); input = "" }) { Text("➤", Modifier.clearAndSetSemantics {}, color = if (!busy && input.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
@@ -208,8 +209,8 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
             onDismissRequest = { req.respond(false) },
             title = { Text(req.title) },
             text = { Text(req.details) },
-            confirmButton = { TextButton(onClick = { req.respond(true) }) { Text("Разрешить") } },
-            dismissButton = { TextButton(onClick = { req.respond(false) }) { Text("Отмена") } },
+            confirmButton = { TextButton(onClick = { req.respond(true) }) { Text(tr("Разрешить", "Allow")) } },
+            dismissButton = { TextButton(onClick = { req.respond(false) }) { Text(tr("Отмена", "Cancel")) } },
         )
     }
 }
@@ -222,20 +223,20 @@ private fun Welcome(compact: Boolean, enabled: Boolean, onSend: (String) -> Unit
         if (!compact) {
             Image(painterResource(R.drawable.iskra_wave), contentDescription = null,
                 modifier = Modifier.size(132.dp).align(Alignment.CenterHorizontally))
-            Text("Ну что, знакомиться?", style = MaterialTheme.typography.headlineSmall,
+            Text(tr("Ну что, знакомиться?", "So, shall we get acquainted?"), style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
         }
-        Text(if (compact) "Я тут. Что придумаем?" else
-            "Я Искра. Дела — в лапки, любопытство — с собой. Начнём с чего-нибудь маленького?",
+        Text(if (compact) tr("Я тут. Что придумаем?", "I'm here. What shall we come up with?") else
+            tr("Я Искра. Дела — в лапки, любопытство — с собой. Начнём с чего-нибудь маленького?", "I'm Iskra. Tasks go in my paws, curiosity comes along. Shall we start with something small?"),
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        FilledTonalButton(enabled = enabled, onClick = { onSend("Удиви меня") }, modifier = Modifier.fillMaxWidth()) {
-            Text("Удиви меня")
+        FilledTonalButton(enabled = enabled, onClick = { onSend(tr("Удиви меня", "Surprise me")) }, modifier = Modifier.fillMaxWidth()) {
+            Text(tr("Удиви меня", "Surprise me"))
         }
         if (!compact) {
-            Text("Маленькая игра с привычным миром. Работает без интернета.",
+            Text(tr("Маленькая игра с привычным миром. Работает без интернета.", "A tiny game with the familiar world. Works offline."),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(enabled = enabled, onClick = { onSend("Что ты помнишь") }) { Text("Заглянуть в память") }
-            Text("Таймеры, заметки и напоминания тоже доступны сразу. Для свободной беседы подключи модель в «Настройках».",
+            TextButton(enabled = enabled, onClick = { onSend(tr("Что ты помнишь", "What do you remember")) }) { Text(tr("Заглянуть в память", "Peek into memory")) }
+            Text(tr("Таймеры, заметки и напоминания тоже доступны сразу. Для свободной беседы подключи модель в «Настройках».", "Timers, notes and reminders work right away too. For free conversation, connect a model in “Settings”."),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -250,7 +251,7 @@ private fun Bubble(m: UiMessage) {
                 .background(if (m.fromUser) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surface, shape)
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
-            if (!m.fromUser) Text("${emotionEmoji(m.emotion)} Искра", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+            if (!m.fromUser) Text(tr("${emotionEmoji(m.emotion)} Искра", "${emotionEmoji(m.emotion)} Iskra"), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
             Text(m.text, color = if (m.isError) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface)
             m.actions.forEach { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }

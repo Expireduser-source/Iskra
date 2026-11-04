@@ -1,5 +1,6 @@
 package ru.iskra.app.overlay
 
+import ru.iskra.core.i18n.tr
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
@@ -81,17 +82,17 @@ class AvatarView(
     })
 
     init {
-        contentDescription = "Искра, анимированный персонаж"
+        contentDescription = tr("Искра, анимированный персонаж", "Iskra, animated character")
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
         // TalkBack users cannot drag or double-tap a moving character: the same things as actions.
-        ViewCompat.replaceAccessibilityAction(this, AccessibilityActionCompat.ACTION_CLICK, "поговорить") { _, _ ->
+        ViewCompat.replaceAccessibilityAction(this, AccessibilityActionCompat.ACTION_CLICK, tr("поговорить", "talk")) { _, _ ->
             host.onTap(); brain.tapped(); true
         }
-        ViewCompat.replaceAccessibilityAction(this, AccessibilityActionCompat.ACTION_LONG_CLICK, "открыть приложение") { _, _ ->
+        ViewCompat.replaceAccessibilityAction(this, AccessibilityActionCompat.ACTION_LONG_CLICK, tr("открыть приложение", "open the app")) { _, _ ->
             host.onLongPress(); true
         }
-        ViewCompat.addAccessibilityAction(this, "Погладить") { _, _ -> brain.tapped(); host.onDoubleTap(); true }
-        ViewCompat.addAccessibilityAction(this, "Убрать с экрана") { _, _ -> host.onHide(); true }
+        ViewCompat.addAccessibilityAction(this, tr("Погладить", "Pet her")) { _, _ -> brain.tapped(); host.onDoubleTap(); true }
+        ViewCompat.addAccessibilityAction(this, tr("Убрать с экрана", "Remove from screen")) { _, _ -> host.onHide(); true }
     }
 
     fun start() {

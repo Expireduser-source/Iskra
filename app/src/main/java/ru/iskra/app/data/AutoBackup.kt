@@ -1,5 +1,6 @@
 package ru.iskra.app.data
 
+import ru.iskra.core.i18n.tr
 import android.app.job.JobInfo
 import android.app.job.JobParameters
 import android.app.job.JobScheduler
@@ -40,14 +41,14 @@ object AutoBackup {
         ctx.contentResolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         prefs(ctx).edit().putString("tree", tree.toString()).remove("error").apply()
         schedule(ctx)
-        Diag.i("backup", "Ежедневная копия включена")
+        Diag.i("backup", tr("Ежедневная копия включена", "Daily backup on"))
     }
 
     fun disable(ctx: Context) {
         folder(ctx)?.let { runCatching { ctx.contentResolver.releasePersistableUriPermission(it, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) } }
         prefs(ctx).edit().clear().apply()
         ctx.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
-        Diag.i("backup", "Ежедневная копия выключена")
+        Diag.i("backup", tr("Ежедневная копия выключена", "Daily backup off"))
     }
 
     /** Once a day, when the battery is not low; survives reboots. */
@@ -60,16 +61,16 @@ object AutoBackup {
             .setPersisted(true)
             .build()
         runCatching { ctx.getSystemService(JobScheduler::class.java).schedule(job) }
-            .onFailure { Diag.e("backup", "Не удалось запланировать ежедневную копию", it) }
+            .onFailure { Diag.e("backup", tr("Не удалось запланировать ежедневную копию", "Couldn't schedule the daily backup"), it) }
     }
 
     /** Writes today's copy (replacing an earlier one from today) and removes copies beyond [KEEP]. */
     suspend fun runNow(ctx: Context): String = withContext(Dispatchers.IO) {
-        val tree = folder(ctx) ?: return@withContext "Папка не выбрана"
+        val tree = folder(ctx) ?: return@withContext tr("Папка не выбрана", "No folder chosen")
         val app = ru.iskra.app.IskraApp.instance
         // After «Стереть всё» an empty copy would push the good ones out of the last KEEP.
         if (app.memory.all().isEmpty() && app.notes.all().isEmpty() && lastRunMs(ctx) > 0)
-            return@withContext "Память и заметки пусты — копию не делаю, старые копии не трогаю"
+            return@withContext tr("Память и заметки пусты — копию не делаю, старые копии не трогаю", "Memory and notes are empty — not making a backup, old backups untouched")
         try {
             val cr = ctx.contentResolver
             val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
@@ -81,7 +82,7 @@ object AutoBackup {
             val name = Backups.suggestedName()
             val target = existing.firstOrNull { it.first == name }?.let { DocumentsContract.buildDocumentUriUsingTree(tree, it.second) }
                 ?: DocumentsContract.createDocument(cr, parent, "application/json", name)
-                ?: error("папка не даёт создать файл")
+                ?: error(tr("папка не даёт создать файл", "the folder doesn't allow creating a file"))
             val n = Backups.export(ctx, target)
             // Names sort by date: keep the newest KEEP.
             val all = (existing.map { it.first } + name).distinct().sortedDescending()
@@ -89,20 +90,20 @@ object AutoBackup {
                 runCatching { DocumentsContract.deleteDocument(cr, DocumentsContract.buildDocumentUriUsingTree(tree, it.second)) }
             }
             prefs(ctx).edit().putLong("last", System.currentTimeMillis()).remove("error").apply()
-            "Копия сохранена: $name, записей памяти $n"
+            tr("Копия сохранена: $name, записей памяти $n", "Backup saved: $name, memory entries $n")
         } catch (e: Exception) {
-            val msg = if (e is SecurityException) "нет доступа к папке — выбери её заново" else (e.message ?: e.javaClass.simpleName)
+            val msg = if (e is SecurityException) tr("нет доступа к папке — выбери её заново", "no access to the folder — choose it again") else (e.message ?: e.javaClass.simpleName)
             prefs(ctx).edit().putString("error", msg).apply()
-            Diag.e("backup", "Ежедневная копия не сохранена: $msg")
-            "Не удалось: $msg"
+            Diag.e("backup", tr("Ежедневная копия не сохранена: $msg", "Daily backup not saved: $msg"))
+            tr("Не удалось: $msg", "Failed: $msg")
         }
     }
 
     fun describe(ctx: Context): String {
-        val f = folder(ctx) ?: return "выключена"
-        val last = lastRunMs(ctx).takeIf { it > 0 }?.let { SimpleDateFormat("dd.MM HH:mm", Locale.ROOT).format(Date(it)) } ?: "ещё не было"
-        val err = lastError(ctx)?.let { " · ошибка: $it" } ?: ""
-        return "в папку ${f.lastPathSegment?.substringAfterLast(':') ?: "?"}, последняя $last$err"
+        val f = folder(ctx) ?: return tr("выключена", "off")
+        val last = lastRunMs(ctx).takeIf { it > 0 }?.let { SimpleDateFormat("dd.MM HH:mm", Locale.ROOT).format(Date(it)) } ?: tr("ещё не было", "not yet")
+        val err = lastError(ctx)?.let { tr(" · ошибка: $it", " · error: $it") } ?: ""
+        return tr("в папку ${f.lastPathSegment?.substringAfterLast(':') ?: "?"}, последняя $last$err", "to the folder ${f.lastPathSegment?.substringAfterLast(':') ?: "?"}, last $last$err")
     }
 }
 
@@ -111,7 +112,7 @@ class AutoBackupJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         scope.launch {
             val r = AutoBackup.runNow(applicationContext)
-            Diag.i("backup", "Ежедневная копия: $r")
+            Diag.i("backup", tr("Ежедневная копия: $r", "Daily backup: $r"))
             jobFinished(params, false)
         }
         return true

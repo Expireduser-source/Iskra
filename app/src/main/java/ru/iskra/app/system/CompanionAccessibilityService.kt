@@ -1,5 +1,6 @@
 package ru.iskra.app.system
 
+import ru.iskra.core.i18n.tr
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
@@ -20,14 +21,14 @@ class CompanionAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         instance = this
         setExpected(this, true)
-        Diag.i("access", "Служба спецвозможностей подключена системой")
+        Diag.i("access", tr("Служба спецвозможностей подключена системой", "Accessibility service connected by the system"))
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
     override fun onInterrupt() = Unit
 
     override fun onUnbind(intent: Intent?): Boolean {
-        Diag.w("access", "Система отключила службу спецвозможностей (unbind)")
+        Diag.w("access", tr("Система отключила службу спецвозможностей (unbind)", "The system disconnected the accessibility service (unbind)"))
         if (instance === this) instance = null
         return super.onUnbind(intent)
     }
@@ -83,8 +84,11 @@ class CompanionAccessibilityService : AccessibilityService() {
 
         /** One line for diagnostics: the three independent signals. */
         fun describe(ctx: Context): String =
-            "в настройках: ${if (isEnabled(ctx)) "вкл" else "выкл"}, " +
+            tr("в настройках: ${if (isEnabled(ctx)) "вкл" else "выкл"}, " +
                 "у системы: ${if (isActiveInSystem(ctx)) "активна" else "не активна"}, " +
-                "в приложении: ${if (isConnected()) "подключена" else "не подключена"}"
+                "в приложении: ${if (isConnected()) "подключена" else "не подключена"}",
+                "in settings: ${if (isEnabled(ctx)) "on" else "off"}, " +
+                    "in the system: ${if (isActiveInSystem(ctx)) "active" else "not active"}, " +
+                    "in the app: ${if (isConnected()) "connected" else "not connected"}")
     }
 }

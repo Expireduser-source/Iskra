@@ -1,5 +1,6 @@
 package ru.iskra.app.voice
 
+import ru.iskra.core.i18n.tr
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -36,7 +37,7 @@ class OfflineDictation(
     fun start() {
         if (running) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            onError("Нет доступа к микрофону."); return
+            onError(tr("Нет доступа к микрофону.", "No microphone access.")); return
         }
         running = true
         onState(true)
@@ -61,7 +62,7 @@ class OfflineDictation(
             val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             val a = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, RATE)).also { audio = it }
-            if (a.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException("микрофон недоступен")
+            if (a.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException(tr("микрофон недоступен", "microphone unavailable"))
             a.startRecording()
             val buf = ShortArray(RATE / 10)
             val started = SystemClock.elapsedRealtime()
@@ -78,8 +79,8 @@ class OfflineDictation(
             }
             if (text.isBlank()) text = field(r.finalResult, "text")
         } catch (e: Throwable) {
-            error = "Распознавание на телефоне не запустилось: ${e.message ?: e.javaClass.simpleName}"
-            main.post { Diag.e("voice", "Офлайн-диктовка не запустилась", e) }
+            error = tr("Распознавание на телефоне не запустилось: ${e.message ?: e.javaClass.simpleName}", "On-phone recognition didn't start: ${e.message ?: e.javaClass.simpleName}")
+            main.post { Diag.e("voice", tr("Офлайн-диктовка не запустилась", "Offline dictation didn't start"), e) }
         } finally {
             runCatching { audio?.stop() }; runCatching { audio?.release() }
             runCatching { rec?.close() }; if (model != null) VoskModels.release()
@@ -90,8 +91,8 @@ class OfflineDictation(
             onState(false)
             when {
                 error != null -> onError(error)
-                result.isEmpty() -> onError("Не расслышала. Попробуй ещё раз.")
-                else -> { Diag.i("voice", "Офлайн-диктовка: ${result.length} симв."); onResult(result) }
+                result.isEmpty() -> onError(tr("Не расслышала. Попробуй ещё раз.", "Didn't catch that. Try again."))
+                else -> { Diag.i("voice", tr("Офлайн-диктовка: ${result.length} симв.", "Offline dictation: ${result.length} chars")); onResult(result) }
             }
         }
     }

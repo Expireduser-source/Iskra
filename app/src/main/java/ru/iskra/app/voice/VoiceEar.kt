@@ -1,5 +1,7 @@
 package ru.iskra.app.voice
 
+import ru.iskra.core.i18n.tr
+import ru.iskra.core.i18n.I18n
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Context
@@ -32,7 +34,7 @@ import ru.iskra.core.voice.WakeWordMatcher
  */
 class VoiceEar(
     private val context: Context,
-    private val names: List<String>,
+    ownerNames: List<String>,
     private val followUp: Boolean,
     private val listener: Listener,
     /** Stage 2 "экономный слух": skip silence, and while waiting recognise only her name. */
@@ -44,6 +46,17 @@ class VoiceEar(
         fun onStopRequested()
         fun onAttentionLost()        // nothing came after the name
         fun onEarError(message: String)
+    }
+
+    /**
+     * The model hears one language, so only names in its alphabet can be recognized; her usual names
+     * for that language are always included ("Искра, Искорка" or "Iskra, Spark").
+     */
+    private val names: List<String> = run {
+        val cyrillic = !I18n.isEnglish
+        (ownerNames + tr(listOf("Искра", "Искорка"), listOf("Iskra", "Spark")))
+            .filter { n -> n.any { it.isLetter() } && n.all { !it.isLetter() || (Character.UnicodeScript.of(it.code) == Character.UnicodeScript.CYRILLIC) == cyrillic } }
+            .distinctBy { it.lowercase() }
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -62,9 +75,9 @@ class VoiceEar(
     fun start() {
         if (running) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            listener.onEarError("Нет доступа к микрофону."); return
+            listener.onEarError(tr("Нет доступа к микрофону.", "No microphone access.")); return
         }
-        if (!SpeechModel.isReady(context)) { listener.onEarError("Модель распознавания не скачана."); return }
+        if (!SpeechModel.isReady(context)) { listener.onEarError(tr("Модель распознавания не скачана.", "The speech model isn't downloaded.")); return }
         running = true
         thread = Thread({ loop() }, "iskra-ear").apply { priority = Thread.NORM_PRIORITY - 1; start() }
         main.post(ticker)
@@ -120,7 +133,7 @@ class VoiceEar(
             val wakeRec: Recognizer? = if (!economical) null else try {
                 Recognizer(model, RATE.toFloat(), wakeGrammar(names))
             } catch (e: Throwable) {
-                main.post { Diag.w("ear", "Экономный слух недоступен для этой модели (${e.javaClass.simpleName}) — слушаю полностью") }
+                main.post { Diag.w("ear", tr("Экономный слух недоступен для этой модели (${e.javaClass.simpleName}) — слушаю полностью", "Economical hearing isn't available for this model (${e.javaClass.simpleName}) — listening fully")) }
                 null
             }
             wake = wakeRec
@@ -131,13 +144,13 @@ class VoiceEar(
                 AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT,
                 maxOf(minBuf, RATE * 2 / 2), // ≥0.5 s of audio
             )
-            if (audio.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException("микрофон недоступен")
+            if (audio.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException(tr("микрофон недоступен", "microphone unavailable"))
             EarStats.mode = when {
-                wakeRec != null -> "экономный: в ожидании только имя, тишина пропускается"
-                vad != null -> "тишина пропускается, распознавание полное"
-                else -> "полный (экономный слух выключен)"
+                wakeRec != null -> tr("экономный: в ожидании только имя, тишина пропускается", "economical: only the name while waiting, silence skipped")
+                vad != null -> tr("тишина пропускается, распознавание полное", "silence skipped, full recognition")
+                else -> tr("полный (экономный слух выключен)", "full (economical hearing off)")
             }
-            main.post { Diag.i("ear", "Слух: ${EarStats.mode}") }
+            main.post { Diag.i("ear", tr("Слух: ${EarStats.mode}", "Hearing: ${EarStats.mode}")) }
             val buf = ShortArray(RATE / 10) // 100 ms
             val history = ArrayDeque<ShortArray>() // last 1.5 s, replayed into the full recogniser after the name
             var recording = false
@@ -184,7 +197,7 @@ class VoiceEar(
                 }
                 if (!recording) { audio.startRecording(); recording = true }
                 val read = audio.read(buf, 0, buf.size)
-                if (read < 0) throw IllegalStateException("ошибка чтения микрофона ($read)")
+                if (read < 0) throw IllegalStateException(tr("ошибка чтения микрофона ($read)", "microphone read error ($read)"))
                 if (read == 0) continue
                 val chunk = buf.copyOf(read)
                 EarStats.totalChunks++
@@ -220,7 +233,7 @@ class VoiceEar(
         } catch (_: InterruptedException) {
         } catch (e: Throwable) {
             val msg = e.message ?: e.javaClass.simpleName
-            main.post { listener.onEarError("Слух остановлен: $msg") }
+            main.post { listener.onEarError(tr("Слух остановлен: $msg", "Hearing stopped: $msg")) }
             running = false
         } finally {
             runCatching { audio?.stop() }
@@ -268,7 +281,7 @@ class VoiceEar(
                     words += listOf(stem + "у", stem + (if (soft) "и" else "ы"), stem + "е", stem + "ой")
                 }
             }
-            if (words.isEmpty()) words += listOf("искра", "искру", "искры", "искре", "искрой")
+            if (words.isEmpty()) words += tr(listOf("искра", "искру", "искры", "искре", "искрой"), listOf("iskra", "spark"))
             return (words.map { "\"$it\"" } + "\"[unk]\"").joinToString(",", "[", "]")
         }
     }
@@ -284,6 +297,6 @@ object EarStats {
     fun describe(): String {
         if (totalChunks == 0L) return mode
         val share = fedChunks * 100 / totalChunks
-        return "$mode; распознавание работало $share % времени, имя услышано $wakeHits раз (за ${totalChunks / 600} мин)"
+        return tr("$mode; распознавание работало $share % времени, имя услышано $wakeHits раз (за ${totalChunks / 600} мин)", "$mode; recognition worked $share % of the time, name heard $wakeHits times (over ${totalChunks / 600} min)")
     }
 }

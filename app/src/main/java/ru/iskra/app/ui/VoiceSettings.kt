@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import ru.iskra.core.i18n.tr
 import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.saveable.rememberSaveable
 import android.Manifest
@@ -103,54 +104,54 @@ fun VoiceSection(s: AppSettings, onChange: (AppSettings) -> Unit, persist: () ->
     val error by app.speaker.lastError.collectAsState()
     var tested by remember { mutableStateOf(false) }
 
-    Section("Голос") {
-        SwitchRow(s.ttsEnabled, "Озвучивать ответы") { onChange(s.copy(ttsEnabled = it)) }
+    Section(tr("Голос", "Voice")) {
+        SwitchRow(s.ttsEnabled, tr("Озвучивать ответы", "Speak the replies")) { onChange(s.copy(ttsEnabled = it)) }
         TtsEngine.entries.forEach { e ->
             RadioRow(s.ttsEngine == e, e.title) { onChange(s.copy(ttsEngine = e, ttsVoice = "", ttsModel = "")) }
         }
         Hint(s.ttsEngine.note)
         if (s.ttsEngine == TtsEngine.SYSTEM && app.speaker.systemVoiceMissing) {
-            Text("В телефоне нет русского голоса, поэтому Искра молчит. Установи его в настройках синтеза речи " +
-                "(например, «Синтезатор речи Google» → русский).", fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
-            OutlinedButton(onClick = { DeviceHelper.openTtsSettings(ctx) }) { Text("Открыть настройки голоса") }
+            Text(tr("В телефоне нет русского голоса, поэтому Искра молчит. Установи его в настройках синтеза речи " +
+                "(например, «Синтезатор речи Google» → русский).", "The phone has no system voice for this language, so Iskra stays silent. Install one in the text-to-speech settings (for example, “Speech Services by Google” → English)."), fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
+            OutlinedButton(onClick = { DeviceHelper.openTtsSettings(ctx) }) { Text(tr("Открыть настройки голоса", "Open voice settings")) }
         }
         if (s.ttsEngine != TtsEngine.SYSTEM) {
-            Hint("В сервис голоса уходит только текст ответа Искры — не твои сообщения и не память.")
+            Hint(tr("В сервис голоса уходит только текст ответа Искры — не твои сообщения и не память.", "Only the text of Iskra's reply goes to the voice service — not your messages and not the memory."))
             if (s.ttsEngine == TtsEngine.CUSTOM) OutlinedTextField(
                 value = s.ttsBaseUrl, onValueChange = { onChange(s.copy(ttsBaseUrl = it)) },
-                label = { Text("Адрес (https://…/v1)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text(tr("Адрес (https://…/v1)", "Address (https://…/v1)")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = s.ttsVoice, onValueChange = { onChange(s.copy(ttsVoice = it)) },
-                label = { Text("Голос" + if (s.ttsEngine.defaultVoice.isNotEmpty()) " (по умолчанию ${s.ttsEngine.defaultVoice})" else "") },
+                label = { Text(tr("Голос", "Voice") + if (s.ttsEngine.defaultVoice.isNotEmpty()) tr(" (по умолчанию ${s.ttsEngine.defaultVoice})", " (default ${s.ttsEngine.defaultVoice})") else "") },
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
             if (s.ttsEngine == TtsEngine.OPENAI || s.ttsEngine == TtsEngine.ELEVENLABS || s.ttsEngine == TtsEngine.CUSTOM) OutlinedTextField(
                 value = s.ttsModel, onValueChange = { onChange(s.copy(ttsModel = it)) },
-                label = { Text("Модель" + if (s.ttsEngine.defaultModel.isNotEmpty()) " (по умолчанию ${s.ttsEngine.defaultModel})" else "") },
+                label = { Text(tr("Модель", "Model") + if (s.ttsEngine.defaultModel.isNotEmpty()) tr(" (по умолчанию ${s.ttsEngine.defaultModel})", " (default ${s.ttsEngine.defaultModel})") else "") },
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = key, onValueChange = { key = it },
-                label = { Text(if (hasKey) "Ключ голоса сохранён — введи новый, чтобы заменить" else "Ключ сервиса голоса") },
+                label = { Text(if (hasKey) tr("Ключ голоса сохранён — введи новый, чтобы заменить", "Voice key saved — enter a new one to replace it") else tr("Ключ сервиса голоса", "Voice service key")) },
                 singleLine = true, visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
             )
             Row {
-                if (key.isNotBlank()) TextButton(onClick = { app.ttsVault.save(key); key = ""; hasKey = true }) { Text("Сохранить ключ") }
-                if (hasKey) TextButton(onClick = { app.ttsVault.clear(); hasKey = false }) { Text("Удалить ключ") }
+                if (key.isNotBlank()) TextButton(onClick = { app.ttsVault.save(key); key = ""; hasKey = true }) { Text(tr("Сохранить ключ", "Save key")) }
+                if (hasKey) TextButton(onClick = { app.ttsVault.clear(); hasKey = false }) { Text(tr("Удалить ключ", "Delete key")) }
             }
         }
         OutlinedButton(onClick = {
             if (key.isNotBlank()) { app.ttsVault.save(key); key = ""; hasKey = true }
             persist()
             tested = true
-            app.speaker.speak("Мяу! Привет, это Искра. Так я теперь звучу. Нравится?", Emotion.HAPPY)
-        }) { Text("▶ Проверить голос") }
+            app.speaker.speak(tr("Мяу! Привет, это Искра. Так я теперь звучу. Нравится?", "Meow! Hi, it's Iskra. This is how I sound now. Do you like it?"), Emotion.HAPPY)
+        }) { Text(tr("▶ Проверить голос", "▶ Test the voice")) }
         if (tested) {
             val e = error
-            if (e != null) Text("Облачный голос не сработал, говорю системным: $e", fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
+            if (e != null) Text(tr("Облачный голос не сработал, говорю системным: $e", "The cloud voice didn't work, using the system one: $e"), fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
         }
     }
 }
@@ -168,49 +169,49 @@ fun EarSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
     }
     val ready = model is SpeechModel.State.Ready
 
-    Section("Слух: отзывается на имя") {
-        Hint("Искра постоянно слушает и реагирует, когда слышит своё имя: «Искра, поставь таймер на 5 минут» " +
+    Section(tr("Слух: отзывается на имя", "Hearing: answers to her name")) {
+        Hint(tr("Искра постоянно слушает и реагирует, когда слышит своё имя: «Искра, поставь таймер на 5 минут» " +
             "или просто «Искра» — и дальше команда. Распознавание полностью на телефоне: звук никуда не отправляется " +
             "и не записывается. Пока она слушает, Android показывает зелёный значок микрофона. Расход батареи — " +
-            "заметный (несколько процентов в час), поэтому при выключенном экране слух по умолчанию на паузе.")
+            "заметный (несколько процентов в час), поэтому при выключенном экране слух по умолчанию на паузе.", "Iskra listens all the time and reacts when she hears her name: “Spark, set a timer for 5 minutes” or just “Iskra” — and then the command. Recognition runs entirely on the phone: the sound is never sent anywhere and never recorded. While she listens, Android shows a green microphone icon. It uses noticeable battery (a few percent an hour), so with the screen off hearing is paused by default."))
         when (val m = model) {
             SpeechModel.State.Missing -> OutlinedButton(onClick = { scope.launch { SpeechModel.download(ctx) } }) {
-                Text("Скачать модель распознавания (${SpeechModel.SIZE_MB} МБ)")
+                Text(tr("Скачать модель распознавания (${SpeechModel.SIZE_MB} МБ)", "Download the speech model (${SpeechModel.SIZE_MB} MB)"))
             }
             is SpeechModel.State.Downloading -> {
-                Text("Скачиваю… ${(m.progress * 100).toInt()}%")
+                Text(tr("Скачиваю… ${(m.progress * 100).toInt()}%", "Downloading… ${(m.progress * 100).toInt()}%"))
                 LinearProgressIndicator(progress = { m.progress }, modifier = Modifier.fillMaxWidth())
             }
             SpeechModel.State.Ready -> Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("✅ Модель на телефоне", Modifier.weight(1f))
-                TextButton(onClick = { onChange(s.copy(alwaysListen = false)); SpeechModel.delete(ctx) }) { Text("Удалить") }
+                Text(tr("✅ Модель на телефоне", "✅ The model is on the phone"), Modifier.weight(1f))
+                TextButton(onClick = { onChange(s.copy(alwaysListen = false)); SpeechModel.delete(ctx) }) { Text(tr("Удалить", "Delete")) }
             }
             is SpeechModel.State.Failed -> {
-                Text("Не удалось скачать: ${m.message}", color = MaterialTheme.colorScheme.secondary, fontSize = 13.sp)
-                OutlinedButton(onClick = { scope.launch { SpeechModel.download(ctx) } }) { Text("Повторить") }
+                Text(tr("Не удалось скачать: ${m.message}", "Download failed: ${m.message}"), color = MaterialTheme.colorScheme.secondary, fontSize = 13.sp)
+                OutlinedButton(onClick = { scope.launch { SpeechModel.download(ctx) } }) { Text(tr("Повторить", "Retry")) }
             }
         }
-        SwitchRow(s.alwaysListen, "Слушать постоянно", enabled = ready || s.alwaysListen) { on ->
+        SwitchRow(s.alwaysListen, tr("Слушать постоянно", "Listen all the time"), enabled = ready || s.alwaysListen) { on ->
             if (!on) { onChange(s.copy(alwaysListen = false)); return@SwitchRow }
             if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
                 onChange(s.copy(alwaysListen = true))
             } else micLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
-        if (micDenied) Text("Без доступа к микрофону слух не работает.", color = MaterialTheme.colorScheme.secondary, fontSize = 13.sp)
-        if (s.alwaysListen && !s.overlayEnabled) Hint("Слух работает, пока Искра на экране — включи её на вкладке «Разрешения».")
+        if (micDenied) Text(tr("Без доступа к микрофону слух не работает.", "Hearing doesn't work without microphone access."), color = MaterialTheme.colorScheme.secondary, fontSize = 13.sp)
+        if (s.alwaysListen && !s.overlayEnabled) Hint(tr("Слух работает, пока Искра на экране — включи её на вкладке «Разрешения».", "Hearing works while Iskra is on screen — turn her on in the “Permissions” tab."))
         OutlinedTextField(
             value = s.wakeNames, onValueChange = { onChange(s.copy(wakeNames = it.take(120))) },
-            label = { Text("На какие имена отзываться (через запятую)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            label = { Text(tr("На какие имена отзываться (через запятую)", "Names she answers to (comma-separated)")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
         )
-        SwitchRow(s.followUp, "Продолжать разговор без имени (6 с после ответа)") { onChange(s.copy(followUp = it)) }
-        SwitchRow(s.economicalEar, "Экономный слух: в тишине не распознавать, в ожидании слушать только имя") { onChange(s.copy(economicalEar = it)) }
-        SwitchRow(s.listenScreenOff, "Слушать и при выключенном экране") { onChange(s.copy(listenScreenOff = it)) }
-        SwitchRow(s.voiceInputOffline, "Микрофон в чате — тоже только на телефоне", enabled = ready || s.voiceInputOffline) {
+        SwitchRow(s.followUp, tr("Продолжать разговор без имени (6 с после ответа)", "Keep talking without the name (6 s after a reply)")) { onChange(s.copy(followUp = it)) }
+        SwitchRow(s.economicalEar, tr("Экономный слух: в тишине не распознавать, в ожидании слушать только имя", "Economical hearing: don't recognize in silence, listen only for the name while waiting")) { onChange(s.copy(economicalEar = it)) }
+        SwitchRow(s.listenScreenOff, tr("Слушать и при выключенном экране", "Listen with the screen off too")) { onChange(s.copy(listenScreenOff = it)) }
+        SwitchRow(s.voiceInputOffline, tr("Микрофон в чате — тоже только на телефоне", "Chat microphone — on the phone only, too"), enabled = ready || s.voiceInputOffline) {
             onChange(s.copy(voiceInputOffline = it))
         }
-        Hint("Системное распознавание (обычно Google) может отправлять звук на сервер. С этим переключателем чат " +
-            "распознаёт речь той же моделью, что и слух. На телефонах без сервисов Google так работает всегда.")
-        Hint("Скажи «Искра, стоп», чтобы прервать ответ. Тап по Искре во время речи — тоже замолчит.")
+        Hint(tr("Системное распознавание (обычно Google) может отправлять звук на сервер. С этим переключателем чат " +
+            "распознаёт речь той же моделью, что и слух. На телефонах без сервисов Google так работает всегда.", "System recognition (usually Google) may send audio to a server. With this switch the chat recognizes speech with the same model as hearing. On phones without Google services it always works this way."))
+        Hint(tr("Скажи «Искра, стоп», чтобы прервать ответ. Тап по Искре во время речи — тоже замолчит.", "Say “Iskra, stop” to interrupt a reply. Tapping Iskra while she speaks stops her too."))
     }
 }
 
@@ -245,38 +246,38 @@ fun MotionSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
     }
     var limitsOpen by rememberSaveable { mutableStateOf(s.usageLimits.any || s.usageLimits.priced) }
     val systemCalm = remember { DeviceHelper.animationsOff(ctx) }
-    Section("Экономия") {
+    Section(tr("Экономия", "Economy")) {
         EconomyMode.entries.forEach { m -> RadioRow(s.economy == m, m.title, m.hint) { onChange(s.copy(economy = m)) } }
-        Hint("Сейчас: $now")
-        Hint(if (hz > 0) "Экран отдаёт Искре ~$hz кадров/с." else "Частота появится, когда Искра будет на экране.")
-        Hint("Телефон: ${DeviceHelper.deviceClass(ctx).title}. Расход батареи за час — в «Диагностике», строка «Расход в покое».")
-        Hint("Облако: $cloud")
-        TextButton(onClick = { limitsOpen = !limitsOpen }) { Text(if (limitsOpen) "Скрыть лимиты и цены" else "Лимиты и цены облака") }
+        Hint(tr("Сейчас: $now", "Now: $now"))
+        Hint(if (hz > 0) tr("Экран отдаёт Искре ~$hz кадров/с.", "The screen gives Iskra ~$hz fps.") else tr("Частота появится, когда Искра будет на экране.", "The refresh rate appears when Iskra is on screen."))
+        Hint(tr("Телефон: ${DeviceHelper.deviceClass(ctx).title}. Расход батареи за час — в «Диагностике», строка «Расход в покое».", "Phone: ${DeviceHelper.deviceClass(ctx).title}. Battery use per hour is in “Diagnostics”, the “Idle drain” line."))
+        Hint(tr("Облако: $cloud", "Cloud: $cloud"))
+        TextButton(onClick = { limitsOpen = !limitsOpen }) { Text(if (limitsOpen) tr("Скрыть лимиты и цены", "Hide limits and prices") else tr("Лимиты и цены облака", "Cloud limits and prices")) }
         if (limitsOpen) {
-            Hint("Дневные лимиты: на 80 % Искра предупредит, на 100 % до завтра ответит без модели и скажет системным голосом. 0 — без лимита.")
-            NumberField("Запросов к модели в день", s.limitRequests.toString()) { onChange(s.copy(limitRequests = it.toInt())) }
-            NumberField("Токенов в день", s.limitTokens.toString()) { onChange(s.copy(limitTokens = it.toLong())) }
-            NumberField("Символов облачного голоса в день", s.limitTtsChars.toString()) { onChange(s.copy(limitTtsChars = it.toLong())) }
-            Hint("Цены за 1 млн — с сайта твоего сервиса. Без цен Искра считает только количество. Если сервис не сообщает токены, они оцениваются по длине текста (≈).")
-            NumberField("Цена 1 млн входных токенов", plain(s.priceInPerM), decimal = true) { onChange(s.copy(priceInPerM = it)) }
-            NumberField("Цена 1 млн выходных токенов", plain(s.priceOutPerM), decimal = true) { onChange(s.copy(priceOutPerM = it)) }
-            NumberField("Цена 1 млн символов голоса", plain(s.priceTtsPerM), decimal = true) { onChange(s.copy(priceTtsPerM = it)) }
+            Hint(tr("Дневные лимиты: на 80 % Искра предупредит, на 100 % до завтра ответит без модели и скажет системным голосом. 0 — без лимита.", "Daily limits: at 80 % Iskra warns you, at 100 % she answers without the model and with the system voice until tomorrow. 0 — no limit."))
+            NumberField(tr("Запросов к модели в день", "Model requests per day"), s.limitRequests.toString()) { onChange(s.copy(limitRequests = it.toInt())) }
+            NumberField(tr("Токенов в день", "Tokens per day"), s.limitTokens.toString()) { onChange(s.copy(limitTokens = it.toLong())) }
+            NumberField(tr("Символов облачного голоса в день", "Cloud voice characters per day"), s.limitTtsChars.toString()) { onChange(s.copy(limitTtsChars = it.toLong())) }
+            Hint(tr("Цены за 1 млн — с сайта твоего сервиса. Без цен Искра считает только количество. Если сервис не сообщает токены, они оцениваются по длине текста (≈).", "Prices per 1 million — from your service's website. Without prices Iskra counts only amounts. If the service doesn't report tokens, they are estimated from the text length (≈)."))
+            NumberField(tr("Цена 1 млн входных токенов", "Price of 1M input tokens"), plain(s.priceInPerM), decimal = true) { onChange(s.copy(priceInPerM = it)) }
+            NumberField(tr("Цена 1 млн выходных токенов", "Price of 1M output tokens"), plain(s.priceOutPerM), decimal = true) { onChange(s.copy(priceOutPerM = it)) }
+            NumberField(tr("Цена 1 млн символов голоса", "Price of 1M voice characters"), plain(s.priceTtsPerM), decimal = true) { onChange(s.copy(priceTtsPerM = it)) }
             OutlinedTextField(value = s.currency, onValueChange = { onChange(s.copy(currency = it.take(8))) },
-                label = { Text("Валюта") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                label = { Text(tr("Валюта", "Currency")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
     }
-    Section("Движение") {
-        Text("Вид")
+    Section(tr("Движение", "Movement")) {
+        Text(tr("Вид", "Look"))
         AvatarLook.entries.forEach { m -> RadioRow(s.avatarLook == m, m.title) { onChange(s.copy(avatarLook = m)) } }
-        SwitchRow(s.calmMotion || systemCalm, "Спокойные движения (не гуляет по экрану)", enabled = !systemCalm) {
+        SwitchRow(s.calmMotion || systemCalm, tr("Спокойные движения (не гуляет по экрану)", "Calm movements (doesn't wander around the screen)"), enabled = !systemCalm) {
             onChange(s.copy(calmMotion = it))
         }
-        if (systemCalm) Hint("В Android выключены анимации — Искра двигается спокойно, пока они выключены.")
-        SwitchRow(s.wander, "Живёт своей жизнью (гуляет, прыгает, лазает)", enabled = !(s.calmMotion || systemCalm)) { onChange(s.copy(wander = it)) }
+        if (systemCalm) Hint(tr("В Android выключены анимации — Искра двигается спокойно, пока они выключены.", "Animations are off in Android — Iskra moves calmly while they are off."))
+        SwitchRow(s.wander, tr("Живёт своей жизнью (гуляет, прыгает, лазает)", "Lives her own life (walks, jumps, climbs)"), enabled = !(s.calmMotion || systemCalm)) { onChange(s.copy(wander = it)) }
         if (s.wander && !(s.calmMotion || systemCalm)) {
-            Text("Непоседливость")
+            Text(tr("Непоседливость", "Restlessness"))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                listOf("спокойная", "обычная", "шустрая").forEachIndexed { i, label ->
+                listOf(tr("спокойная", "calm"), tr("обычная", "normal"), tr("шустрая", "lively")).forEachIndexed { i, label ->
                     Row(Modifier.weight(1f).selectable(s.liveliness == i, role = Role.RadioButton) { onChange(s.copy(liveliness = i)) },
                         verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = s.liveliness == i, onClick = null)
@@ -284,8 +285,8 @@ fun MotionSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
                     }
                 }
             }
-            Hint("Прыгает, забирается на край экрана и висит, ползает по верхнему краю, убегает за экран и выглядывает. " +
-                "Если бросить её в край — зацепится. В «Батарее» она всегда спокойная.")
+            Hint(tr("Прыгает, забирается на край экрана и висит, ползает по верхнему краю, убегает за экран и выглядывает. " +
+                "Если бросить её в край — зацепится. В «Батарее» она всегда спокойная.", "Jumps, climbs onto the screen edge and hangs there, crawls along the top edge, runs off the screen and peeks out. Throw her at an edge — she'll grab it. In “Battery” mode she is always calm."))
         }
     }
 }
@@ -298,54 +299,54 @@ fun SkillsSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
     val scope = rememberCoroutineScope()
     var place by remember { mutableStateOf(app.settings.weatherPlace()) }
     var status by remember { mutableStateOf<String?>(null) }
-    Section("Погода") {
+    Section(tr("Погода", "Weather")) {
         OutlinedTextField(
             value = s.weatherCity, onValueChange = { onChange(s.copy(weatherCity = it.take(80))); status = null },
-            label = { Text("Твой город") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            label = { Text(tr("Твой город", "Your city")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = {
-                status = "Ищу…"
+                status = tr("Ищу…", "Searching…")
                 scope.launch {
                     status = try {
                         val p = ru.iskra.core.skills.WeatherClient().geocode(s.weatherCity)
                         app.settings.saveWeatherPlace(p); place = p
-                        if (p == null) "Не нашла такой город" else "Нашла: ${p.name}"
-                    } catch (e: Exception) { "Нет связи с сервисом погоды" }
+                        if (p == null) tr("Не нашла такой город", "Couldn't find that city") else tr("Нашла: ${p.name}", "Found: ${p.name}")
+                    } catch (e: Exception) { tr("Нет связи с сервисом погоды", "No connection to the weather service") }
                 }
-            }, enabled = s.weatherCity.isNotBlank()) { Text("Найти город") }
+            }, enabled = s.weatherCity.isNotBlank()) { Text(tr("Найти город", "Find city")) }
             Spacer(Modifier.size(8.dp))
-            Text(status ?: place?.let { "Сейчас: ${it.name}" } ?: "Город не задан", fontSize = 13.sp)
+            Text(status ?: place?.let { tr("Сейчас: ${it.name}", "Now: ${it.name}") } ?: tr("Город не задан", "City not set"), fontSize = 13.sp)
         }
-        Hint("«Искра, какая погода», «погода завтра», «нужен ли зонт». Данные: open-meteo.com — туда уходят только координаты города, без ключа и без доступа к местоположению.")
+        Hint(tr("«Искра, какая погода», «погода завтра», «нужен ли зонт». Данные: open-meteo.com — туда уходят только координаты города, без ключа и без доступа к местоположению.", "“Iskra, what's the weather”, “weather tomorrow”, “do I need an umbrella”. Data: open-meteo.com — only the city's coordinates are sent, no key and no location access."))
     }
-    Section("Сама заговаривает") {
+    Section(tr("Сама заговаривает", "Speaks up on her own")) {
         ru.iskra.core.skills.ProactiveFrequency.entries.forEach { f ->
             RadioRow(s.proactive == f, f.title) { onChange(s.copy(proactive = f)) }
         }
         if (s.proactive != ru.iskra.core.skills.ProactiveFrequency.OFF) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Тихие часы: с ")
+                Text(tr("Тихие часы: с ", "Quiet hours: from "))
                 HourField(s.quietFrom) { onChange(s.copy(quietFrom = it)) }
-                Text(" до ")
+                Text(tr(" до ", " to "))
                 HourField(s.quietTo) { onChange(s.copy(quietTo = it)) }
             }
-            SwitchRow(s.proactiveVoice, "Говорить голосом (иначе только облачко)") { onChange(s.copy(proactiveVoice = it)) }
-            Hint("Утром при первом включении экрана, когда ты вернулся после долгого перерыва, иногда вечером. Никогда — в тихие часы, при выключенном экране и чаще, чем выбрано. Голосом — только если не играет музыка.")
+            SwitchRow(s.proactiveVoice, tr("Говорить голосом (иначе только облачко)", "Speak aloud (otherwise only the bubble)")) { onChange(s.copy(proactiveVoice = it)) }
+            Hint(tr("Утром при первом включении экрана, когда ты вернулся после долгого перерыва, иногда вечером. Никогда — в тихие часы, при выключенном экране и чаще, чем выбрано. Голосом — только если не играет музыка.", "In the morning when the screen first turns on, when you come back after a long break, sometimes in the evening. Never during quiet hours, with the screen off or more often than chosen. Aloud — only if no music is playing."))
         }
     }
-    Section("Напоминания") {
+    Section(tr("Напоминания", "Reminders")) {
         val exact = app.reminderScheduler.exact
-        Text(if (exact) "✅ Напоминания приходят точно в срок" else "⚠️ Android может прислать напоминание на несколько минут позже", fontSize = 14.sp)
+        Text(if (exact) tr("✅ Напоминания приходят точно в срок", "✅ Reminders arrive exactly on time") else tr("⚠️ Android может прислать напоминание на несколько минут позже", "⚠️ Android may deliver a reminder a few minutes late"), fontSize = 14.sp)
         if (!exact && android.os.Build.VERSION.SDK_INT >= 31) {
             OutlinedButton(onClick = {
                 runCatching {
                     ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
                         android.net.Uri.parse("package:" + ctx.packageName)))
                 }
-            }) { Text("Разрешить «Будильники и напоминания»") }
+            }) { Text(tr("Разрешить «Будильники и напоминания»", "Allow “Alarms & reminders”")) }
         }
-        Hint("«Напомни через 10 минут позвонить маме», «напомни завтра в 9 про встречу», «какие напоминания». Переживают перезагрузку телефона. Список и удаление — во вкладке «Память».")
+        Hint(tr("«Напомни через 10 минут позвонить маме», «напомни завтра в 9 про встречу», «какие напоминания». Переживают перезагрузку телефона. Список и удаление — во вкладке «Память».", "“Remind me in 10 minutes to call mom”, “remind me tomorrow at 9 about the meeting”, “my reminders”. They survive a phone restart. The list and deletion are in the “Memory” tab."))
     }
 }
 

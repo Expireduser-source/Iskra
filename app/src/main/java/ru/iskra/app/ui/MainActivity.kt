@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import ru.iskra.core.i18n.tr
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -109,7 +110,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun MainScreen() {
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    val tabs = listOf("💬" to "Чат", "🧠" to "Память", "⚙️" to "Настройки", "🔐" to "Разрешения")
+    val tabs = listOf("💬" to tr("Чат", "Chat"), "🧠" to tr("Память", "Memory"), "⚙️" to tr("Настройки", "Settings"), "🔐" to tr("Разрешения", "Permissions"))
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
@@ -154,11 +155,11 @@ private fun CrashBanner() {
     if (last <= seen) return
     Card(Modifier.fillMaxWidth().padding(8.dp)) {
         Column(Modifier.padding(12.dp)) {
-            Text("Искра аварийно закрылась " + java.text.SimpleDateFormat("dd.MM в HH:mm", java.util.Locale.ROOT).format(java.util.Date(last)), fontSize = 15.sp)
-            Text("Причина записана в журнал. Отправь отчёт — так её проще найти. В нём нет ключей и переписки.", fontSize = 13.sp)
+            Text(tr("Искра аварийно закрылась ", "Iskra crashed ") + java.text.SimpleDateFormat(tr("dd.MM в HH:mm", "MMM d 'at' HH:mm"), tr(java.util.Locale("ru"), java.util.Locale.ENGLISH)).format(java.util.Date(last)), fontSize = 15.sp)
+            Text(tr("Причина записана в журнал. Отправь отчёт — так её проще найти. В нём нет ключей и переписки.", "The cause is in the journal. Send the report — it makes it easier to find. It has no keys and no chat."), fontSize = 13.sp)
             Row {
-                TextButton(onClick = { runCatching { DiagCollector.shareReport(ctx) }; prefs.edit().putLong("seen", last).apply(); seen = last }) { Text("📤 Отправить отчёт") }
-                TextButton(onClick = { prefs.edit().putLong("seen", last).apply(); seen = last }) { Text("Понятно") }
+                TextButton(onClick = { runCatching { DiagCollector.shareReport(ctx) }; prefs.edit().putLong("seen", last).apply(); seen = last }) { Text(tr("📤 Отправить отчёт", "📤 Send report")) }
+                TextButton(onClick = { prefs.edit().putLong("seen", last).apply(); seen = last }) { Text(tr("Понятно", "Got it")) }
             }
         }
     }
@@ -176,11 +177,11 @@ private fun AccessibilityWarning() {
             val state = CompanionAccessibilityService.state(ctx)
             if (state != lastLoggedAccess) {
                 lastLoggedAccess = state
-                Diag.i("access", "Проверка при открытии: ${CompanionAccessibilityService.describe(ctx)}")
+                Diag.i("access", tr("Проверка при открытии: ${CompanionAccessibilityService.describe(ctx)}", "Check on open: ${CompanionAccessibilityService.describe(ctx)}"))
             }
             val now = state == CompanionAccessibilityService.State.ENABLED_NOT_CONNECTED ||
                 state == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM
-            if (now && problem != state) Diag.w("access", "Показано предупреждение: ${if (state == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM) "служба выключена, хотя раньше работала" else "включена, но не работает"} (${CompanionAccessibilityService.describe(ctx)})")
+            if (now && problem != state) Diag.w("access", tr("Показано предупреждение: ${if (state == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM) "служба выключена, хотя раньше работала" else "включена, но не работает"} (${CompanionAccessibilityService.describe(ctx)})", "Warning shown: ${if (state == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM) "service off although it worked before" else "on but not running"} (${CompanionAccessibilityService.describe(ctx)})"))
             problem = if (now) state else null
         }
     }
@@ -188,23 +189,23 @@ private fun AccessibilityWarning() {
     val turnedOff = p == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM
     Card(Modifier.fillMaxWidth().padding(8.dp)) {
         Column(Modifier.padding(12.dp)) {
-            Text(if (turnedOff) "⚠️ Управление телефоном выключено" else "⚠️ Управление телефоном не работает", fontSize = 16.sp)
+            Text(if (turnedOff) tr("⚠️ Управление телефоном выключено", "⚠️ Phone control is off") else tr("⚠️ Управление телефоном не работает", "⚠️ Phone control isn't working"), fontSize = 16.sp)
             Text(
-                if (turnedOff) "После обновления приложения HyperOS выключила «Искра · управление» в спецвозможностях. " +
-                    "Без неё не работают «домой», «назад», шторка, скриншот. Открой спецвозможности и включи её снова."
-                else "«Искра · управление» включена в спецвозможностях, но Android её сейчас не запускает. " +
-                    "Открой спецвозможности, выключи «Искра · управление» и включи снова." +
-                    if (DeviceHelper.guide.any { it.autostart }) " Чтобы не повторялось: включи Автозапуск для Искры." else "",
+                if (turnedOff) tr("После обновления приложения HyperOS выключила «Искра · управление» в спецвозможностях. " +
+                    "Без неё не работают «домой», «назад», шторка, скриншот. Открой спецвозможности и включи её снова.", "After the app update the system turned off “Iskra · control” in Accessibility. Without it, “home”, “back”, the notification shade and screenshots don't work. Open Accessibility and turn it on again.")
+                else tr("«Искра · управление» включена в спецвозможностях, но Android её сейчас не запускает. " +
+                    "Открой спецвозможности, выключи «Искра · управление» и включи снова.", "“Iskra · control” is on in Accessibility, but Android isn't running it right now. Open Accessibility, turn “Iskra · control” off and on again.") +
+                    if (DeviceHelper.guide.any { it.autostart }) tr(" Чтобы не повторялось: включи Автозапуск для Искры.", " So it doesn't happen again: turn on Autostart for Iskra.") else "",
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row {
-                TextButton(onClick = { DeviceHelper.openAccessibilitySettings(ctx) }) { Text("Открыть спецвозможности") }
+                TextButton(onClick = { DeviceHelper.openAccessibilitySettings(ctx) }) { Text(tr("Открыть спецвозможности", "Open Accessibility")) }
                 if (turnedOff) TextButton(onClick = {
                     CompanionAccessibilityService.setExpected(ctx, false)
-                    Diag.i("access", "Владелец: управление телефоном не нужно, не напоминать")
+                    Diag.i("access", tr("Владелец: управление телефоном не нужно, не напоминать", "Owner: phone control not needed, don't remind"))
                     problem = null
-                }) { Text("Не нужно") }
-                else if (DeviceHelper.guide.any { it.autostart }) TextButton(onClick = { DeviceHelper.openAutostart(ctx) }) { Text("Автозапуск") }
+                }) { Text(tr("Не нужно", "Not needed")) }
+                else if (DeviceHelper.guide.any { it.autostart }) TextButton(onClick = { DeviceHelper.openAutostart(ctx) }) { Text(tr("Автозапуск", "Autostart")) }
             }
         }
     }
@@ -229,10 +230,10 @@ private fun MemoryScreen(modifier: Modifier) {
         scope.launch {
             backupMsg = try {
                 val n = Backups.export(ctx, uri)
-                "Сохранено: $n записей памяти и настройки. Ключей API в файле нет."
+                tr("Сохранено: $n записей памяти и настройки. Ключей API в файле нет.", "Saved: $n memory entries and the settings. No API keys in the file.")
             } catch (e: Exception) {
-                Diag.e("backup", "Экспорт не удался", e)
-                "Не удалось сохранить: ${(e as? BackupException)?.userMessage ?: e.javaClass.simpleName}"
+                Diag.e("backup", tr("Экспорт не удался", "Export failed"), e)
+                tr("Не удалось сохранить: ${(e as? BackupException)?.userMessage ?: e.javaClass.simpleName}", "Couldn't save: ${(e as? BackupException)?.userMessage ?: e.javaClass.simpleName}")
             }
         }
     }
@@ -243,16 +244,16 @@ private fun MemoryScreen(modifier: Modifier) {
                 preview = Backups.read(ctx, uri)
                 backupMsg = null
             } catch (e: Exception) {
-                Diag.w("backup", "Файл копии не принят", e)
-                backupMsg = (e as? BackupException)?.userMessage ?: "Не удалось прочитать файл: ${e.javaClass.simpleName}"
+                Diag.w("backup", tr("Файл копии не принят", "Backup file rejected"), e)
+                backupMsg = (e as? BackupException)?.userMessage ?: tr("Не удалось прочитать файл: ${e.javaClass.simpleName}", "Couldn't read the file: ${e.javaClass.simpleName}")
             }
         }
     }
     Column(modifier.fillMaxSize().padding(12.dp)) {
-        Text("Что Искра помнит о тебе", fontSize = 20.sp)
+        Text(tr("Что Искра помнит о тебе", "What Iskra remembers about you"), fontSize = 20.sp)
         Text(
-            "Это обычные записи на телефоне, а не «обучение нейросети». Всё можно удалить. " +
-                "📌 — ты попросил запомнить, 🤖 — предложила модель, 📖 — сжатый пересказ разговоров.",
+            tr("Это обычные записи на телефоне, а не «обучение нейросети». Всё можно удалить. " +
+                "📌 — ты попросил запомнить, 🤖 — предложила модель, 📖 — сжатый пересказ разговоров.", "These are plain entries on the phone, not “neural network training”. Everything can be deleted. 📌 — you asked her to remember, 🤖 — suggested by the model, 📖 — a short recap of conversations."),
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp,
         )
         Spacer(Modifier.size(8.dp))
@@ -260,57 +261,57 @@ private fun MemoryScreen(modifier: Modifier) {
             items(items.sortedByDescending { it.createdAtMs }, key = { it.id }) { item ->
                 MemoryRow(item, enabled = !clearing) {
                     app.memory.delete(item.id); refresh()
-                    Diag.i("memory", "Запись удалена владельцем, осталось ${items.size}")
+                    Diag.i("memory", tr("Запись удалена владельцем, осталось ${items.size}", "Entry deleted by the owner, ${items.size} left"))
                 }
             }
-            item(key = "rem-h") { Text("⏰ Напоминания (${reminders.size})", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
-            if (reminders.isEmpty()) item(key = "rem-e") { Text("«Напомни через 10 минут позвонить маме»", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item(key = "rem-h") { Text(tr("⏰ Напоминания (${reminders.size})", "⏰ Reminders (${reminders.size})"), fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
+            if (reminders.isEmpty()) item(key = "rem-e") { Text(tr("«Напомни через 10 минут позвонить маме»", "“Remind me in 10 minutes to call mom”"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             items(reminders, key = { "r" + it.id }) { r ->
                 SimpleRow("${timeFmt.format(java.util.Date(r.atMs))} — ${r.text}", enabled = !clearing) {
                     app.reminderScheduler.cancel(r.id); app.reminders.delete(r.id); refresh()
-                    Diag.i("remind", "Напоминание удалено владельцем, осталось ${reminders.size}")
+                    Diag.i("remind", tr("Напоминание удалено владельцем, осталось ${reminders.size}", "Reminder deleted by the owner, ${reminders.size} left"))
                 }
             }
-            item(key = "note-h") { Text("📝 Заметки (${notes.size})", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
-            if (notes.isEmpty()) item(key = "note-e") { Text("«Запиши заметку: купить молоко»", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item(key = "note-h") { Text(tr("📝 Заметки (${notes.size})", "📝 Notes (${notes.size})"), fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
+            if (notes.isEmpty()) item(key = "note-e") { Text(tr("«Запиши заметку: купить молоко»", "“Note: buy milk”"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             items(notes, key = { "n" + it.id }) { n ->
                 SimpleRow(n.text, enabled = !clearing) {
                     app.notes.delete(n.id); refresh()
-                    Diag.i("notes", "Заметка удалена владельцем, осталось ${notes.size}")
+                    Diag.i("notes", tr("Заметка удалена владельцем, осталось ${notes.size}", "Note deleted by the owner, ${notes.size} left"))
                 }
             }
         }
-        if (clearing) Text("Стираю данные…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (clearing) Text(tr("Стираю данные…", "Erasing data…"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         backupMsg?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary) }
         Row {
-            OutlinedButton(enabled = !clearing, onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text("💾 Сохранить копию") }
+            OutlinedButton(enabled = !clearing, onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text(tr("💾 Сохранить копию", "💾 Save a backup")) }
             Spacer(Modifier.size(8.dp))
-            OutlinedButton(enabled = !clearing, onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text("📂 Восстановить") }
+            OutlinedButton(enabled = !clearing, onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text(tr("📂 Восстановить", "📂 Restore")) }
         }
         var autoState by remember { mutableStateOf(AutoBackup.describe(ctx)) }
         val treeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri == null || app.chat.clearing.value) return@rememberLauncherForActivityResult
-            runCatching { AutoBackup.enable(ctx, uri) }.onFailure { backupMsg = "Папка не подходит: ${it.javaClass.simpleName}" }
+            runCatching { AutoBackup.enable(ctx, uri) }.onFailure { backupMsg = tr("Папка не подходит: ${it.javaClass.simpleName}", "This folder doesn't work: ${it.javaClass.simpleName}") }
             scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) }
         }
-        Text("🗓 Ежедневная копия: $autoState", fontSize = 13.sp)
+        Text(tr("🗓 Ежедневная копия: $autoState", "🗓 Daily backup: $autoState"), fontSize = 13.sp)
         Row {
-            OutlinedButton(enabled = !clearing, onClick = { treeLauncher.launch(null) }) { Text(if (AutoBackup.folder(ctx) == null) "Включить: выбрать папку" else "Другая папка") }
+            OutlinedButton(enabled = !clearing, onClick = { treeLauncher.launch(null) }) { Text(if (AutoBackup.folder(ctx) == null) tr("Включить: выбрать папку", "Turn on: choose a folder") else tr("Другая папка", "Another folder")) }
             if (AutoBackup.folder(ctx) != null) {
-                TextButton(enabled = !clearing, onClick = { scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) } }) { Text("Сейчас") }
-                TextButton(enabled = !clearing, onClick = { AutoBackup.disable(ctx); autoState = AutoBackup.describe(ctx) }) { Text("Выключить") }
+                TextButton(enabled = !clearing, onClick = { scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) } }) { Text(tr("Сейчас", "Now")) }
+                TextButton(enabled = !clearing, onClick = { AutoBackup.disable(ctx); autoState = AutoBackup.describe(ctx) }) { Text(tr("Выключить", "Turn off")) }
             }
         }
         Row {
-            OutlinedButton(enabled = !clearing, onClick = { app.chat.clearHistory { Diag.i("memory", "Переписка очищена владельцем") } }) { Text("Очистить переписку") }
+            OutlinedButton(enabled = !clearing, onClick = { app.chat.clearHistory { Diag.i("memory", tr("Переписка очищена владельцем", "Chat history cleared by the owner")) } }) { Text(tr("Очистить переписку", "Clear chat history")) }
             Spacer(Modifier.size(8.dp))
-            OutlinedButton(enabled = !clearing, onClick = { confirmWipe = true }) { Text("Стереть всё") }
+            OutlinedButton(enabled = !clearing, onClick = { confirmWipe = true }) { Text(tr("Стереть всё", "Erase everything")) }
         }
     }
     preview?.let { p ->
         AlertDialog(
             onDismissRequest = { preview = null },
-            title = { Text("Восстановить из копии?") },
+            title = { Text(tr("Восстановить из копии?", "Restore from the backup?")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     p.lines.forEach { Text(it, fontSize = 14.sp) }
@@ -322,21 +323,21 @@ private fun MemoryScreen(modifier: Modifier) {
                     scope.launch {
                         val skipped = Backups.apply(p.backup)
                         refresh()
-                        backupMsg = "Восстановлено." + if (skipped > 0) " Пропущено записей: $skipped (пароли, номера карт или слишком длинные)." else ""
+                        backupMsg = tr("Восстановлено.", "Restored.") + if (skipped > 0) tr(" Пропущено записей: $skipped (пароли, номера карт или слишком длинные).", " Skipped entries: $skipped (passwords, card numbers or too long).") else ""
                         val cur = app.settings.load()
                         if (cur.overlayEnabled && DeviceHelper.canDrawOverlays(ctx)) { OverlayService.stop(ctx); OverlayService.start(ctx) }
                     }
-                }) { Text("Заменить") }
+                }) { Text(tr("Заменить", "Replace")) }
             },
-            dismissButton = { TextButton(enabled = !clearing, onClick = { preview = null }) { Text("Отмена") } },
+            dismissButton = { TextButton(enabled = !clearing, onClick = { preview = null }) { Text(tr("Отмена", "Cancel")) } },
         )
     }
     if (confirmWipe) AlertDialog(
         onDismissRequest = { confirmWipe = false },
-        title = { Text("Стереть все данные?") },
-        text = { Text("Будут удалены память, заметки, напоминания, переписка, настроение, ключи API, кэш голоса и журнал диагностики. Настройки и сохранённые файлы резервных копий останутся. Это необратимо.") },
-        confirmButton = { TextButton(enabled = !clearing, onClick = { app.wipeAllData { refresh() }; confirmWipe = false }) { Text("Стереть") } },
-        dismissButton = { TextButton(enabled = !clearing, onClick = { confirmWipe = false }) { Text("Отмена") } },
+        title = { Text(tr("Стереть все данные?", "Erase all data?")) },
+        text = { Text(tr("Будут удалены память, заметки, напоминания, переписка, настроение, ключи API, кэш голоса и журнал диагностики. Настройки и сохранённые файлы резервных копий останутся. Это необратимо.", "Memory, notes, reminders, chat, mood, API keys, the voice cache and the diagnostics journal will be deleted. Settings and saved backup files stay. This cannot be undone.")) },
+        confirmButton = { TextButton(enabled = !clearing, onClick = { app.wipeAllData { refresh() }; confirmWipe = false }) { Text(tr("Стереть", "Erase")) } },
+        dismissButton = { TextButton(enabled = !clearing, onClick = { confirmWipe = false }) { Text(tr("Отмена", "Cancel")) } },
     )
 }
 
@@ -350,7 +351,7 @@ private fun MemoryRow(item: MemoryItem, enabled: Boolean = true, onDelete: () ->
                 else -> "🤖"
             }
             Text("$badge ${item.text}", Modifier.weight(1f))
-            TextButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = "Удалить: ${item.text}" }) {
+            TextButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = tr("Удалить: ${item.text}", "Delete: ${item.text}") }) {
                 Text("✕", Modifier.clearAndSetSemantics {})
             }
         }
@@ -369,13 +370,14 @@ private fun SettingsScreen(modifier: Modifier) {
     if (diagnostics) { DiagnosticsScreen(modifier) { diagnostics = false }; return }
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { diagnostics = true }, modifier = Modifier.fillMaxWidth()) { Text("🩺 Диагностика и отчёт об ошибках") }
-        TextButton(onClick = { OnboardingState.again(ctx); (ctx as? android.app.Activity)?.recreate() }) { Text("Пройти знакомство заново") }
-        Text("Мозг Искры", fontSize = 20.sp)
+        OutlinedButton(onClick = { diagnostics = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("🩺 Диагностика и отчёт об ошибках", "🩺 Diagnostics and error report")) }
+        TextButton(onClick = { OnboardingState.again(ctx); (ctx as? android.app.Activity)?.recreate() }) { Text(tr("Пройти знакомство заново", "Take the introduction again")) }
+        LanguageSection()
+        Text(tr("Мозг Искры", "Iskra's brain"), fontSize = 20.sp)
         Text(
-            "Ключ API хранится зашифрованным (Android Keystore) и отправляется только выбранному сервису. " +
+            tr("Ключ API хранится зашифрованным (Android Keystore) и отправляется только выбранному сервису. " +
                 "Сообщения, релевантные заметки памяти и настроение уходят в облако только когда ты пишешь. " +
-                "Команды телефона и «запомни» работают без облака.",
+                "Команды телефона и «запомни» работают без облака.", "The API key is stored encrypted (Android Keystore) and is sent only to the chosen service. Messages, relevant memory notes and the mood go to the cloud only when you write. Phone commands and “remember” work without the cloud."),
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         ProviderPreset.entries.forEach { p ->
@@ -384,32 +386,32 @@ private fun SettingsScreen(modifier: Modifier) {
         if (s.preset != ProviderPreset.OFFLINE) {
             if (s.preset == ProviderPreset.CUSTOM) OutlinedTextField(
                 value = s.baseUrl, onValueChange = { s = s.copy(baseUrl = it); saved = false },
-                label = { Text("Адрес API (https://…/v1)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text(tr("Адрес API (https://…/v1)", "API address (https://…/v1)")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = s.model, onValueChange = { s = s.copy(model = it); saved = false },
-                label = { Text("Модель") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                label = { Text(tr("Модель", "Model")) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
             OutlinedTextField(
                 value = key, onValueChange = { key = it; saved = false },
-                label = { Text(if (hasKey) "Ключ API сохранён — введи новый, чтобы заменить" else "Ключ API") },
+                label = { Text(if (hasKey) tr("Ключ API сохранён — введи новый, чтобы заменить", "API key saved — enter a new one to replace it") else tr("Ключ API", "API key")) },
                 singleLine = true, visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (hasKey) TextButton(onClick = { app.vault.clear(); hasKey = false }) { Text("Удалить сохранённый ключ") }
+            if (hasKey) TextButton(onClick = { app.vault.clear(); hasKey = false }) { Text(tr("Удалить сохранённый ключ", "Delete the saved key")) }
         }
         if (s.preset == ProviderPreset.OFFLINE) Text(
-            "Сейчас у Искры нет «мозга»: она понимает только команды телефона. Чтобы она нормально разговаривала, " +
+            tr("Сейчас у Искры нет «мозга»: она понимает только команды телефона. Чтобы она нормально разговаривала, " +
                 "выбери сервис и вставь ключ. Дешевле всего DeepSeek (доли копейки за реплику, оплата картой) " +
-                "или OpenRouter (много моделей через один ключ).",
+                "или OpenRouter (много моделей через один ключ).", "Right now Iskra has no “brain”: she understands only phone commands. To really chat with her, choose a service and paste a key — or connect OpenRouter for free below. DeepSeek is the cheapest paid option (a fraction of a cent per reply)."),
             fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary,
         )
         VoiceSection(s, onChange = { s = it; saved = false }, persist = { app.settings.save(s.copy(overlayEnabled = app.settings.load().overlayEnabled)) })
         EarSection(s, onChange = { s = it; saved = false })
         MotionSection(s, onChange = { s = it; saved = false })
         SkillsSection(s, onChange = { s = it; saved = false })
-        Text("Размер персонажа: ${s.avatarSizeDp} dp")
+        Text(tr("Размер персонажа: ${s.avatarSizeDp} dp", "Character size: ${s.avatarSizeDp} dp"))
         Slider(value = s.avatarSizeDp.toFloat(), onValueChange = { s = s.copy(avatarSizeDp = it.toInt()); saved = false }, valueRange = 72f..220f)
         Button(onClick = {
             if (s.preset == ProviderPreset.CUSTOM && !s.baseUrl.startsWith("https://")) {
@@ -425,10 +427,10 @@ private fun SettingsScreen(modifier: Modifier) {
             // Apply size/motion/listening changes to a running overlay.
             val cur = app.settings.load()
             if (cur.overlayEnabled && DeviceHelper.canDrawOverlays(ctx)) { OverlayService.stop(ctx); OverlayService.start(ctx) }
-        }) { Text("Сохранить") }
-        if (saved) Text("Сохранено ✓", color = MaterialTheme.colorScheme.primary)
-        else Text("Изменения применятся после «Сохранить».", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (s.preset == ProviderPreset.CUSTOM) Text("Нужен HTTPS. Обычный http запрещён ради защиты ключа.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }) { Text(tr("Сохранить", "Save")) }
+        if (saved) Text(tr("Сохранено ✓", "Saved ✓"), color = MaterialTheme.colorScheme.primary)
+        else Text(tr("Изменения применятся после «Сохранить».", "Changes apply after “Save”."), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (s.preset == ProviderPreset.CUSTOM) Text(tr("Нужен HTTPS. Обычный http запрещён ради защиты ключа.", "HTTPS is required. Plain http is not allowed, to protect the key."), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -451,14 +453,14 @@ private fun PermissionsScreen(modifier: Modifier) {
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tick++ }
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Разрешения", fontSize = 20.sp)
-        Text("Каждое разрешение необязательно и отключается в любой момент. Искра не читает экран, SMS, контакты и файлы.",
+        Text(tr("Разрешения", "Permissions"), fontSize = 20.sp)
+        Text(tr("Каждое разрешение необязательно и отключается в любой момент. Искра не читает экран, SMS, контакты и файлы.", "Every permission is optional and can be turned off at any time. Iskra doesn't read the screen, SMS, contacts or files."),
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        PermCard("Поверх других приложений", "Нужно, чтобы Искра жила на экране, а не только в приложении.", overlay) {
+        PermCard(tr("Поверх других приложений", "Over other apps"), tr("Нужно, чтобы Искра жила на экране, а не только в приложении.", "Needed so Iskra can live on the screen, not only inside the app."), overlay) {
             DeviceHelper.openOverlaySettings(ctx)
         }
-        if (overlay) SwitchRow(overlayOn, "Показать Искру на экране", tag = "overlay_switch") { on ->
+        if (overlay) SwitchRow(overlayOn, tr("Показать Искру на экране", "Show Iskra on screen"), tag = "overlay_switch") { on ->
             overlayOn = on
             app.settings.save(app.settings.load().copy(overlayEnabled = on))
             if (on) {
@@ -466,14 +468,14 @@ private fun PermissionsScreen(modifier: Modifier) {
                 OverlayService.start(ctx)
             } else OverlayService.stop(ctx)
         }
-        PermCard("Уведомления", "Android показывает значок, пока Искра на экране. Без него HyperOS чаще её выгружает.", notif) {
+        PermCard(tr("Уведомления", "Notifications"), tr("Android показывает значок, пока Искра на экране. Без него HyperOS чаще её выгружает.", "Android shows an icon while Iskra is on screen. Without it the system unloads her more often."), notif) {
             if (Build.VERSION.SDK_INT >= 33) notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-        PermCard("Управление телефоном", "Специальные возможности → «Искра · управление». Даёт только «Домой», «Назад», «Недавние», шторку, блокировку и скриншот. " +
-            if (Build.VERSION.SDK_INT >= 33) "Если переключатель серый: О приложении → ⋮ → «Разрешить ограниченные настройки» (Android так защищает APK не из магазина)." else "", access) {
+        PermCard(tr("Управление телефоном", "Phone control"), tr("Специальные возможности → «Искра · управление». Даёт только «Домой», «Назад», «Недавние», шторку, блокировку и скриншот. ", "Accessibility → “Iskra · control”. Gives only Home, Back, Recents, the notification shade, lock and screenshot. ") +
+            if (Build.VERSION.SDK_INT >= 33) tr("Если переключатель серый: О приложении → ⋮ → «Разрешить ограниченные настройки» (Android так защищает APK не из магазина).", "If the switch is grey: App info → ⋮ → “Allow restricted settings” (this is how Android protects apps installed outside a store).") else "", access) {
             DeviceHelper.openAccessibilitySettings(ctx)
         }
-        PermCard("Работа в фоне", "Снимает ограничение батареи, чтобы Искра не исчезала.", battery) {
+        PermCard(tr("Работа в фоне", "Background work"), tr("Снимает ограничение батареи, чтобы Искра не исчезала.", "Removes the battery restriction so Iskra doesn't disappear."), battery) {
             DeviceHelper.openBatterySettings(ctx)
         }
         VendorCard()
@@ -486,12 +488,12 @@ private fun VendorCard() {
     val ctx = LocalContext.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Чтобы ${DeviceHelper.vendor.title} не выгружал Искру", fontSize = 16.sp)
+            Text(tr("Чтобы ${DeviceHelper.vendor.title} не выгружал Искру", "So that ${DeviceHelper.vendor.title} doesn't unload Iskra"), fontSize = 16.sp)
             DeviceHelper.guide.forEachIndexed { i, step ->
                 Text("${i + 1}. ${step.text}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 step.button?.let { b -> TextButton(onClick = { DeviceHelper.open(ctx, step) }) { Text(b) } }
             }
-            TextButton(onClick = { DeviceHelper.openAppDetails(ctx) }) { Text("О приложении") }
+            TextButton(onClick = { DeviceHelper.openAppDetails(ctx) }) { Text(tr("О приложении", "App info")) }
         }
     }
 }
@@ -502,9 +504,9 @@ private fun PermCard(title: String, text: String, granted: Boolean, onOpen: () -
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text((if (granted) "✅ " else "⬜ ") + title, fontSize = 16.sp, modifier = Modifier.weight(1f).clearAndSetSemantics {
-                    contentDescription = title; stateDescription = if (granted) "разрешено" else "не разрешено"
+                    contentDescription = title; stateDescription = if (granted) tr("разрешено", "allowed") else tr("не разрешено", "not allowed")
                 })
-                if (!granted) TextButton(onClick = onOpen) { Text("Открыть") }
+                if (!granted) TextButton(onClick = onOpen) { Text(tr("Открыть", "Open")) }
             }
             Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -516,8 +518,28 @@ private fun SimpleRow(text: String, enabled: Boolean = true, onDelete: () -> Uni
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(text, Modifier.weight(1f), fontSize = 14.sp)
-            TextButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = "Удалить: $text" }) {
+            TextButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = tr("Удалить: $text", "Delete: $text") }) {
                 Text("✕", Modifier.clearAndSetSemantics {})
+            }
+        }
+    }
+}
+
+/** «Язык» / “Language”: the phone's language by default; the same value as Android 13+ per-app language. */
+@Composable
+private fun LanguageSection() {
+    val ctx = LocalContext.current
+    val current = remember { ru.iskra.app.data.AppLanguage.choice(ctx) }
+    Text(tr("Язык · Language", "Language · Язык"), fontSize = 20.sp)
+    listOf<Pair<ru.iskra.core.i18n.Lang?, String>>(
+        null to tr("Как в телефоне", "Phone language"),
+        ru.iskra.core.i18n.Lang.RU to "Русский",
+        ru.iskra.core.i18n.Lang.EN to "English",
+    ).forEach { (lang, label) ->
+        RadioRow(current == lang, label) {
+            if (current != lang) {
+                Diag.i("app", tr("Язык: ", "Language: ") + (lang?.tag ?: "system"))
+                ru.iskra.app.data.AppLanguage.set(ctx, lang, ctx as? android.app.Activity)
             }
         }
     }

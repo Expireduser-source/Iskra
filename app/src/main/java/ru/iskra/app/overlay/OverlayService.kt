@@ -1,5 +1,6 @@
 package ru.iskra.app.overlay
 
+import ru.iskra.core.i18n.tr
 import android.Manifest
 import android.app.KeyguardManager
 import android.app.Notification
@@ -100,7 +101,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private var unlockedSince: Long? = null
     private val proactiveCheck = Runnable { checkProactive() }
     private val proactiveTick = object : Runnable {
-        override fun run() { applyEconomy("заряд изменился"); checkProactive(); handler.postDelayed(this, 3 * 60_000L) }
+        override fun run() { applyEconomy(tr("заряд изменился", "battery level changed")); checkProactive(); handler.postDelayed(this, 3 * 60_000L) }
     }
     private var settings = AppSettings()
 
@@ -115,10 +116,10 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_POWER_CONNECTED) onCharging()
             applyEconomy(when (intent.action) {
-                PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> "экономия энергии Android"
-                Intent.ACTION_BATTERY_LOW -> "низкий заряд"
-                Intent.ACTION_POWER_CONNECTED -> "зарядка подключена"
-                else -> "питание"
+                PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> tr("экономия энергии Android", "Android battery saver")
+                Intent.ACTION_BATTERY_LOW -> tr("низкий заряд", "low battery")
+                Intent.ACTION_POWER_CONNECTED -> tr("зарядка подключена", "charger connected")
+                else -> tr("питание", "power")
             })
         }
     }
@@ -129,13 +130,13 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
                 Intent.ACTION_SCREEN_OFF -> {
                     screenOn = false; screenOnSince = null; unlockedSince = null
                     handler.removeCallbacks(proactiveCheck)
-                    avatar?.stop(); PowerWatch.sample("экран выключен")
+                    avatar?.stop(); PowerWatch.sample(tr("экран выключен", "screen off"))
                 }
                 Intent.ACTION_SCREEN_ON -> {
                     screenOn = true; screenOnSince = System.currentTimeMillis()
                     unlockedSince = screenOnSince.takeUnless { isScreenLocked() }
-                    applyEconomy("экран включён")
-                    avatar?.start(); PowerWatch.sample("экран включён")
+                    applyEconomy(tr("экран включён", "screen on"))
+                    avatar?.start(); PowerWatch.sample(tr("экран включён", "screen on"))
                 }
                 Intent.ACTION_USER_PRESENT -> {
                     screenOn = true; unlockedSince = System.currentTimeMillis(); avatar?.start()
@@ -155,13 +156,13 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         screenOn = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
         screenOnSince = System.currentTimeMillis().takeIf { screenOn }
         unlockedSince = screenOnSince.takeUnless { isScreenLocked() }
-        Diag.i("overlay", "Служба создана")
+        Diag.i("overlay", tr("Служба создана", "Service created"))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                Diag.i("overlay", "Убрана с экрана кнопкой в уведомлении")
+                Diag.i("overlay", tr("Убрана с экрана кнопкой в уведомлении", "Removed from the screen with the notification button"))
                 IskraApp.instance.settings.let { it.save(it.load().copy(overlayEnabled = false)) }
                 stopSelf()
                 return START_NOT_STICKY
@@ -174,8 +175,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         settings = IskraApp.instance.settings.load()
         startInForeground()
         if (!DeviceHelper.canDrawOverlays(this)) {
-            Diag.w("overlay", "Нет разрешения «поверх приложений» — служба остановлена")
-            Diag.overlayState = "остановлен: нет разрешения поверх приложений"
+            Diag.w("overlay", tr("Нет разрешения «поверх приложений» — служба остановлена", "No “over other apps” permission — service stopped"))
+            Diag.overlayState = tr("остановлен: нет разрешения поверх приложений", "stopped: no over-other-apps permission")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -207,8 +208,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
                 earProblem = null
                 return
             } catch (e: Exception) {
-                earProblem = "Открой приложение Искры, чтобы включить слух (Android разрешает микрофон только так)."
-                Diag.w("ear", "Android не дал микрофон в фоне (служба запущена не из открытого приложения)", e)
+                earProblem = tr("Открой приложение Искры, чтобы включить слух (Android разрешает микрофон только так).", "Open the Iskra app to turn on hearing (Android allows the microphone only this way).")
+                Diag.w("ear", tr("Android не дал микрофон в фоне (служба запущена не из открытого приложения)", "Android didn't give the microphone in the background (the service wasn't started from the open app)"), e)
             }
         } else if (wantsEar()) micInForeground = true // before Android 11 no type is needed
         val type = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
@@ -220,20 +221,20 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val stop = PendingIntent.getService(this, 1, Intent(this, OverlayService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         val toggle = PendingIntent.getService(this, 2, Intent(this, OverlayService::class.java).setAction(ACTION_TOGGLE_EAR), PendingIntent.FLAG_IMMUTABLE)
         val text = when {
-            listening -> "🎤 Слушаю, на устройстве. Скажи «${settings.wakeNameList.firstOrNull() ?: "Искра"}, …»"
+            listening -> tr("🎤 Слушаю, на устройстве. Скажи «${settings.wakeNameList.firstOrNull() ?: "Искра"}, …»", "🎤 Listening, on the device. Say “${settings.wakeNameList.firstOrNull() ?: "Iskra"}, …”")
             earProblem != null && settings.alwaysListen -> earProblem!!
-            else -> "Нажми на неё, чтобы поговорить"
+            else -> tr("Нажми на неё, чтобы поговорить", "Tap her to talk")
         }
         val b = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Искра на экране")
+            .setContentTitle(tr("Искра на экране", "Iskra on screen"))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
-            .addAction(0, "Убрать с экрана", stop)
+            .addAction(0, tr("Убрать с экрана", "Remove from screen"), stop)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
-        if (hasMic() && SpeechModel.isReady(this)) b.addAction(0, if (settings.alwaysListen) "Не слушать" else "Слушать", toggle)
+        if (hasMic() && SpeechModel.isReady(this)) b.addAction(0, if (settings.alwaysListen) tr("Не слушать", "Stop listening") else tr("Слушать", "Listen"), toggle)
         return b.build()
     }
 
@@ -244,10 +245,10 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         if (want && ear == null) {
             ear = VoiceEar(this, settings.wakeNameList, settings.followUp, this,
                 economical = settings.economicalEar || plan?.forceEconomicalEar == true).also { it.start() }
-            if (ear?.isRunning == true) Diag.i("ear", "Слух включён")
+            if (ear?.isRunning == true) Diag.i("ear", tr("Слух включён", "Hearing on"))
         } else if (!want && ear != null) {
             ear?.stop(); ear = null
-            Diag.i("ear", "Слух выключен")
+            Diag.i("ear", tr("Слух выключен", "Hearing off"))
             CompanionBus.emit(AvatarCue.Listening(false))
         }
         updateEarPause()
@@ -261,21 +262,21 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val screenOff = !screenOn && !settings.listenScreenOff
         e.setPaused(speaking || micBusy || screenOff)
         updateEarState(when {
-            speaking -> "пауза: Искра говорит"
-            micBusy -> "пауза: микрофон занят чатом"
-            screenOff -> "пауза: экран выключен"
-            else -> "слушает"
+            speaking -> tr("пауза: Искра говорит", "paused: Iskra is speaking")
+            micBusy -> tr("пауза: микрофон занят чатом", "paused: the chat is using the microphone")
+            screenOff -> tr("пауза: экран выключен", "paused: screen off")
+            else -> tr("слушает", "listening")
         })
     }
 
     private fun updateEarState(state: String? = null) {
         Diag.earState = when {
-            ear?.isRunning == true -> state ?: "слушает"
-            settings.alwaysListen && earProblem != null -> "не работает: $earProblem"
-            settings.alwaysListen && !hasMic() -> "не работает: нет доступа к микрофону"
-            settings.alwaysListen && !SpeechModel.isReady(this) -> "не работает: модель не скачана"
-            settings.alwaysListen -> "не запущен"
-            else -> "выключен в настройках"
+            ear?.isRunning == true -> state ?: tr("слушает", "listening")
+            settings.alwaysListen && earProblem != null -> tr("не работает: $earProblem", "not working: $earProblem")
+            settings.alwaysListen && !hasMic() -> tr("не работает: нет доступа к микрофону", "not working: no microphone access")
+            settings.alwaysListen && !SpeechModel.isReady(this) -> tr("не работает: модель не скачана", "not working: model not downloaded")
+            settings.alwaysListen -> tr("не запущен", "not started")
+            else -> tr("выключен в настройках", "off in settings")
         }
     }
 
@@ -287,9 +288,9 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     override fun onCommand(text: String) {
         CompanionBus.emit(AvatarCue.Listening(false))
         // Only the length — what the owner said never goes into the journal.
-        Diag.i("ear", "Голосовая команда распознана (${text.length} симв.)")
+        Diag.i("ear", tr("Голосовая команда распознана (${text.length} симв.)", "Voice command recognized (${text.length} chars)"))
         val chat = IskraApp.instance.chat
-        if (chat.busy.value) { say("Подожди, я ещё думаю над прошлым…"); return }
+        if (chat.busy.value) { say(tr("Подожди, я ещё думаю над прошлым…", "Wait, I'm still thinking about the last one…")); return }
         say("🎤 «$text»")
         chat.send(text)
     }
@@ -362,7 +363,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val old = plan
         plan = p
         Diag.economyState = p.describe()
-        if (old == null || old.mode != p.mode) Diag.i("power", "Экономия: ${p.describe()}" + (why?.let { " — $it" } ?: ""))
+        if (old == null || old.mode != p.mode) Diag.i("power", tr("Экономия: ${p.describe()}", "Economy: ${p.describe()}") + (why?.let { " — $it" } ?: ""))
         avatar?.let { v -> v.movingFps = p.movingFps; v.idleFps = p.idleFps; v.sleepFps = p.sleepFps }
         avatar?.brain?.let { b ->
             val calm = settings.calmMotion || DeviceHelper.animationsOff(this)
@@ -393,7 +394,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
                 lookName = look.name
                 return r
             } catch (e: Throwable) {
-                Diag.e("avatar", "Вид ${look.name} не загрузился, беру попроще", e)
+                Diag.e("avatar", tr("Вид ${look.name} не загрузился, беру попроще", "Look ${look.name} didn't load, using a simpler one"), e)
             }
         }
         lookName = AvatarLook.CLASSIC.name
@@ -424,12 +425,12 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             wm.addView(view, lp)
         } catch (e: Exception) {
             // Permission revoked between the check and now, or HyperOS blocked the window.
-            Diag.e("overlay", "Окно Искры не добавлено", e)
-            Diag.overlayState = "ошибка: окно не добавлено"
+            Diag.e("overlay", tr("Окно Искры не добавлено", "Iskra's window was not added"), e)
+            Diag.overlayState = tr("ошибка: окно не добавлено", "error: window not added")
             stopSelf(); return
         }
-        Diag.overlayState = "на экране"
-        Diag.i("overlay", "Искра на экране, ${sizePx}px, вид ${lookName}, экономия ${settings.economy.name}")
+        Diag.overlayState = tr("на экране", "on screen")
+        Diag.i("overlay", tr("Искра на экране, ${sizePx}px, вид ${lookName}, экономия ${settings.economy.name}", "Iskra on screen, ${sizePx}px, look ${lookName}, economy ${settings.economy.name}"))
         PowerWatch.start(this) { lookName }
         avatar = view; params = lp
         highMode = highestMode()
@@ -610,7 +611,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             val end = java.time.LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
             val today = runCatching { app.reminders.pending().count { it.atMs < end } }.getOrDefault(0)
             deliverProactive(trigger, Moments.morning(base, w, today), next.countToday)
-            Diag.i("proactive", "Утренняя сводка: погода ${if (w != null) "есть" else "нет"}, напоминаний $today")
+            Diag.i("proactive", tr("Утренняя сводка: погода ${if (w != null) "есть" else "нет"}, напоминаний $today", "Morning brief: weather ${if (w != null) "yes" else "no"}, reminders $today"))
         }
     }
 
@@ -624,7 +625,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val music = (getSystemService(AUDIO_SERVICE) as android.media.AudioManager).isMusicActive
         val voice = s.proactiveVoice && plan?.proactiveVoice != false && s.ttsEnabled && !music
         if (voice) app.speaker.speak(line, emotion)
-        Diag.i("proactive", "Сама заговорила: ${trigger.name}${if (voice) ", голосом" else ", облачком"} ($countToday за день)")
+        Diag.i("proactive", tr("Сама заговорила: ${trigger.name}${if (voice) ", голосом" else ", облачком"} ($countToday за день)", "Spoke up on her own: ${trigger.name}${if (voice) ", aloud" else ", in a bubble"} ($countToday today)"))
     }
 
     /** Plugged in: a short line in the bubble, at most once in 3 h, within the proactive limits. */
@@ -639,7 +640,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         prefs.edit().putLong("charging", now).apply()
         CompanionBus.emit(AvatarCue.Feel(Emotion.HAPPY))
         CompanionBus.emit(AvatarCue.Say(MomentLines.charging(app.phrases)))
-        Diag.i("proactive", "Реакция на зарядку (облачком)")
+        Diag.i("proactive", tr("Реакция на зарядку (облачком)", "Charging reaction (bubble)"))
     }
 
     override fun onTap() {
@@ -656,7 +657,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     }
 
     override fun onHide() {
-        Diag.i("overlay", "Убрана с экрана через спецвозможности")
+        Diag.i("overlay", tr("Убрана с экрана через спецвозможности", "Removed from the screen via accessibility"))
         IskraApp.instance.settings.let { it.save(it.load().copy(overlayEnabled = false)) }
         stopSelf()
     }
@@ -673,12 +674,12 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     }
 
     override fun onDestroy() {
-        Diag.i("overlay", "Служба остановлена")
+        Diag.i("overlay", tr("Служба остановлена", "Service stopped"))
         PowerWatch.stop()
-        if (ear != null) Diag.i("ear", "Слух остановлен вместе со службой")
-        if (Diag.overlayState == "на экране") Diag.overlayState = "не запущен"
+        if (ear != null) Diag.i("ear", tr("Слух остановлен вместе со службой", "Hearing stopped together with the service"))
+        if (Diag.overlayState == tr("на экране", "on screen")) Diag.overlayState = tr("не запущен", "not started")
         ear?.stop(); ear = null
-        Diag.earState = if (settings.alwaysListen) "не работает: Искра не на экране" else "выключен в настройках"
+        Diag.earState = if (settings.alwaysListen) tr("не работает: Искра не на экране", "not working: Iskra isn't on screen") else tr("выключен в настройках", "off in settings")
         scope.cancel()
         handler.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(screenReceiver) }

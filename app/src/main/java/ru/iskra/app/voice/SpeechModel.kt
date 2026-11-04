@@ -1,5 +1,6 @@
 package ru.iskra.app.voice
 
+import ru.iskra.core.i18n.tr
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,13 +14,18 @@ import java.util.concurrent.TimeUnit
 import java.util.zip.ZipInputStream
 
 /**
- * The offline Russian speech model (Vosk "small-ru", Apache-2.0, ~45 MB) used for always-on
- * listening. Downloaded once on the owner's request into app-private storage; audio never leaves
- * the phone.
+ * The offline speech model for always-on listening and on-phone dictation, in the UI language:
+ * Vosk "small-ru" (~45 MB) or "small-en-us" (~40 MB), both Apache-2.0. Downloaded once on the owner's
+ * request into app-private storage; audio never leaves the phone.
  */
 object SpeechModel {
-    const val URL = "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip"
-    const val SIZE_MB = 45
+    private class Spec(val url: String, val sizeMb: Int, val dir: String)
+    private val RU = Spec("https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip", 45, "vosk-ru")
+    private val EN = Spec("https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip", 40, "vosk-en")
+    private val spec get() = tr(RU, EN)
+
+    val URL: String get() = spec.url
+    val SIZE_MB: Int get() = spec.sizeMb
     private const val MAX_UNPACKED = 300L * 1024 * 1024
 
     sealed interface State {
@@ -32,7 +38,7 @@ object SpeechModel {
     private val _state = MutableStateFlow<State>(State.Missing)
     val state: StateFlow<State> = _state
 
-    fun dir(ctx: Context) = File(ctx.filesDir, "vosk-ru")
+    fun dir(ctx: Context) = File(ctx.filesDir, spec.dir)
     private fun marker(ctx: Context) = File(dir(ctx), ".ready")
 
     fun isReady(ctx: Context) = marker(ctx).exists()
@@ -49,13 +55,13 @@ object SpeechModel {
     suspend fun download(ctx: Context) = withContext(Dispatchers.IO) {
         if (_state.value is State.Downloading) return@withContext
         _state.value = State.Downloading(0f)
-        val zip = File(ctx.cacheDir, "vosk-ru.zip")
-        val tmp = File(ctx.filesDir, "vosk-ru.tmp")
+        val zip = File(ctx.cacheDir, spec.dir + ".zip")
+        val tmp = File(ctx.filesDir, spec.dir + ".tmp")
         try {
             val client = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build()
             client.newCall(Request.Builder().url(URL).build()).execute().use { r ->
                 if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
-                val body = r.body ?: throw IOException("пустой ответ")
+                val body = r.body ?: throw IOException(tr("пустой ответ", "empty response"))
                 val total = body.contentLength().takeIf { it > 0 } ?: (SIZE_MB * 1024L * 1024L)
                 body.byteStream().use { input ->
                     zip.outputStream().use { out ->
@@ -73,15 +79,15 @@ object SpeechModel {
             }
             tmp.deleteRecursively(); tmp.mkdirs()
             unzip(zip, tmp)
-            val root = findModelRoot(tmp) ?: throw IOException("в архиве нет модели")
+            val root = findModelRoot(tmp) ?: throw IOException(tr("в архиве нет модели", "no model in the archive"))
             val target = dir(ctx)
             target.deleteRecursively()
-            if (!root.renameTo(target)) throw IOException("не удалось сохранить модель")
+            if (!root.renameTo(target)) throw IOException(tr("не удалось сохранить модель", "couldn't save the model"))
             File(target, ".ready").writeText(URL)
             _state.value = State.Ready
         } catch (e: Exception) {
             _state.value = State.Failed(e.message ?: e.javaClass.simpleName)
-            ru.iskra.app.diag.Diag.e("model", "Модель распознавания не скачалась", e)
+            ru.iskra.app.diag.Diag.e("model", tr("Модель распознавания не скачалась", "The speech model didn't download"), e)
         } finally {
             zip.delete()
             tmp.deleteRecursively()
@@ -96,7 +102,7 @@ object SpeechModel {
             while (true) {
                 val e = zin.nextEntry ?: break
                 val out = File(into, e.name)
-                if (!out.canonicalPath.startsWith(base)) throw IOException("подозрительный путь в архиве")
+                if (!out.canonicalPath.startsWith(base)) throw IOException(tr("подозрительный путь в архиве", "suspicious path in the archive"))
                 if (e.isDirectory) { out.mkdirs(); continue }
                 out.parentFile?.mkdirs()
                 out.outputStream().use { o ->
@@ -105,7 +111,7 @@ object SpeechModel {
                         val n = zin.read(buf)
                         if (n < 0) break
                         unpacked += n
-                        if (unpacked > MAX_UNPACKED) throw IOException("архив слишком большой")
+                        if (unpacked > MAX_UNPACKED) throw IOException(tr("архив слишком большой", "the archive is too big"))
                         o.write(buf, 0, n)
                     }
                 }

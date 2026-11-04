@@ -1,6 +1,8 @@
 package ru.iskra.app
 
+import ru.iskra.core.i18n.tr
 import ru.iskra.app.data.PrefsUsageStore
+import ru.iskra.app.data.AppLanguage
 import ru.iskra.core.usage.MeteredProvider
 import ru.iskra.core.usage.UsageMeter
 import android.app.Application
@@ -66,22 +68,29 @@ class IskraApp : Application() {
     /** Last message or touch from the owner (for proactive lines). */
     @Volatile var lastContactMs = System.currentTimeMillis()
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        AppLanguage.apply(this)
+    }
+
     override fun onCreate() {
         super.onCreate()
         instance = this
+        // Before anything produces text: Russian or English (the phone's language or the owner's choice).
+        AppLanguage.apply(this)
         settings = SettingsRepo(this)
         usage = UsageMeter(PrefsUsageStore(this), limits = { settings.load().usageLimits }, today = { java.time.LocalDate.now().toString() })
         vault = KeyVault(this)
         ttsVault = KeyVault(this, "tts_key")
         Diag.init(this) { DiagCollector.knownSecrets(this) }
-        Diag.i("app", "Запуск ${BuildConfig.VERSION_NAME}, сборка ${DiagCollector.build()}")
+        Diag.i("app", tr("Запуск ${BuildConfig.VERSION_NAME}, сборка ${DiagCollector.build()}", "Start ${BuildConfig.VERSION_NAME}, build ${DiagCollector.build()}"))
         // After an update HyperOS may not restart the accessibility service: record its state a bit
         // after start (the system needs a moment to bind it) to tell "switched off" from "not running".
         android.os.Handler(mainLooper).postDelayed({
-            Diag.i("access", "Через 5 с после запуска: ${CompanionAccessibilityService.describe(this)}")
+            Diag.i("access", tr("Через 5 с после запуска: ${CompanionAccessibilityService.describe(this)}", "5 s after start: ${CompanionAccessibilityService.describe(this)}"))
             // Counts only: lets an update check show whether memory and chat survived.
-            Diag.i("app", "Данные: память ${runCatching { memory.all().size }.getOrDefault(-1)}, " +
-                "реплик в переписке ${runCatching { conversation.count() }.getOrDefault(-1)}")
+            Diag.i("app", tr("Данные: память ${runCatching { memory.all().size }.getOrDefault(-1)}, " +
+                "реплик в переписке ${runCatching { conversation.count() }.getOrDefault(-1)}", "Data: memory ${runCatching { memory.all().size }.getOrDefault(-1)}, chat turns ${runCatching { conversation.count() }.getOrDefault(-1)}"))
         }, 5000)
         db = IskraDb(this)
         memory = MemoryManager(SqliteMemoryStore(db))
@@ -109,8 +118,8 @@ class IskraApp : Application() {
             policy = SafetyPolicy(gate = confirm, disabled = { disabledTools }),
             providerFactory = ::currentProvider,
             deviceContext = {
-                "Служба управления телефоном (спец. возможности): " +
-                    if (CompanionAccessibilityService.isConnected()) "включена." else "выключена — системная навигация недоступна."
+                tr("Служба управления телефоном (спец. возможности): ", "Phone control service (accessibility): ") +
+                    if (CompanionAccessibilityService.isConnected()) tr("включена.", "on.") else tr("выключена — системная навигация недоступна.", "off — system navigation unavailable.")
             },
         )
         speaker = Speaker(
@@ -158,7 +167,7 @@ class IskraApp : Application() {
                     reminders.pending().forEach { reminderScheduler.cancel(it.id) }
                     reminders.deleteAll()
                     Diag.clear()
-                    Diag.i("app", "Все данные стёрты владельцем")
+                    Diag.i("app", tr("Все данные стёрты владельцем", "All data erased by the owner"))
                 }
             }
         }, onComplete = onComplete)

@@ -1,5 +1,7 @@
 package ru.iskra.app.voice
 
+import ru.iskra.core.i18n.tr
+import ru.iskra.core.i18n.I18n
 import ru.iskra.core.usage.UsageMeter
 import ru.iskra.core.skills.Script
 import ru.iskra.core.skills.Scripts
@@ -131,12 +133,16 @@ class Speaker(
     init {
         tts = TextToSpeech(appContext) { status ->
             val t = tts ?: return@TextToSpeech
-            if (status != TextToSpeech.SUCCESS) Diag.e("tts", "Системный синтез речи не запустился (код $status)")
+            if (status != TextToSpeech.SUCCESS) Diag.e("tts", tr("Системный синтез речи не запустился (код $status)", "System speech synthesis didn't start (code $status)"))
             if (status == TextToSpeech.SUCCESS) {
-                val r = t.setLanguage(RU)
+                // The voice of the UI language first: Russian, or English for an English-speaking owner.
+                val english = I18n.isEnglish
+                val r = t.setLanguage(if (english) Locale.US else RU)
                 sysReady = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+                sysLang = if (english) "en" else "ru"
+                available[sysLang] = sysReady
                 systemVoiceMissing = !sysReady
-                if (!sysReady) Diag.w("tts", "Системный голос: нет русского языка (код $r)")
+                if (!sysReady) Diag.w("tts", if (english) "System voice: no English voice (code $r)" else "Системный голос: нет русского языка (код $r)")
                 t.setPitch(1.25f)
                 t.setSpeechRate(1.05f)
                 t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
@@ -218,8 +224,8 @@ class Speaker(
         if (s.ttsEngine != TtsEngine.SYSTEM && now >= cloudBlockedUntil) {
             val today = java.time.LocalDate.now().toString()
             if (!allowed) {
-                if (limitLoggedDay != today) { limitLoggedDay = today; Diag.w("tts", "Дневной лимит облачного голоса исчерпан — до завтра говорю системным") }
-            } else if (client == null) Diag.w("tts", "${s.ttsEngine.title} не настроен (нет ключа или адреса) — говорю системным")
+                if (limitLoggedDay != today) { limitLoggedDay = today; Diag.w("tts", tr("Дневной лимит облачного голоса исчерпан — до завтра говорю системным", "Daily cloud voice limit used up — using the system voice until tomorrow")) }
+            } else if (client == null) Diag.w("tts", tr("${s.ttsEngine.title} не настроен (нет ключа или адреса) — говорю системным", "${s.ttsEngine.title} isn't set up (no key or address) — using the system voice"))
         }
         val ss = Session(commandAt, client, emotion)
         session = ss
@@ -271,7 +277,7 @@ class Speaker(
     private fun maybeFinish(ss: Session) {
         if (session !== ss || !ss.closed || !ss.playerDone || ss.sysOutstanding > 0) return
         val ms = SystemClock.elapsedRealtime() - ss.startedAt
-        if (ss.count > 0) Diag.i("timing", "Озвучка: ${ss.count} фраз, из кэша ${ss.hits}, ${if (ss.system) "системный голос" else ss.client?.name}, всего $ms мс")
+        if (ss.count > 0) Diag.i("timing", tr("Озвучка: ${ss.count} фраз, из кэша ${ss.hits}, ${if (ss.system) "системный голос" else ss.client?.name}, всего $ms мс", "Speech: ${ss.count} phrases, ${ss.hits} from cache, ${if (ss.system) "system voice" else ss.client?.name}, total $ms ms"))
         session = null
         releaseTrack()
         finished()
@@ -378,14 +384,14 @@ class Speaker(
     }
 
     private fun cloudFailed(ss: Session, e: Exception) {
-        val name = ss.client?.name ?: "голос"
+        val name = ss.client?.name ?: tr("голос", "voice")
         val le = e as? LlmException
-        val msg = le?.let { "$name: ${it.userMessage().substringBefore(" Пока")} (${it.message?.take(120)})" } ?: "$name: ${e.message ?: e.javaClass.simpleName}"
+        val msg = le?.let { tr("$name: ${it.userMessage().substringBefore(" Пока")} (${it.message?.take(120)})", "$name: ${it.userMessage().substringBefore(" For now")} (${it.message?.take(120)})") } ?: "$name: ${e.message ?: e.javaClass.simpleName}"
         _lastError.value = msg
         if (le?.persistent == true) {
             cloudBlockedUntil = SystemClock.elapsedRealtime() + 15 * 60_000L
-            Diag.e("tts", "$msg — 15 мин говорю системным голосом")
-        } else Diag.e("tts", "$msg — переключаюсь на системный голос")
+            Diag.e("tts", tr("$msg — 15 мин говорю системным голосом", "$msg — using the system voice for 15 min"))
+        } else Diag.e("tts", tr("$msg — переключаюсь на системный голос", "$msg — switching to the system voice"))
         ss.system = true
         ss.all.forEach { it.call?.cancel() }
     }
@@ -396,7 +402,7 @@ class Speaker(
         if (session !== ss) return
         val t = tts
         if (t == null || !languageFor(t, text)) {
-            Diag.w("tts", "Системный голос недоступен — фраза не озвучена")
+            Diag.w("tts", tr("Системный голос недоступен — фраза не озвучена", "System voice unavailable — phrase not spoken"))
             maybeFinish(ss); return
         }
         val id = "iskra-${++sysSeq}"
@@ -405,29 +411,37 @@ class Speaker(
         t.speak(text, TextToSpeech.QUEUE_ADD, null, id)
     }
 
-    /** True when Android has no Russian voice: the settings screen offers to install one. */
+    /** True when Android has no voice for the UI language: the settings screen offers to install one. */
     @Volatile var systemVoiceMissing = false
         private set
     private var sysLang = "ru"
+    /** Which system voices exist ("ru"/"en" → installed), learned on first use. */
+    private val available = HashMap<String, Boolean>()
 
     /**
-     * A reply in English (the owner wrote in English) is read by an English voice if the phone has one;
-     * otherwise by the Russian one rather than not at all.
+     * A reply is read in the language of its alphabet: English text by an English voice if the phone has one,
+     * otherwise by the Russian one rather than not at all. Russian text needs a Russian voice.
      */
     private fun languageFor(t: TextToSpeech, text: String): Boolean {
-        val english = Scripts.dominant(text) == Script.LATIN
-        val lang = if (english) "en" else "ru"
-        if (lang == sysLang) return english || sysReady
-        val r = t.setLanguage(if (english) Locale.US else RU)
-        if (r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED) { sysLang = lang; return true }
-        if (english && sysReady) { t.setLanguage(RU); sysLang = "ru"; return true }
-        return false
+        val want = if (Scripts.dominant(text) == Script.LATIN) "en" else "ru"
+        if (trySystemLanguage(t, want)) return true
+        return want == "en" && trySystemLanguage(t, "ru")
+    }
+
+    private fun trySystemLanguage(t: TextToSpeech, lang: String): Boolean {
+        if (lang == sysLang && available[lang] == true) return true
+        if (available[lang] == false) return false
+        val r = t.setLanguage(if (lang == "en") Locale.US else RU)
+        val ok = r != TextToSpeech.LANG_MISSING_DATA && r != TextToSpeech.LANG_NOT_SUPPORTED
+        available[lang] = ok
+        if (ok) sysLang = lang
+        return ok
     }
 
     private fun sysStarted(id: String?) {
         val ss = session ?: return
         val text = id?.let { sysTexts[it] } ?: return
-        if (!ss.firstSoundLogged) { ss.firstSoundLogged = true; logFirstSound(ss, "системный", cached = false) }
+        if (!ss.firstSoundLogged) { ss.firstSoundLogged = true; logFirstSound(ss, tr("системный", "system"), cached = false) }
         CompanionBus.emit(AvatarCue.Talk(text, lipSync = false))
     }
 
@@ -460,9 +474,9 @@ class Speaker(
     private fun logFirstSound(ss: Session, client: String, cached: Boolean) {
         val now = SystemClock.elapsedRealtime()
         val synth = now - ss.startedAt
-        val src = if (cached) "$client, из кэша" else client
-        Diag.i("timing", if (ss.commandAt != null) "TTS ($src): начал говорить, ${now - ss.commandAt} мс от конца команды (синтез $synth мс)"
-            else "TTS ($src): начал говорить через $synth мс после запроса")
+        val src = if (cached) tr("$client, из кэша", "$client, from cache") else client
+        Diag.i("timing", if (ss.commandAt != null) tr("TTS ($src): начал говорить, ${now - ss.commandAt} мс от конца команды (синтез $synth мс)", "TTS ($src): started speaking ${now - ss.commandAt} ms after the command ended (synthesis $synth ms)")
+            else tr("TTS ($src): начал говорить через $synth мс после запроса", "TTS ($src): started speaking $synth ms after the request"))
     }
 
     private fun releaseTrack() {

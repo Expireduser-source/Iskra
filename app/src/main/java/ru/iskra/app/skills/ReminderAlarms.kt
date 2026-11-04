@@ -1,5 +1,6 @@
 package ru.iskra.app.skills
 
+import ru.iskra.core.i18n.tr
 import android.Manifest
 import android.app.AlarmManager
 import android.app.NotificationChannel
@@ -71,8 +72,8 @@ class AndroidReminderScheduler(private val ctx: Context) : ReminderScheduler {
         fun ensureChannel(ctx: Context) {
             val nm = ctx.getSystemService(NotificationManager::class.java)
             if (nm.getNotificationChannel(CHANNEL) == null) {
-                nm.createNotificationChannel(NotificationChannel(CHANNEL, "Напоминания", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Напоминания, которые ты попросил поставить"
+                nm.createNotificationChannel(NotificationChannel(CHANNEL, tr("Напоминания", "Reminders"), NotificationManager.IMPORTANCE_HIGH).apply {
+                    description = tr("Напоминания, которые ты попросил поставить", "Reminders you asked me to set")
                 })
             }
         }
@@ -101,7 +102,7 @@ class ReminderReceiver : BroadcastReceiver() {
                 val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
                 val n = NotificationCompat.Builder(context, AndroidReminderScheduler.CHANNEL)
                     .setSmallIcon(R.drawable.ic_launcher_foreground)
-                    .setContentTitle("Искра напоминает")
+                    .setContentTitle(tr("Искра напоминает", "Iskra reminds you"))
                     .setContentText(r.text)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(r.text))
                     .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -110,9 +111,9 @@ class ReminderReceiver : BroadcastReceiver() {
                     .setContentIntent(open)
                     .build()
                 runCatching { context.getSystemService(NotificationManager::class.java).notify(NOTIFY_BASE + (r.id % 10_000).toInt(), n) }
-            } else Diag.w("remind", "Напоминание сработало, но уведомления запрещены — показано только на экране")
-            Diag.i("remind", "Напоминание сработало (поставлено ${(System.currentTimeMillis() - r.createdAtMs) / 60_000} мин назад)")
-            if (ru.iskra.app.diag.Diag.overlayState == "на экране") {
+            } else Diag.w("remind", tr("Напоминание сработало, но уведомления запрещены — показано только на экране", "A reminder fired, but notifications are not allowed — shown on screen only"))
+            Diag.i("remind", tr("Напоминание сработало (поставлено ${(System.currentTimeMillis() - r.createdAtMs) / 60_000} мин назад)", "A reminder fired (set ${(System.currentTimeMillis() - r.createdAtMs) / 60_000} min ago)"))
+            if (ru.iskra.app.diag.Diag.overlayState == tr("на экране", "on screen")) {
                 CompanionBus.emit(AvatarCue.Feel(Emotion.EXCITED))
                 CompanionBus.emit(AvatarCue.Say(line))
                 if (app.settings.load().ttsEnabled) app.speaker.speak(line, Emotion.EXCITED)
@@ -130,8 +131,8 @@ class ReminderBootReceiver : BroadcastReceiver() {
             Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> Unit
             else -> return
         }
-        val missed = runCatching { IskraApp.instance.reminderScheduler.rescheduleAll() }.getOrElse { Diag.e("remind", "Не удалось восстановить напоминания", it); return }
+        val missed = runCatching { IskraApp.instance.reminderScheduler.rescheduleAll() }.getOrElse { Diag.e("remind", tr("Не удалось восстановить напоминания", "Couldn't restore reminders"), it); return }
         val pending = IskraApp.instance.reminders.pending().size
-        Diag.i("remind", "После ${if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) "обновления" else "перезагрузки"}: напоминаний $pending, пропущено $missed (придут сейчас)")
+        Diag.i("remind", tr("После ${if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) "обновления" else "перезагрузки"}: напоминаний $pending, пропущено $missed (придут сейчас)", "After ${if (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED) "the update" else "a reboot"}: reminders $pending, missed $missed (they arrive now)"))
     }
 }

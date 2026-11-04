@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- English is the default for every phone language except Russian (values-ru). -->
 <resources>
-    <string name="app_name">Искра</string>
-    <string name="accessibility_label">Искра · управление</string>
-    <string name="accessibility_description">Искра выполняет только системные действия, о которых вы попросили: «Домой», «Назад», «Недавние», «Уведомления», «Быстрые настройки», «Заблокировать экран», «Скриншот». Служба не читает содержимое экрана и не нажимает кнопки в других приложениях. Её можно отключить в любой момент.</string>
-    <string name="overlay_channel">Искра на экране</string>
+    <string name="app_name">Iskra</string>
+    <string name="accessibility_label">Iskra · control</string>
+    <string name="accessibility_description">Iskra performs only the system actions you asked for: Home, Back, Recents, Notifications, Quick settings, Lock screen, Screenshot. The service does not read the screen and does not tap buttons in other apps. You can turn it off at any time.</string>
+    <string name="overlay_channel">Iskra on screen</string>
 </resources>

@@ -1,5 +1,6 @@
 package ru.iskra.app.tools
 
+import ru.iskra.core.i18n.tr
 import android.accessibilityservice.AccessibilityService
 import android.content.ActivityNotFoundException
 import android.content.ComponentName
@@ -34,9 +35,9 @@ private abstract class IntentTool(protected val ctx: Context) : Tool {
             ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             ToolOutcome(true, okMessage)
         } catch (e: ActivityNotFoundException) {
-            ToolOutcome(false, "на телефоне нет приложения для этого")
+            ToolOutcome(false, tr("на телефоне нет приложения для этого", "the phone has no app for this"))
         } catch (e: SecurityException) {
-            ToolOutcome(false, "Android запретил это действие")
+            ToolOutcome(false, tr("Android запретил это действие", "Android didn't allow this action"))
         }
     }
 }
@@ -44,84 +45,84 @@ private abstract class IntentTool(protected val ctx: Context) : Tool {
 private class OpenAppTool(ctx: Context) : IntentTool(ctx) {
     override val spec: ToolSpec get() = ToolSchemas.openApp
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = "открыть приложение «${args.str("name").orEmpty()}»"
+    override fun describe(args: JsonObject) = tr("открыть приложение «${args.str("name").orEmpty()}»", "open the app “${args.str("name").orEmpty()}”")
     override suspend fun execute(args: JsonObject): ToolOutcome {
-        val query = args.str("name")?.take(60) ?: return ToolOutcome(false, "не указано приложение")
+        val query = args.str("name")?.take(60) ?: return ToolOutcome(false, tr("не указано приложение", "no app given"))
         val pm = ctx.packageManager
         val apps = withContext(Dispatchers.IO) {
             pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
                 .filter { it.activityInfo != null && it.activityInfo.packageName != ctx.packageName }
         }
         val labels = apps.map { it.loadLabel(pm).toString() }
-        val idx = AppMatcher.best(query, labels) ?: return ToolOutcome(false, "не нашла приложение «$query»")
+        val idx = AppMatcher.best(query, labels) ?: return ToolOutcome(false, tr("не нашла приложение «$query»", "couldn't find the app “$query”"))
         val info = apps[idx].activityInfo
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             .setComponent(ComponentName(info.packageName, info.name))
             .addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        return launch(intent, "открыла ${labels[idx]}")
+        return launch(intent, tr("открыла ${labels[idx]}", "opened ${labels[idx]}"))
     }
 }
 
 private class AlarmTool(ctx: Context) : IntentTool(ctx) {
     override val spec get() = ToolSchemas.setAlarm
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = "будильник на %02d:%02d".format(args.int("hour") ?: 0, args.int("minute") ?: 0)
+    override fun describe(args: JsonObject) = tr("будильник на %02d:%02d", "alarm for %02d:%02d").format(args.int("hour") ?: 0, args.int("minute") ?: 0)
     override suspend fun execute(args: JsonObject): ToolOutcome {
-        val h = args.int("hour")?.takeIf { it in 0..23 } ?: return ToolOutcome(false, "неверный час")
+        val h = args.int("hour")?.takeIf { it in 0..23 } ?: return ToolOutcome(false, tr("неверный час", "wrong hour"))
         val m = args.int("minute")?.takeIf { it in 0..59 } ?: 0
         val intent = Intent(AlarmClock.ACTION_SET_ALARM)
             .putExtra(AlarmClock.EXTRA_HOUR, h)
             .putExtra(AlarmClock.EXTRA_MINUTES, m)
-            .putExtra(AlarmClock.EXTRA_MESSAGE, args.str("label")?.take(60) ?: "Искра")
+            .putExtra(AlarmClock.EXTRA_MESSAGE, args.str("label")?.take(60) ?: tr("Искра", "Iskra"))
             .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-        return launch(intent, "будильник на %02d:%02d".format(h, m))
+        return launch(intent, tr("будильник на %02d:%02d", "alarm for %02d:%02d").format(h, m))
     }
 }
 
 private class TimerTool(ctx: Context) : IntentTool(ctx) {
     override val spec get() = ToolSchemas.setTimer
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = "таймер на ${human(args.int("seconds") ?: 0)}"
+    override fun describe(args: JsonObject) = tr("таймер на ${human(args.int("seconds") ?: 0)}", "timer for ${human(args.int("seconds") ?: 0)}")
     override suspend fun execute(args: JsonObject): ToolOutcome {
-        val s = args.int("seconds")?.takeIf { it in 1..86_400 } ?: return ToolOutcome(false, "неверная длительность")
+        val s = args.int("seconds")?.takeIf { it in 1..86_400 } ?: return ToolOutcome(false, tr("неверная длительность", "wrong duration"))
         val intent = Intent(AlarmClock.ACTION_SET_TIMER)
             .putExtra(AlarmClock.EXTRA_LENGTH, s)
-            .putExtra(AlarmClock.EXTRA_MESSAGE, args.str("label")?.take(60) ?: "Искра")
+            .putExtra(AlarmClock.EXTRA_MESSAGE, args.str("label")?.take(60) ?: tr("Искра", "Iskra"))
             .putExtra(AlarmClock.EXTRA_SKIP_UI, true)
-        return launch(intent, "таймер на ${human(s)}")
+        return launch(intent, tr("таймер на ${human(s)}", "timer for ${human(s)}"))
     }
 
     private fun human(s: Int) = when {
-        s % 3600 == 0 -> "${s / 3600} ч"
-        s % 60 == 0 -> "${s / 60} мин"
-        s > 60 -> "${s / 60} мин ${s % 60} с"
-        else -> "$s с"
+        s % 3600 == 0 -> tr("${s / 3600} ч", "${s / 3600} h")
+        s % 60 == 0 -> tr("${s / 60} мин", "${s / 60} min")
+        s > 60 -> tr("${s / 60} мин ${s % 60} с", "${s / 60} min ${s % 60} s")
+        else -> tr("$s с", "$s s")
     }
 }
 
 private class CameraTool(ctx: Context) : IntentTool(ctx) {
     override val spec get() = ToolSchemas.openCamera
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = "открыть камеру"
-    override suspend fun execute(args: JsonObject) = launch(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA), "открыла камеру")
+    override fun describe(args: JsonObject) = tr("открыть камеру", "open the camera")
+    override suspend fun execute(args: JsonObject) = launch(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA), tr("открыла камеру", "opened the camera"))
 }
 
 private class FlashlightTool(private val ctx: Context) : Tool {
     override val spec get() = ToolSchemas.flashlight
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = if (args.bool("on") != false) "включить фонарик" else "выключить фонарик"
+    override fun describe(args: JsonObject) = if (args.bool("on") != false) tr("включить фонарик", "turn on the flashlight") else tr("выключить фонарик", "turn off the flashlight")
     override suspend fun execute(args: JsonObject): ToolOutcome = withContext(Dispatchers.Main) {
         val on = args.bool("on") ?: true
         val cm = ctx.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         val id = cm.cameraIdList.firstOrNull { cid ->
             cm.getCameraCharacteristics(cid).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-        } ?: return@withContext ToolOutcome(false, "у телефона нет вспышки")
+        } ?: return@withContext ToolOutcome(false, tr("у телефона нет вспышки", "the phone has no flash"))
         try {
             // setTorchMode does not require the CAMERA permission.
             cm.setTorchMode(id, on)
-            ToolOutcome(true, if (on) "фонарик включён" else "фонарик выключен")
+            ToolOutcome(true, if (on) tr("фонарик включён", "flashlight on") else tr("фонарик выключен", "flashlight off"))
         } catch (e: Exception) {
-            ToolOutcome(false, "камера занята другим приложением")
+            ToolOutcome(false, tr("камера занята другим приложением", "the camera is busy with another app"))
         }
     }
 }
@@ -130,7 +131,7 @@ private class VolumeTool(private val ctx: Context) : Tool {
     override val spec get() = ToolSchemas.volume
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = when (args.str("direction")) {
-        "up" -> "сделать громче"; "down" -> "сделать тише"; "mute" -> "выключить звук"; else -> "включить звук"
+        "up" -> tr("сделать громче", "turn it up"); "down" -> tr("сделать тише", "turn it down"); "mute" -> tr("выключить звук", "mute"); else -> tr("включить звук", "unmute")
     }
     override suspend fun execute(args: JsonObject): ToolOutcome = withContext(Dispatchers.Main) {
         val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
@@ -139,14 +140,14 @@ private class VolumeTool(private val ctx: Context) : Tool {
             "down" -> AudioManager.ADJUST_LOWER
             "mute" -> AudioManager.ADJUST_MUTE
             "unmute" -> AudioManager.ADJUST_UNMUTE
-            else -> return@withContext ToolOutcome(false, "неизвестное направление")
+            else -> return@withContext ToolOutcome(false, tr("неизвестное направление", "unknown direction"))
         }
         try {
             am.adjustStreamVolume(AudioManager.STREAM_MUSIC, dir, AudioManager.FLAG_SHOW_UI)
             ToolOutcome(true, describe(args))
         } catch (e: SecurityException) {
             // Muting can be blocked in Do-Not-Disturb mode.
-            ToolOutcome(false, "система не дала изменить громкость (режим «Не беспокоить»?)")
+            ToolOutcome(false, tr("система не дала изменить громкость (режим «Не беспокоить»?)", "the system didn't allow changing the volume (Do Not Disturb?)"))
         }
     }
 }
@@ -154,7 +155,7 @@ private class VolumeTool(private val ctx: Context) : Tool {
 private class SettingsTool(ctx: Context) : IntentTool(ctx) {
     override val spec get() = ToolSchemas.openSettings
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = "открыть настройки (${args.str("section") ?: "main"})"
+    override fun describe(args: JsonObject) = tr("открыть настройки (${args.str("section") ?: "main"})", "open settings (${args.str("section") ?: "main"})")
     override suspend fun execute(args: JsonObject): ToolOutcome {
         val action = when (args.str("section")) {
             "wifi" -> if (Build.VERSION.SDK_INT >= 29) Settings.Panel.ACTION_WIFI else Settings.ACTION_WIFI_SETTINGS
@@ -167,8 +168,8 @@ private class SettingsTool(ctx: Context) : IntentTool(ctx) {
             "accessibility" -> Settings.ACTION_ACCESSIBILITY_SETTINGS
             else -> Settings.ACTION_SETTINGS
         }
-        val r = launch(Intent(action), "открыла настройки")
-        return if (r.ok) r else launch(Intent(Settings.ACTION_SETTINGS), "открыла общие настройки")
+        val r = launch(Intent(action), tr("открыла настройки", "opened settings"))
+        return if (r.ok) r else launch(Intent(Settings.ACTION_SETTINGS), tr("открыла общие настройки", "opened the main settings"))
     }
 }
 
@@ -176,9 +177,9 @@ private class GlobalActionTool : Tool {
     override val spec get() = ToolSchemas.globalAction
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = when (args.str("action")) {
-        "home" -> "на главный экран"; "back" -> "назад"; "recents" -> "недавние приложения"
-        "notifications" -> "открыть уведомления"; "quick_settings" -> "быстрые настройки"
-        "lock_screen" -> "заблокировать экран"; "screenshot" -> "сделать скриншот"; else -> "системное действие"
+        "home" -> tr("на главный экран", "go to the home screen"); "back" -> tr("назад", "back"); "recents" -> tr("недавние приложения", "recent apps")
+        "notifications" -> tr("открыть уведомления", "open notifications"); "quick_settings" -> tr("быстрые настройки", "quick settings")
+        "lock_screen" -> tr("заблокировать экран", "lock the screen"); "screenshot" -> tr("сделать скриншот", "take a screenshot"); else -> tr("системное действие", "system action")
     }
     override suspend fun execute(args: JsonObject): ToolOutcome = withContext(Dispatchers.Main) {
         val code = when (args.str("action")) {
@@ -191,23 +192,23 @@ private class GlobalActionTool : Tool {
             "screenshot" -> if (Build.VERSION.SDK_INT >= 28) AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT else -1
             else -> -1
         }
-        if (code < 0) return@withContext ToolOutcome(false, "это действие недоступно на этой версии Android")
+        if (code < 0) return@withContext ToolOutcome(false, tr("это действие недоступно на этой версии Android", "this action isn't available on this Android version"))
         if (!CompanionAccessibilityService.isConnected()) {
-            return@withContext ToolOutcome(false, "нужно включить «Искра · управление» в специальных возможностях (раздел «Разрешения» в приложении)")
+            return@withContext ToolOutcome(false, tr("нужно включить «Искра · управление» в специальных возможностях (раздел «Разрешения» в приложении)", "you need to turn on “Iskra · control” in Accessibility (the “Permissions” tab in the app)"))
         }
         if (CompanionAccessibilityService.perform(code)) ToolOutcome(true, describe(args))
-        else ToolOutcome(false, "Android не выполнил действие")
+        else ToolOutcome(false, tr("Android не выполнил действие", "Android didn't perform the action"))
     }
 }
 
 private class WebSearchTool(ctx: Context) : IntentTool(ctx) {
     override val spec get() = ToolSchemas.webSearch
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = "поиск в браузере: «${args.str("query").orEmpty()}»"
+    override fun describe(args: JsonObject) = tr("поиск в браузере: «${args.str("query").orEmpty()}»", "browser search: “${args.str("query").orEmpty()}”")
     override suspend fun execute(args: JsonObject): ToolOutcome {
-        val q = args.str("query")?.take(200) ?: return ToolOutcome(false, "пустой запрос")
+        val q = args.str("query")?.take(200) ?: return ToolOutcome(false, tr("пустой запрос", "empty query"))
         val uri = Uri.parse("https://www.google.com/search?q=" + Uri.encode(q))
-        return launch(Intent(Intent.ACTION_VIEW, uri), "ищу «$q»")
+        return launch(Intent(Intent.ACTION_VIEW, uri), tr("ищу «$q»", "searching for “$q”"))
     }
 }
 
@@ -215,11 +216,11 @@ private class WebSearchTool(ctx: Context) : IntentTool(ctx) {
 private class DialTool(ctx: Context) : IntentTool(ctx) {
     override val spec get() = ToolSchemas.dial
     override val risk = Risk.CONFIRM
-    override fun describe(args: JsonObject) = "открыть набор номера ${args.str("number").orEmpty()}"
+    override fun describe(args: JsonObject) = tr("открыть набор номера ${args.str("number").orEmpty()}", "open the dialer with ${args.str("number").orEmpty()}")
     override suspend fun execute(args: JsonObject): ToolOutcome {
         val n = args.str("number")?.filter { it.isDigit() || it == '+' }?.take(20)
-        if (n.isNullOrEmpty() || n.length < 3) return ToolOutcome(false, "неверный номер")
-        return launch(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$n")), "открыла набор номера $n")
+        if (n.isNullOrEmpty() || n.length < 3) return ToolOutcome(false, tr("неверный номер", "wrong number"))
+        return launch(Intent(Intent.ACTION_DIAL, Uri.parse("tel:$n")), tr("открыла набор номера $n", "opened the dialer with $n"))
     }
 }
 

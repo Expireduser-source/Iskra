@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import ru.iskra.core.i18n.tr
 import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
@@ -67,12 +68,12 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
                 withContext(Dispatchers.IO) {
                     val text = DiagCollector.report(ctx, maxLog = Diag.log.capacity)
                     ctx.contentResolver.openOutputStream(uri, "wt")?.use { it.write(text.toByteArray(Charsets.UTF_8)) }
-                        ?: error("нет доступа к файлу")
+                        ?: error(tr("нет доступа к файлу", "no access to the file"))
                 }
-                "Сохранено ✓"
+                tr("Сохранено ✓", "Saved ✓")
             } catch (e: Exception) {
-                Diag.e("diag", "Не удалось сохранить отчёт", e)
-                "Не получилось сохранить: ${e.message ?: e.javaClass.simpleName}"
+                Diag.e("diag", tr("Не удалось сохранить отчёт", "Couldn't save the report"), e)
+                tr("Не получилось сохранить: ${e.message ?: e.javaClass.simpleName}", "Couldn't save: ${e.message ?: e.javaClass.simpleName}")
             }
         }
     }
@@ -88,14 +89,14 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row {
-            TextButton(onClick = onBack) { Text("← Назад") }
+            TextButton(onClick = onBack) { Text(tr("← Назад", "← Back")) }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = { refresh++; status = null }) { Text("Обновить") }
+            TextButton(onClick = { refresh++; status = null }) { Text(tr("Обновить", "Refresh")) }
         }
-        Text("Диагностика", fontSize = 20.sp)
+        Text(tr("Диагностика", "Diagnostics"), fontSize = 20.sp)
         Text(
-            "Журнал хранится только на телефоне (последние ${Diag.log.capacity} событий). В отчёт не попадают " +
-                "ключи API (они замаскированы) и текст переписки. Отправляешь его ты сам — приложение ничего не отправляет.",
+            tr("Журнал хранится только на телефоне (последние ${Diag.log.capacity} событий). В отчёт не попадают " +
+                "ключи API (они замаскированы) и текст переписки. Отправляешь его ты сам — приложение ничего не отправляет.", "The journal is kept only on the phone (the last ${Diag.log.capacity} events). The report never includes API keys (they are masked) or chat text. You send it yourself — the app sends nothing."),
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(onClick = {
@@ -105,50 +106,50 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
                     val send = Intent(Intent.ACTION_SEND).apply {
                         type = "text/plain"
                         putExtra(Intent.EXTRA_STREAM, uri)
-                        putExtra(Intent.EXTRA_SUBJECT, "Искра: отчёт диагностики")
+                        putExtra(Intent.EXTRA_SUBJECT, tr("Искра: отчёт диагностики", "Iskra: diagnostics report"))
                         clipData = ClipData.newRawUri("report", uri)
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-                    ctx.startActivity(Intent.createChooser(send, "Отправить отчёт").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    ctx.startActivity(Intent.createChooser(send, tr("Отправить отчёт", "Send report")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                     null
                 } catch (e: Exception) {
-                    Diag.e("diag", "Не удалось подготовить файл отчёта", e)
-                    "Не получилось: ${e.javaClass.simpleName}"
+                    Diag.e("diag", tr("Не удалось подготовить файл отчёта", "Couldn't prepare the report file"), e)
+                    tr("Не получилось: ${e.javaClass.simpleName}", "Didn't work: ${e.javaClass.simpleName}")
                 }
             }
-        }, modifier = Modifier.fillMaxWidth()) { Text("📤 Отправить отчёт файлом") }
+        }, modifier = Modifier.fillMaxWidth()) { Text(tr("📤 Отправить отчёт файлом", "📤 Send report as a file")) }
         Row {
-            OutlinedButton(onClick = { saveLauncher.launch(DiagCollector.reportFileName()) }) { Text("💾 В папку") }
+            OutlinedButton(onClick = { saveLauncher.launch(DiagCollector.reportFileName()) }) { Text(tr("💾 В папку", "💾 To a folder")) }
             Spacer(Modifier.size(8.dp))
             TextButton(onClick = {
                 copyToClipboard(ctx, DiagCollector.report(ctx))
-                status = "Скопировано текстом ✓ (последние 60 событий)"
-            }) { Text("Скопировать текстом") }
+                status = tr("Скопировано текстом ✓ (последние 60 событий)", "Copied as text ✓ (last 60 events)")
+            }) { Text(tr("Скопировать текстом", "Copy as text")) }
         }
-        Text("Файл .txt содержит весь журнал (до ${Diag.log.capacity} событий) — прикрепи его в чат вместо вставки текста.",
+        Text(tr("Файл .txt содержит весь журнал (до ${Diag.log.capacity} событий) — прикрепи его в чат вместо вставки текста.", "The .txt file has the whole journal (up to ${Diag.log.capacity} events) — attach it in the chat instead of pasting text."),
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         status?.let { Text(it, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp) }
 
         val i = info
-        if (i == null) Text("Собираю…") else {
-            Block("Приложение и телефон", listOf(
-                "Версия" to "${i.appVersion} (сборка ${i.build})",
-                "Сборка и подпись" to i.signing,
-                "Телефон" to i.device,
+        if (i == null) Text(tr("Собираю…", "Collecting…")) else {
+            Block(tr("Приложение и телефон", "App and phone"), listOf(
+                tr("Версия", "Version") to tr("${i.appVersion} (сборка ${i.build})", "${i.appVersion} (build ${i.build})"),
+                tr("Сборка и подпись", "Build and signature") to i.signing,
+                tr("Телефон", "Phone") to i.device,
                 "Android" to i.android,
-                "Оболочка" to i.vendorOs,
+                tr("Оболочка", "Skin") to i.vendorOs,
             ))
-            Block("Разрешения", i.permissions.map { (n, ok) -> n to if (ok) "✅" else "⬜ нет" })
-            Block("Сервисы", i.services)
-            Block("Настройки", i.settings)
+            Block(tr("Разрешения", "Permissions"), i.permissions.map { (n, ok) -> n to if (ok) "✅" else tr("⬜ нет", "⬜ no") })
+            Block(tr("Сервисы", "Services"), i.services)
+            Block(tr("Настройки", "Settings"), i.settings)
         }
 
         val errors = entries.filter { it.level != DiagEntry.Level.INFO }
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(if (showAll) "Журнал (${entries.size})" else "Последние ошибки и предупреждения (${errors.size})", fontSize = 16.sp)
+                Text(if (showAll) tr("Журнал (${entries.size})", "Journal (${entries.size})") else tr("Последние ошибки и предупреждения (${errors.size})", "Latest errors and warnings (${errors.size})"), fontSize = 16.sp)
                 val shown = (if (showAll) entries else errors).takeLast(40).asReversed()
-                if (shown.isEmpty()) Text("Пусто 🎉", fontSize = 13.sp)
+                if (shown.isEmpty()) Text(tr("Пусто 🎉", "Empty 🎉"), fontSize = 13.sp)
                 shown.forEach { e ->
                     val color = when (e.level) {
                         DiagEntry.Level.ERROR -> MaterialTheme.colorScheme.error
@@ -158,9 +159,9 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
                     Text("${fmt.format(Date(e.timeMs))} ${e.tag}: ${e.message}", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = color)
                 }
                 Row {
-                    TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) "Только ошибки" else "Весь журнал") }
+                    TextButton(onClick = { showAll = !showAll }) { Text(if (showAll) tr("Только ошибки", "Errors only") else tr("Весь журнал", "Whole journal")) }
                     Spacer(Modifier.size(8.dp))
-                    OutlinedButton(onClick = { Diag.clear(); refresh++ }) { Text("Очистить журнал") }
+                    OutlinedButton(onClick = { Diag.clear(); refresh++ }) { Text(tr("Очистить журнал", "Clear journal")) }
                 }
             }
         }
@@ -184,7 +185,7 @@ private fun Block(title: String, rows: List<Pair<String, String>>) {
 
 private fun copyToClipboard(ctx: Context, text: String) {
     val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("Искра: диагностика", text)
+    val clip = ClipData.newPlainText(tr("Искра: диагностика", "Iskra: diagnostics"), text)
     // Android 13+: mark as sensitive anyway, so the clipboard preview does not show it on screen.
     if (Build.VERSION.SDK_INT >= 33) clip.description.extras = PersistableBundle().apply { putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true) }
     cm.setPrimaryClip(clip)

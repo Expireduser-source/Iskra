@@ -10,11 +10,15 @@ import org.vosk.Model
  */
 object VoskModels {
     private var model: Model? = null
+    private var path: String? = null
     private var users = 0
 
     @Synchronized
     fun acquire(ctx: Context): Model {
-        val m = model ?: Model(SpeechModel.dir(ctx).absolutePath).also { model = it }
+        val want = SpeechModel.dir(ctx).absolutePath
+        // The UI language changed (another model) and nobody uses the old one: load the new one.
+        if (model != null && path != want && users == 0) { runCatching { model?.close() }; model = null }
+        val m = model ?: Model(want).also { model = it; path = want }
         users++
         return m
     }

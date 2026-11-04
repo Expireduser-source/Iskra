@@ -1,5 +1,6 @@
 package ru.iskra.app.diag
 
+import ru.iskra.core.i18n.tr
 import android.content.Context
 import android.util.Log
 import ru.iskra.core.diag.DiagEntry
@@ -25,10 +26,10 @@ object Diag {
     val log = RingLog(capacity = 500, knownSecrets = { runCatching { secrets() }.getOrDefault(emptyList()) })
 
     /** Runtime states shown on the diagnostics screen, updated by the services themselves. */
-    @Volatile var overlayState: String = "не запущен"
-    @Volatile var earState: String = "выключен"
+    @Volatile var overlayState: String = tr("не запущен", "not started")
+    @Volatile var earState: String = tr("выключен", "off")
     /** The economy plan the overlay applies right now (Settings → «Экономия», auto switches). */
-    @Volatile var economyState: String = "Искра не на экране"
+    @Volatile var economyState: String = tr("Искра не на экране", "Iskra isn't on screen")
 
     fun init(ctx: Context, knownSecrets: () -> Collection<String>) {
         secrets = knownSecrets
@@ -83,7 +84,7 @@ object Diag {
     fun describe(t: Throwable): String {
         val own = t.stackTrace.filter { it.className.startsWith("ru.iskra") }.take(4)
             .joinToString(" < ") { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
-        val cause = t.cause?.let { " / причина ${it.javaClass.simpleName}" }.orEmpty()
+        val cause = t.cause?.let { tr(" / причина ${it.javaClass.simpleName}", " / cause ${it.javaClass.simpleName}") }.orEmpty()
         return "${t.javaClass.simpleName}(${t.message?.take(120).orEmpty()})$cause" + if (own.isNotEmpty()) " @ $own" else ""
     }
 
@@ -100,7 +101,7 @@ object Diag {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, t ->
             runCatching {
-                log.add(DiagEntry.Level.ERROR, "crash", "Падение в потоке ${thread.name}: ${describe(t)}")
+                log.add(DiagEntry.Level.ERROR, "crash", tr("Падение в потоке ${thread.name}: ${describe(t)}", "Crash in thread ${thread.name}: ${describe(t)}"))
                 writeNow() // synchronously: the process is about to die
                 crashFile?.appendText("${System.currentTimeMillis()}\n")
             }

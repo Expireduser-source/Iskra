@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- «Искра β» = debug build (ru.iskra.app.debug), every push to main. It is installed next to the
-     stable «Искра» (release, ru.iskra.app): different names in the launcher and in accessibility. -->
+<!-- «Iskra β» = debug build (ru.iskra.app.debug), every push to main. It is installed next to the
+     stable «Iskra» (release, ru.iskra.app): different names in the launcher and in accessibility. -->
 <resources>
-    <string name="app_name">Искра β</string>
-    <string name="accessibility_label">Искра β · управление</string>
-    <string name="overlay_channel">Искра β на экране</string>
+    <string name="app_name">Iskra β</string>
+    <string name="accessibility_label">Iskra β · control</string>
+    <string name="overlay_channel">Iskra β on screen</string>
 </resources>

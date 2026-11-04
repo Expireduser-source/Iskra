@@ -1,5 +1,6 @@
 package ru.iskra.app.data
 
+import ru.iskra.core.i18n.tr
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
@@ -27,19 +28,19 @@ object Backups {
     fun suggestedName(nowMs: Long = System.currentTimeMillis()): String =
         "iskra-backup-${SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date(nowMs))}.json"
 
-    private val labels = mapOf(
-        "preset" to "Мозг (сервис)", "baseUrl" to "Адрес сервиса", "model" to "Модель",
-        "tts" to "Озвучивать ответы", "wander" to "Гуляет сама", "avatarSize" to "Размер персонажа",
-        "ttsEngine" to "Голос (сервис)", "ttsVoice" to "Голос", "ttsModel" to "Модель голоса", "ttsBaseUrl" to "Адрес сервера голоса",
-        "alwaysListen" to "Слушать постоянно", "listenScreenOff" to "Слушать при выключенном экране",
-        "followUp" to "Продолжать без имени", "wakeNames" to "Имена", "economy" to "Экономия", "calmMotion" to "Спокойные движения",
-        "voiceInputOffline" to "Голосовой ввод только на телефоне",
-        "limitRequests" to "Лимит запросов в день", "limitTokens" to "Лимит токенов в день",
-        "limitTtsChars" to "Лимит символов голоса в день", "priceInPerM" to "Цена 1 млн входных токенов",
-        "priceOutPerM" to "Цена 1 млн выходных токенов", "priceTtsPerM" to "Цена 1 млн символов голоса", "currency" to "Валюта", "liveliness" to "Непоседливость",
-        "avatarLook" to "Вид персонажа", "economicalEar" to "Экономный слух",
-        "weatherCity" to "Город для погоды", "proactive" to "Сама заговаривает", "quietFrom" to "Тихие часы с",
-        "quietTo" to "Тихие часы до", "proactiveVoice" to "Заговаривает голосом",
+    private val labels get() = mapOf(
+        "preset" to tr("Мозг (сервис)", "Brain (service)"), "baseUrl" to tr("Адрес сервиса", "Service address"), "model" to tr("Модель", "Model"),
+        "tts" to tr("Озвучивать ответы", "Speak the replies"), "wander" to tr("Гуляет сама", "Wanders on her own"), "avatarSize" to tr("Размер персонажа", "Character size"),
+        "ttsEngine" to tr("Голос (сервис)", "Voice (service)"), "ttsVoice" to tr("Голос", "Voice"), "ttsModel" to tr("Модель голоса", "Voice model"), "ttsBaseUrl" to tr("Адрес сервера голоса", "Voice server address"),
+        "alwaysListen" to tr("Слушать постоянно", "Listen all the time"), "listenScreenOff" to tr("Слушать при выключенном экране", "Listen with the screen off"),
+        "followUp" to tr("Продолжать без имени", "Continue without the name"), "wakeNames" to tr("Имена", "Names"), "economy" to tr("Экономия", "Economy"), "calmMotion" to tr("Спокойные движения", "Calm movements"),
+        "voiceInputOffline" to tr("Голосовой ввод только на телефоне", "Voice input on the phone only"),
+        "limitRequests" to tr("Лимит запросов в день", "Requests limit per day"), "limitTokens" to tr("Лимит токенов в день", "Tokens limit per day"),
+        "limitTtsChars" to tr("Лимит символов голоса в день", "Voice characters limit per day"), "priceInPerM" to tr("Цена 1 млн входных токенов", "Price of 1M input tokens"),
+        "priceOutPerM" to tr("Цена 1 млн выходных токенов", "Price of 1M output tokens"), "priceTtsPerM" to tr("Цена 1 млн символов голоса", "Price of 1M voice characters"), "currency" to tr("Валюта", "Currency"), "liveliness" to tr("Непоседливость", "Restlessness"),
+        "avatarLook" to tr("Вид персонажа", "Character look"), "economicalEar" to tr("Экономный слух", "Economical hearing"),
+        "weatherCity" to tr("Город для погоды", "Weather city"), "proactive" to tr("Сама заговаривает", "Speaks up on her own"), "quietFrom" to tr("Тихие часы с", "Quiet hours from"),
+        "quietTo" to tr("Тихие часы до", "Quiet hours to"), "proactiveVoice" to tr("Заговаривает голосом", "Speaks aloud"),
     )
 
     /** Returns the number of memory items written. */
@@ -54,14 +55,14 @@ object Backups {
             notes = app.notes.all(),
         )
         val text = BackupCodec.encode(b, knownSecrets = DiagCollector.knownSecrets(app))
-        val out = ctx.contentResolver.openOutputStream(uri, "wt") ?: throw BackupException("Не удалось открыть файл для записи.")
+        val out = ctx.contentResolver.openOutputStream(uri, "wt") ?: throw BackupException(tr("Не удалось открыть файл для записи.", "Couldn't open the file for writing."))
         out.use { it.write(text.toByteArray(Charsets.UTF_8)) }
-        Diag.i("backup", "Экспорт: память ${b.memory.size} ${plural(b.memory.size)}, ${b.settings.size} настроек, ${text.length} байт")
+        Diag.i("backup", tr("Экспорт: память ${b.memory.size} ${plural(b.memory.size)}, ${b.settings.size} настроек, ${text.length} байт", "Export: memory ${b.memory.size} ${plural(b.memory.size)}, ${b.settings.size} settings, ${text.length} bytes"))
         b.memory.size
     }
 
     suspend fun read(ctx: Context, uri: Uri): Preview = withContext(Dispatchers.IO) {
-        val input = ctx.contentResolver.openInputStream(uri) ?: throw BackupException("Не удалось открыть файл.")
+        val input = ctx.contentResolver.openInputStream(uri) ?: throw BackupException(tr("Не удалось открыть файл.", "Couldn't open the file."))
         val bytes = input.use { s ->
             val buf = ByteArrayOutputStream()
             val chunk = ByteArray(64 * 1024)
@@ -69,7 +70,7 @@ object Backups {
                 val n = s.read(chunk)
                 if (n < 0) break
                 buf.write(chunk, 0, n)
-                if (buf.size() > BackupCodec.MAX_BYTES) throw BackupException("Файл слишком большой для резервной копии Искры.")
+                if (buf.size() > BackupCodec.MAX_BYTES) throw BackupException(tr("Файл слишком большой для резервной копии Искры.", "The file is too big for an Iskra backup."))
             }
             buf.toByteArray()
         }
@@ -85,14 +86,14 @@ object Backups {
         val current = app.settings.exportMap()
         val imported = app.settings.exportMap(app.settings.fromMap(b.settings, app.settings.load()))
         val changed = imported.filter { (k, v) -> current[k] != v }.keys.map { labels[it] ?: it }
-        val date = if (b.createdAtMs > 0) SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.ROOT).format(Date(b.createdAtMs)) else "неизвестно"
+        val date = if (b.createdAtMs > 0) SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.ROOT).format(Date(b.createdAtMs)) else tr("неизвестно", "unknown")
         return buildList {
-            add("Копия от $date, версия ${b.appVersion.ifBlank { "?" }}.")
-            add("Память: сейчас $now ${plural(now)} → будет ${b.memory.size}. Текущие записи удалятся.")
-            if (b.notes.isNotEmpty()) add("Заметки: сейчас ${app.notes.all().size} → будет ${b.notes.size}.")
-            add(if (changed.isEmpty()) "Настройки: не изменятся." else "Настройки: изменятся ${changed.size} — ${changed.joinToString(", ")}.")
-            if (b.state != null) add("Настроение, привязанность и стиль общения: заменятся сохранёнными.")
-            add("Не меняются: ключи API, переписка, разрешения, показ Искры на экране.")
+            add(tr("Копия от $date, версия ${b.appVersion.ifBlank { "?" }}.", "Backup from $date, version ${b.appVersion.ifBlank { "?" }}."))
+            add(tr("Память: сейчас $now ${plural(now)} → будет ${b.memory.size}. Текущие записи удалятся.", "Memory: now $now ${plural(now)} → will be ${b.memory.size}. Current entries will be deleted."))
+            if (b.notes.isNotEmpty()) add(tr("Заметки: сейчас ${app.notes.all().size} → будет ${b.notes.size}.", "Notes: now ${app.notes.all().size} → will be ${b.notes.size}."))
+            add(if (changed.isEmpty()) tr("Настройки: не изменятся.", "Settings: won't change.") else tr("Настройки: изменятся ${changed.size} — ${changed.joinToString(", ")}.", "Settings: ${changed.size} will change — ${changed.joinToString(", ")}."))
+            if (b.state != null) add(tr("Настроение, привязанность и стиль общения: заменятся сохранёнными.", "Mood, bond and conversation style: replaced with the saved ones."))
+            add(tr("Не меняются: ключи API, переписка, разрешения, показ Искры на экране.", "Not changed: API keys, chat, permissions, showing Iskra on screen."))
         }
     }
 
@@ -109,13 +110,9 @@ object Backups {
         if (city.isNotBlank() && app.settings.weatherPlace() == null) {
             runCatching { ru.iskra.core.skills.WeatherClient().geocode(city) }.getOrNull()?.let(app.settings::saveWeatherPlace)
         }
-        Diag.i("backup", "Импорт: память ${b.memory.size - skipped} ${plural(b.memory.size - skipped)}, пропущено $skipped, ${b.settings.size} настроек")
+        Diag.i("backup", tr("Импорт: память ${b.memory.size - skipped} ${plural(b.memory.size - skipped)}, пропущено $skipped, ${b.settings.size} настроек", "Import: memory ${b.memory.size - skipped} ${plural(b.memory.size - skipped)}, skipped $skipped, ${b.settings.size} settings"))
         skipped
     }
 
-    private fun plural(n: Int) = when {
-        n % 10 == 1 && n % 100 != 11 -> "запись"
-        n % 10 in 2..4 && n % 100 !in 12..14 -> "записи"
-        else -> "записей"
-    }
+    private fun plural(n: Int) = tr(ru.iskra.core.i18n.Plural.ru(n.toLong(), "запись", "записи", "записей"), if (n == 1) "entry" else "entries")
 }

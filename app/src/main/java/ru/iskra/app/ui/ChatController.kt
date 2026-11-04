@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import ru.iskra.core.i18n.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -61,7 +62,7 @@ class ChatController(private val app: IskraApp) {
         val t = text.trim()
         if (t.isEmpty() || _busy.value) return
         if (t.length > 4000) {
-            append(UiMessage(ids.getAndIncrement(), false, "Слишком длинное сообщение — до 4000 символов.", isError = true))
+            append(UiMessage(ids.getAndIncrement(), false, tr("Слишком длинное сообщение — до 4000 символов.", "The message is too long — up to 4000 characters."), isError = true))
             return
         }
         val token = interactions.beginTurn() ?: return
@@ -80,13 +81,13 @@ class ChatController(private val app: IskraApp) {
                 } ?: return@launch).also { r ->
                     val ms = SystemClock.elapsedRealtime() - commandAt
                     // Sizes and timings only — never the text.
-                    if (r.error == null) Diag.i("timing", (if (r.usedLlm) "LLM ответ" else "Офлайн-ответ") + ": ${r.text.length} симв., $ms мс")
+                    if (r.error == null) Diag.i("timing", (if (r.usedLlm) tr("LLM ответ", "LLM reply") else tr("Офлайн-ответ", "Offline reply")) + tr(": ${r.text.length} симв., $ms мс", ": ${r.text.length} chars, $ms ms"))
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Diag.e("chat", "Сбой при обработке сообщения", e)
-                AgentReply("Что-то сломалось: ${e.message ?: e.javaClass.simpleName}", Emotion.SAD, error = e.toString())
+                Diag.e("chat", tr("Сбой при обработке сообщения", "Failure while handling the message"), e)
+                AgentReply(tr("Что-то сломалось: ${e.message ?: e.javaClass.simpleName}", "Something broke: ${e.message ?: e.javaClass.simpleName}"), Emotion.SAD, error = e.toString())
             } finally {
                 if (interactions.isCurrent(token)) {
                     _busy.value = false
@@ -117,7 +118,7 @@ class ChatController(private val app: IskraApp) {
                 if (!interactions.isCurrent(token)) return@launch
                 if (!started) {
                     started = true
-                    Diag.i("timing", "LLM: первая фраза через ${SystemClock.elapsedRealtime() - commandAt} мс")
+                    Diag.i("timing", tr("LLM: первая фраза через ${SystemClock.elapsedRealtime() - commandAt} мс", "LLM: first phrase after ${SystemClock.elapsedRealtime() - commandAt} ms"))
                     CompanionBus.emit(AvatarCue.Thinking(false))
                     if (voice && !voiceStopped) app.speaker.beginStream(commandAt, emotion)
                 }
@@ -154,7 +155,7 @@ class ChatController(private val app: IskraApp) {
     private fun deliver(reply: AgentReply, commandAt: Long, stream: StreamingReply) {
         // The error is technical (HTTP code + service message); the reply text itself is not logged.
         reply.error?.let { Diag.e("llm", it.take(160)) }
-        reply.actions.filter { !it.outcome.ok }.forEach { Diag.w("tool", "Действие ${it.tool} не выполнено") /* description may hold a number or query */ }
+        reply.actions.filter { !it.outcome.ok }.forEach { Diag.w("tool", tr("Действие ${it.tool} не выполнено", "Action ${it.tool} not performed")) /* description may hold a number or query */ }
         if (reply.text.isBlank() && reply.actions.isEmpty()) { if (stream.started) app.speaker.endStream(); return }
         upsert(UiMessage(
             id = if (stream.started) stream.messageId else ids.getAndIncrement(), fromUser = false, text = reply.text, emotion = reply.emotion,
@@ -176,7 +177,7 @@ class ChatController(private val app: IskraApp) {
         app.usage.takeWarning()?.let { w ->
             append(UiMessage(ids.getAndIncrement(), false, w))
             CompanionBus.emit(AvatarCue.Say(w))
-            Diag.i("usage", "Предупреждение о лимите облака: ${(app.usage.fraction() * 100).toInt()} %")
+            Diag.i("usage", tr("Предупреждение о лимите облака: ${(app.usage.fraction() * 100).toInt()} %", "Cloud limit warning: ${(app.usage.fraction() * 100).toInt()} %"))
         }
     }
 
@@ -221,8 +222,8 @@ class ChatController(private val app: IskraApp) {
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Diag.e("memory", "Не удалось очистить данные", e)
-                append(UiMessage(ids.getAndIncrement(), false, "Не удалось стереть все данные. Попробуй ещё раз.", isError = true))
+                Diag.e("memory", tr("Не удалось очистить данные", "Couldn't erase the data"), e)
+                append(UiMessage(ids.getAndIncrement(), false, tr("Не удалось стереть все данные. Попробуй ещё раз.", "Couldn't erase all data. Try again."), isError = true))
             } finally {
                 _busy.value = false
                 _clearing.value = false

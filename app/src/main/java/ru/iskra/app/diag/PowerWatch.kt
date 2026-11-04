@@ -1,5 +1,6 @@
 package ru.iskra.app.diag
 
+import ru.iskra.core.i18n.tr
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -33,11 +34,11 @@ object PowerWatch {
     fun start(ctx: Context, look: () -> String) {
         app = ctx.applicationContext; this.look = look
         handler.removeCallbacks(tick)
-        sample("старт")
+        sample(tr("старт", "start"))
         handler.postDelayed(tick, PERIOD_MS)
     }
 
-    fun stop() { sample("стоп"); handler.removeCallbacks(tick); app = null }
+    fun stop() { sample(tr("стоп", "stop")); handler.removeCallbacks(tick); app = null }
 
     /** [event]: a reason to also write this reading to the journal (screen on/off, start, stop). */
     fun sample(event: String?) {
@@ -58,9 +59,9 @@ object PowerWatch {
         if (event != null || count % 3 == 0) {
             Diag.i("power", buildString {
                 if (event != null) append(event).append(": ")
-                append("батарея ${s.levelPct.toInt()} %").append(if (s.charging) " (заряжается)" else "")
-                append(", экран ").append(if (s.screenOn) "вкл" else "выкл")
-                append(", CPU Искры ${s.cpuMs / 1000} с, вид ${s.look}")
+                append(tr("батарея ${s.levelPct.toInt()} %", "battery ${s.levelPct.toInt()} %")).append(if (s.charging) tr(" (заряжается)", " (charging)") else "")
+                append(tr(", экран ", ", screen ")).append(if (s.screenOn) tr("вкл", "on") else tr("выкл", "off"))
+                append(tr(", CPU Искры ${s.cpuMs / 1000} с, вид ${s.look}", ", Iskra CPU ${s.cpuMs / 1000} s, look ${s.look}"))
                 summary()?.let { append(" · ").append(it) }
             })
         }

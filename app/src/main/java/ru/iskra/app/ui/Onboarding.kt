@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import ru.iskra.core.i18n.tr
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -94,7 +95,7 @@ fun Onboarding(onDone: () -> Unit) {
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tick++ }
 
     fun finish(how: String) {
-        Diag.i("onboarding", "Знакомство: $how на шаге ${step + 1} из $total")
+        Diag.i("onboarding", tr("Знакомство: $how на шаге ${step + 1} из $total", "Introduction: $how at step ${step + 1} of $total"))
         onDone()
     }
 
@@ -104,24 +105,24 @@ fun Onboarding(onDone: () -> Unit) {
                 Modifier.widthIn(max = 560.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Text("Шаг ${step + 1} из $total", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(tr("Шаг ${step + 1} из $total", "Step ${step + 1} of $total"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LinearProgressIndicator(progress = { (step + 1f) / total }, modifier = Modifier.fillMaxWidth())
                 val picture = when (step) { 0 -> R.drawable.iskra_wave; 1 -> R.drawable.iskra_stand; 2 -> R.drawable.iskra_shy; else -> R.drawable.iskra_thoughtful }
                 Image(painterResource(picture), contentDescription = null, modifier = Modifier.size(168.dp).align(Alignment.CenterHorizontally))
                 when (step) {
                     0 -> {
-                        Title("Привет! Я Искра")
-                        Body("Я живу в твоём телефоне. Ставлю будильники и таймеры, напоминаю о делах, записываю заметки, " +
-                            "рассказываю погоду и играю в маленькие игры. Всё это работает сразу — без регистрации и без интернета.")
-                        Body("Дальше пара разрешений. Каждое можно пропустить и включить потом на вкладке «Разрешения».")
+                        Title(tr("Привет! Я Искра", "Hi! I'm Iskra"))
+                        Body(tr("Я живу в твоём телефоне. Ставлю будильники и таймеры, напоминаю о делах, записываю заметки, " +
+                            "рассказываю погоду и играю в маленькие игры. Всё это работает сразу — без регистрации и без интернета.", "I live in your phone. I set alarms and timers, remind you about things, take notes, tell the weather and play little games. All of this works right away — no sign-up and no internet."))
+                        Body(tr("Дальше пара разрешений. Каждое можно пропустить и включить потом на вкладке «Разрешения».", "Next, a couple of permissions. Each one can be skipped and turned on later in the “Permissions” tab."))
                     }
                     1 -> {
-                        Title("Жить на экране")
-                        Body("Я могу сидеть поверх других приложений: нажми на меня — и поговорим, потяни — перенесу лапки в другое место. " +
-                            "Для этого Android спросит разрешение «Поверх других приложений».")
+                        Title(tr("Жить на экране", "Living on the screen"))
+                        Body(tr("Я могу сидеть поверх других приложений: нажми на меня — и поговорим, потяни — перенесу лапки в другое место. " +
+                            "Для этого Android спросит разрешение «Поверх других приложений».", "I can sit on top of other apps: tap me — and we'll talk, drag me — and I'll move my paws somewhere else. For this, Android will ask for the “Display over other apps” permission."))
                         if (!overlay) Button(onClick = { DeviceHelper.openOverlaySettings(ctx) }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Разрешить")
-                        } else SwitchRow(shown, "Показать Искру на экране", tag = "overlay_switch") { on ->
+                            Text(tr("Разрешить", "Allow"))
+                        } else SwitchRow(shown, tr("Показать Искру на экране", "Show Iskra on screen"), tag = "overlay_switch") { on ->
                             shown = on
                             app.settings.save(app.settings.load().copy(overlayEnabled = on))
                             if (on) {
@@ -130,33 +131,33 @@ fun Onboarding(onDone: () -> Unit) {
                                 OverlayService.start(ctx)
                             } else OverlayService.stop(ctx)
                         }
-                        if (overlay) Hint("Пока я на экране, Android показывает значок в уведомлениях — так он меня не выгружает.")
+                        if (overlay) Hint(tr("Пока я на экране, Android показывает значок в уведомлениях — так он меня не выгружает.", "While I'm on screen, Android shows an icon in the notifications — that way it doesn't unload me."))
                     }
                     2 -> {
-                        Title("Голос")
-                        Body("Чтобы говорить со мной голосом, нужен микрофон. Я слушаю, только когда ты нажимаешь 🎤. " +
-                            "А если включишь «Слух» в настройках, буду отзываться на имя — речь распознаётся прямо на телефоне.")
+                        Title(tr("Голос", "Voice"))
+                        Body(tr("Чтобы говорить со мной голосом, нужен микрофон. Я слушаю, только когда ты нажимаешь 🎤. " +
+                            "А если включишь «Слух» в настройках, буду отзываться на имя — речь распознаётся прямо на телефоне.", "To talk to me by voice, I need the microphone. I listen only when you press 🎤. And if you turn on “Hearing” in Settings, I'll answer to my name — speech is recognized right on the phone."))
                         if (!mic) Button(onClick = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) }, modifier = Modifier.fillMaxWidth()) {
-                            Text("Разрешить микрофон")
-                        } else Hint("Микрофон разрешён ✓")
+                            Text(tr("Разрешить микрофон", "Allow microphone"))
+                        } else Hint(tr("Микрофон разрешён ✓", "Microphone allowed ✓"))
                     }
                     else -> {
-                        Title("Мозг — по желанию")
-                        Body("Без подключения я понимаю команды: «поставь будильник на 7», «напомни через 10 минут позвонить маме», " +
-                            "«запиши заметку: купить молоко», «какая погода», «удиви меня».")
-                        Body("Чтобы свободно болтать, в «Настройках» можно подключить модель ИИ по ключу (DeepSeek, OpenRouter и другие). " +
-                            "Ключ хранится зашифрованным и уходит только выбранному сервису.")
-                        if (DeviceHelper.vendor != Vendor.NEAR_STOCK) Hint("${DeviceHelper.vendor.title}: прошивка иногда выгружает приложения в фоне. " +
-                            "На вкладке «Разрешения» есть короткая инструкция именно для твоего телефона.")
+                        Title(tr("Мозг — по желанию", "A brain — if you want"))
+                        Body(tr("Без подключения я понимаю команды: «поставь будильник на 7», «напомни через 10 минут позвонить маме», " +
+                            "«запиши заметку: купить молоко», «какая погода», «удиви меня».", "Without a connection I understand commands: “set an alarm for 7”, “remind me in 10 minutes to call mom”, “note: buy milk”, “what's the weather”, “surprise me”."))
+                        Body(tr("Чтобы свободно болтать, в «Настройках» можно подключить модель ИИ по ключу (DeepSeek, OpenRouter и другие). " +
+                            "Ключ хранится зашифрованным и уходит только выбранному сервису.", "To chat freely, connect an AI model in “Settings”: free with one tap through OpenRouter, or with your own key (DeepSeek, OpenAI and others). The key is stored encrypted and goes only to the chosen service."))
+                        if (DeviceHelper.vendor != Vendor.NEAR_STOCK) Hint(tr("${DeviceHelper.vendor.title}: прошивка иногда выгружает приложения в фоне. " +
+                            "На вкладке «Разрешения» есть короткая инструкция именно для твоего телефона.", "${DeviceHelper.vendor.title}: the firmware sometimes unloads apps in the background. The “Permissions” tab has a short guide for exactly your phone."))
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (step > 0) TextButton(onClick = { step-- }, modifier = Modifier.testTag("onb_back")) { Text("Назад") }
+                    if (step > 0) TextButton(onClick = { step-- }, modifier = Modifier.testTag("onb_back")) { Text(tr("Назад", "Back")) }
                     Spacer(Modifier.weight(1f))
-                    if (step < total - 1) TextButton(onClick = { finish("пропущено") }, modifier = Modifier.testTag("onb_skip")) { Text("Пропустить") }
+                    if (step < total - 1) TextButton(onClick = { finish(tr("пропущено", "skipped")) }, modifier = Modifier.testTag("onb_skip")) { Text(tr("Пропустить", "Skip")) }
                     Spacer(Modifier.size(8.dp))
-                    FilledTonalButton(onClick = { if (step < total - 1) step++ else finish("пройдено") }, modifier = Modifier.testTag("onb_next")) {
-                        Text(if (step < total - 1) "Дальше" else "Начать")
+                    FilledTonalButton(onClick = { if (step < total - 1) step++ else finish(tr("пройдено", "completed")) }, modifier = Modifier.testTag("onb_next")) {
+                        Text(if (step < total - 1) tr("Дальше", "Next") else tr("Начать", "Start"))
                     }
                 }
             }

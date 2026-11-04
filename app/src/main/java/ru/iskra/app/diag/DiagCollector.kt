@@ -1,5 +1,6 @@
 package ru.iskra.app.diag
 
+import ru.iskra.core.i18n.tr
 import android.Manifest
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -36,62 +37,62 @@ object DiagCollector {
         fun granted(p: String) = ContextCompat.checkSelfPermission(ctx, p) == PackageManager.PERMISSION_GRANTED
 
         val permissions = listOf(
-            "Поверх других приложений" to DeviceHelper.canDrawOverlays(ctx),
-            "Микрофон" to granted(Manifest.permission.RECORD_AUDIO),
-            "Уведомления" to (Build.VERSION.SDK_INT < 33 || granted(Manifest.permission.POST_NOTIFICATIONS)),
-            "Спец. возможности (управление)" to CompanionAccessibilityService.isEnabled(ctx),
-            "Без ограничений батареи" to DeviceHelper.isIgnoringBatteryOptimizations(ctx),
+            tr("Поверх других приложений", "Over other apps") to DeviceHelper.canDrawOverlays(ctx),
+            tr("Микрофон", "Microphone") to granted(Manifest.permission.RECORD_AUDIO),
+            tr("Уведомления", "Notifications") to (Build.VERSION.SDK_INT < 33 || granted(Manifest.permission.POST_NOTIFICATIONS)),
+            tr("Спец. возможности (управление)", "Accessibility (control)") to CompanionAccessibilityService.isEnabled(ctx),
+            tr("Без ограничений батареи", "No battery restrictions") to DeviceHelper.isIgnoringBatteryOptimizations(ctx),
         )
 
         val speaking = app.speaker.speaking.value
         val ttsError = app.speaker.lastError.value
         val services = listOf(
-            "Оверлей (Искра на экране)" to Diag.overlayState,
-            "Слух" to Diag.earState + " · " + ru.iskra.app.voice.EarStats.describe(),
-            "Модель распознавания" to if (SpeechModel.isReady(ctx)) "скачана" else "нет",
-            "Голос (TTS)" to buildString {
+            tr("Оверлей (Искра на экране)", "Overlay (Iskra on screen)") to Diag.overlayState,
+            tr("Слух", "Hearing") to Diag.earState + " · " + ru.iskra.app.voice.EarStats.describe(),
+            tr("Модель распознавания", "Speech model") to if (SpeechModel.isReady(ctx)) tr("скачана", "downloaded") else tr("нет", "no"),
+            tr("Голос (TTS)", "Voice (TTS)") to buildString {
                 append(s.ttsEngine.title)
-                if (!s.ttsEnabled) append(", озвучка выключена")
-                if (speaking) append(", сейчас говорит")
-                if (ttsError != null) append(", последняя ошибка: ").append(ttsError)
+                if (!s.ttsEnabled) append(tr(", озвучка выключена", ", speech off"))
+                if (speaking) append(tr(", сейчас говорит", ", speaking now"))
+                if (ttsError != null) append(tr(", последняя ошибка: ", ", last error: ")).append(ttsError)
             },
-            "Служба спец. возможностей" to CompanionAccessibilityService.describe(ctx),
-            "Кадры/с у Искры" to if (FrameStats.hz > 0) "экран ~${FrameStats.hz}, отрисовка ~${FrameStats.drawnHz}" else "нет данных (Искра не на экране)",
-            "Экономия" to "${s.economy.title} → ${Diag.economyState}",
-            "Облако" to app.usage.describe(),
-            "Телефон" to "${DeviceHelper.vendor.title}, ${DeviceHelper.deviceClass(ctx).title}, " +
-                "${DeviceHelper.totalRamMb(ctx)} МБ ОЗУ, ${Runtime.getRuntime().availableProcessors()} ядер" +
-                (if (DeviceHelper.animationsOff(ctx)) ", анимации выключены в системе" else ""),
-            "Группа ожидания Android" to standbyBucket(ctx),
-            "Падения" to ru.iskra.core.diag.CrashHistory.summary(Diag.crashTimes(), System.currentTimeMillis(), installedAt(ctx)),
-            "Ежедневная копия" to ru.iskra.app.data.AutoBackup.describe(ctx),
-            "Расход в покое" to (PowerWatch.summary() ?: "пока нет данных: нужно ≥ 2 замеров без зарядки (замер раз в 5 мин, пока Искра на экране)"),
-            "Кэш голоса" to runCatching {
+            tr("Служба спец. возможностей", "Accessibility service") to CompanionAccessibilityService.describe(ctx),
+            tr("Кадры/с у Искры", "Iskra fps") to if (FrameStats.hz > 0) tr("экран ~${FrameStats.hz}, отрисовка ~${FrameStats.drawnHz}", "screen ~${FrameStats.hz}, drawing ~${FrameStats.drawnHz}") else tr("нет данных (Искра не на экране)", "no data (Iskra isn't on screen)"),
+            tr("Экономия", "Economy") to "${s.economy.title} → ${Diag.economyState}",
+            tr("Облако", "Cloud") to app.usage.describe(),
+            tr("Телефон", "Phone") to tr("${DeviceHelper.vendor.title}, ${DeviceHelper.deviceClass(ctx).title}, " +
+                "${DeviceHelper.totalRamMb(ctx)} МБ ОЗУ, ${Runtime.getRuntime().availableProcessors()} ядер", "${DeviceHelper.vendor.title}, ${DeviceHelper.deviceClass(ctx).title}, ${DeviceHelper.totalRamMb(ctx)} MB RAM, ${Runtime.getRuntime().availableProcessors()} cores") +
+                (if (DeviceHelper.animationsOff(ctx)) tr(", анимации выключены в системе", ", animations off in the system") else ""),
+            tr("Группа ожидания Android", "Android standby bucket") to standbyBucket(ctx),
+            tr("Падения", "Crashes") to ru.iskra.core.diag.CrashHistory.summary(Diag.crashTimes(), System.currentTimeMillis(), installedAt(ctx)),
+            tr("Ежедневная копия", "Daily backup") to ru.iskra.app.data.AutoBackup.describe(ctx),
+            tr("Расход в покое", "Idle drain") to (PowerWatch.summary() ?: tr("пока нет данных: нужно ≥ 2 замеров без зарядки (замер раз в 5 мин, пока Искра на экране)", "no data yet: needs ≥ 2 samples off the charger (a sample every 5 min while Iskra is on screen)")),
+            tr("Кэш голоса", "Voice cache") to runCatching {
                 val c = app.speaker.cache
-                "${c.count()} фраз, ${c.sizeBytes() / 1024} КБ; за запуск из кэша ${app.speaker.cacheHits} из ${app.speaker.phrases}"
+                tr("${c.count()} фраз, ${c.sizeBytes() / 1024} КБ; за запуск из кэша ${app.speaker.cacheHits} из ${app.speaker.phrases}", "${c.count()} phrases, ${c.sizeBytes() / 1024} KB; this run from cache ${app.speaker.cacheHits} of ${app.speaker.phrases}")
             }.getOrDefault("?"),
-            "Записей в памяти" to runCatching { app.memory.all().size.toString() }.getOrDefault("?"),
+            tr("Записей в памяти", "Memory entries") to runCatching { app.memory.all().size.toString() }.getOrDefault("?"),
         )
 
         val llmKey = runCatching { app.vault.load() }.getOrNull()
         val ttsKey = runCatching { app.ttsVault.load() }.getOrNull()
         val settings = listOf(
-            "Мозг" to s.preset.title + if (s.preset != ProviderPreset.OFFLINE) ", модель ${s.model.ifBlank { s.preset.defaultModel }}" else "",
-            "Ключ мозга" to keyState(llmKey),
-            "Ключ голоса" to if (s.ttsEngine == TtsEngine.SYSTEM) "не нужен" else keyState(ttsKey),
-            "Слушать постоянно" to yesNo(s.alwaysListen),
-            "Слушать при выключенном экране" to yesNo(s.listenScreenOff),
-            "Продолжение без имени" to yesNo(s.followUp),
-            "Гуляет сама" to yesNo(s.wander) + ", непоседливость ${s.liveliness}",
-            "Размер" to "${s.avatarSizeDp} dp",
-            "Вид" to s.avatarLook.title,
+            tr("Мозг", "Brain") to s.preset.title + if (s.preset != ProviderPreset.OFFLINE) tr(", модель ${s.model.ifBlank { s.preset.defaultModel }}", ", model ${s.model.ifBlank { s.preset.defaultModel }}") else "",
+            tr("Ключ мозга", "Brain key") to keyState(llmKey),
+            tr("Ключ голоса", "Voice key") to if (s.ttsEngine == TtsEngine.SYSTEM) tr("не нужен", "not needed") else keyState(ttsKey),
+            tr("Слушать постоянно", "Listen all the time") to yesNo(s.alwaysListen),
+            tr("Слушать при выключенном экране", "Listen with the screen off") to yesNo(s.listenScreenOff),
+            tr("Продолжение без имени", "Continue without the name") to yesNo(s.followUp),
+            tr("Гуляет сама", "Wanders on her own") to yesNo(s.wander) + tr(", непоседливость ${s.liveliness}", ", restlessness ${s.liveliness}"),
+            tr("Размер", "Size") to "${s.avatarSizeDp} dp",
+            tr("Вид", "Look") to s.avatarLook.title,
         )
 
         return DiagInfo(
             appVersion = BuildConfig.VERSION_NAME,
             build = build(),
             device = "${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})",
-            android = "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), патч ${Build.VERSION.SECURITY_PATCH}",
+            android = tr("${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), патч ${Build.VERSION.SECURITY_PATCH}", "${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), patch ${Build.VERSION.SECURITY_PATCH}"),
             vendorOs = vendorOs(),
             permissions = permissions,
             services = services,
@@ -114,15 +115,15 @@ object DiagCollector {
             } else {
                 @Suppress("DEPRECATION")
                 pm.getPackageInfo(ctx.packageName, PackageManager.GET_SIGNATURES).signatures?.firstOrNull()
-            } ?: return@runCatching "подпись не прочитана"
+            } ?: return@runCatching tr("подпись не прочитана", "signature not read")
             val x509 = java.security.cert.CertificateFactory.getInstance("X.509")
                 .generateCertificate(sig.toByteArray().inputStream()) as java.security.cert.X509Certificate
             val sha = java.security.MessageDigest.getInstance("SHA-256").digest(sig.toByteArray())
                 .joinToString(":") { "%02X".format(it) }
             val subject = x509.subjectX500Principal.name
             val debugKey = sha.startsWith(DEBUG_CERT_SHA256) || subject.contains("Debug", ignoreCase = true)
-            (if (debugKey) "debug-ключ" else "release-ключ") + ", SHA-256 ${sha.take(11)}…"
-        }.getOrElse { "подпись не прочитана: ${it.javaClass.simpleName}" }
+            (if (debugKey) tr("debug-ключ", "debug key") else tr("release-ключ", "release key")) + ", SHA-256 ${sha.take(11)}…"
+        }.getOrElse { tr("подпись не прочитана: ${it.javaClass.simpleName}", "signature not read: ${it.javaClass.simpleName}") }
         return "$type · ${ctx.packageName} · $cert"
     }
 
@@ -159,28 +160,28 @@ object DiagCollector {
         val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(android.content.Intent.EXTRA_STREAM, uri)
-            putExtra(android.content.Intent.EXTRA_SUBJECT, "Искра: отчёт диагностики")
+            putExtra(android.content.Intent.EXTRA_SUBJECT, tr("Искра: отчёт диагностики", "Iskra: diagnostics report"))
             clipData = android.content.ClipData.newRawUri("report", uri)
             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        ctx.startActivity(android.content.Intent.createChooser(send, "Отправить отчёт").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        ctx.startActivity(android.content.Intent.createChooser(send, tr("Отправить отчёт", "Send report")).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
-    private fun keyState(key: String?) = if (key.isNullOrBlank()) "не сохранён" else "сохранён, ${Redactor.mask(key)}"
-    private fun yesNo(b: Boolean) = if (b) "да" else "нет"
+    private fun keyState(key: String?) = if (key.isNullOrBlank()) tr("не сохранён", "not saved") else tr("сохранён, ${Redactor.mask(key)}", "saved, ${Redactor.mask(key)}")
+    private fun yesNo(b: Boolean) = if (b) tr("да", "yes") else tr("нет", "no")
 
     /** Android's app-standby bucket: RARE/RESTRICTED explains a lot of "she disappeared" reports. */
     private fun standbyBucket(ctx: Context): String {
         if (Build.VERSION.SDK_INT < 28) return "—"
         val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager ?: return "?"
         return when (val b = usm.appStandbyBucket) {
-            5 /* EXEMPTED */ -> "освобождено от ограничений (лучшее)"
-            UsageStatsManager.STANDBY_BUCKET_ACTIVE -> "активное"
-            UsageStatsManager.STANDBY_BUCKET_WORKING_SET -> "рабочий набор"
-            UsageStatsManager.STANDBY_BUCKET_FREQUENT -> "частое"
-            UsageStatsManager.STANDBY_BUCKET_RARE -> "редкое (Android ограничивает фон)"
-            45 /* RESTRICTED, API 30 */ -> "ограниченное (фон сильно урезан)"
-            else -> "код $b"
+            5 /* EXEMPTED */ -> tr("освобождено от ограничений (лучшее)", "exempt from restrictions (best)")
+            UsageStatsManager.STANDBY_BUCKET_ACTIVE -> tr("активное", "active")
+            UsageStatsManager.STANDBY_BUCKET_WORKING_SET -> tr("рабочий набор", "working set")
+            UsageStatsManager.STANDBY_BUCKET_FREQUENT -> tr("частое", "frequent")
+            UsageStatsManager.STANDBY_BUCKET_RARE -> tr("редкое (Android ограничивает фон)", "rare (Android limits the background)")
+            45 /* RESTRICTED, API 30 */ -> tr("ограниченное (фон сильно урезан)", "restricted (background heavily cut)")
+            else -> tr("код $b", "code $b")
         }
     }
 

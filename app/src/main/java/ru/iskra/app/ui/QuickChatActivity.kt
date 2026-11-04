@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import ru.iskra.core.i18n.tr
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -51,8 +52,8 @@ class QuickChatActivity : ComponentActivity() {
                             .padding(top = 8.dp)
                     ) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("Искра", fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { finish() }) { Text("Свернуть") }
+                            Text(tr("Искра", "Iskra"), fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { finish() }) { Text(tr("Свернуть", "Minimize")) }
                         }
                         ChatScreen(Modifier.weight(1f), compact = true)
                     }

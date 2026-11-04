@@ -1,5 +1,6 @@
 package ru.iskra.app.data
 
+import ru.iskra.core.i18n.tr
 import ru.iskra.core.power.EconomyMode
 import ru.iskra.core.usage.UsageLimits
 import ru.iskra.core.power.EconomyPolicy
@@ -21,33 +22,50 @@ import ru.iskra.core.persona.MoodState
 import ru.iskra.core.persona.StyleProfile
 import ru.iskra.core.voice.ElevenLabsTts
 
-enum class ProviderPreset(val title: String, val baseUrl: String, val defaultModel: String, val anthropic: Boolean = false) {
-    OFFLINE("Без облака (только команды)", "", ""),
+enum class ProviderPreset(private val ruTitle: String, val baseUrl: String, val defaultModel: String, val anthropic: Boolean = false,
+    private val enTitle: String? = null) {
+    OFFLINE("Без облака (только команды)", "", "", enTitle = "No cloud (commands only)"),
     OPENROUTER("OpenRouter", "https://openrouter.ai/api/v1", "deepseek/deepseek-chat"),
     DEEPSEEK("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat"),
     OPENAI("OpenAI", "https://api.openai.com/v1", "gpt-4.1-mini"),
     ANTHROPIC("Anthropic (Claude)", "https://api.anthropic.com", "claude-haiku-5-5", anthropic = true),
-    CUSTOM("Свой OpenAI-совместимый сервер", "https://", ""),
+    CUSTOM("Свой OpenAI-совместимый сервер", "https://", "", enTitle = "Own OpenAI-compatible server"),
+    ;
+
+    val title: String get() = tr(ruTitle, enTitle ?: ruTitle)
 }
 
 /** Who speaks Iskra's replies. Cloud engines get only the reply text, never the dialogue. */
-enum class TtsEngine(val title: String, val defaultVoice: String, val defaultModel: String, val needsKey: Boolean, val note: String) {
-    SYSTEM("Голос Android", "", "", false, "Бесплатно и без интернета, но звучит механически."),
+enum class TtsEngine(private val ruTitle: String, val defaultVoice: String, val defaultModel: String, val needsKey: Boolean,
+    private val ruNote: String, private val enTitle: String? = null, private val enNote: String = ruNote) {
+    SYSTEM("Голос Android", "", "", false, "Бесплатно и без интернета, но звучит механически.",
+        "Android voice", "Free and offline, but sounds mechanical."),
     YANDEX("Yandex SpeechKit", "jane", "", true,
-        "Лучшие русские голоса, оплата в рублях (~1–2 ₽ за длинный ответ). Ключ: Yandex Cloud → сервисный аккаунт → API-ключ. Голоса: jane, alena, omazh, filipp…"),
+        "Лучшие русские голоса, оплата в рублях (~1–2 ₽ за длинный ответ). Ключ: Yandex Cloud → сервисный аккаунт → API-ключ. Голоса: jane, alena, omazh, filipp…",
+        enNote = "Natural Russian voices, paid in rubles (~1–2 ₽ per long reply). Key: Yandex Cloud → service account → API key. English voice: john."),
     ELEVENLABS("ElevenLabs", ElevenLabsTts.DEFAULT_VOICE, "eleven_flash_v2_5", true,
-        "Очень живые голоса, есть бесплатный лимит (~10 000 символов в месяц). Голос — это voice_id из их библиотеки."),
+        "Очень живые голоса, есть бесплатный лимит (~10 000 символов в месяц). Голос — это voice_id из их библиотеки.",
+        enNote = "Very lively voices in many languages, with a free tier (~10,000 characters a month). The voice is a voice_id from their library."),
     OPENAI("OpenAI", "nova", "gpt-4o-mini-tts", true,
-        "Голос слушается указаний по эмоциям. Голоса: nova, shimmer, coral, sage… Если «мозг» тоже OpenAI, ключ можно не вводить."),
+        "Голос слушается указаний по эмоциям. Голоса: nova, shimmer, coral, sage… Если «мозг» тоже OpenAI, ключ можно не вводить.",
+        enNote = "The voice follows emotion hints. Voices: nova, shimmer, coral, sage… If the “brain” is OpenAI too, you can skip the key."),
     CUSTOM("Свой сервер (OpenAI-совместимый)", "", "", false,
-        "Например, свой сервер с Silero/XTTS, отвечающий на /v1/audio/speech. Только https."),
+        "Например, свой сервер с Silero/XTTS, отвечающий на /v1/audio/speech. Только https.",
+        "Own server (OpenAI-compatible)", "For example, your own Silero/XTTS server answering /v1/audio/speech. HTTPS only."),
+    ;
+
+    val title: String get() = tr(ruTitle, enTitle ?: ruTitle)
+    val note: String get() = tr(ruNote, enNote)
 }
 
 /** How the character is drawn. */
-enum class AvatarLook(val title: String) {
-    RIG("Живой риг (мимика, уши, хвост)"),
-    SPRITES("Спрайты (рисованные кадры)"),
-    CLASSIC("Старый вид (рисунок кодом)"),
+enum class AvatarLook(private val ru: String, private val en: String) {
+    RIG("Живой риг (мимика, уши, хвост)", "Live rig (expressions, ears, tail)"),
+    SPRITES("Спрайты (рисованные кадры)", "Sprites (drawn frames)"),
+    CLASSIC("Старый вид (рисунок кодом)", "Classic look (drawn by code)"),
+    ;
+
+    val title: String get() = tr(ru, en)
 }
 
 data class AppSettings(
@@ -65,7 +83,7 @@ data class AppSettings(
     val alwaysListen: Boolean = false,
     val listenScreenOff: Boolean = false,
     val followUp: Boolean = true,
-    val wakeNames: String = "Искра, Искорка",
+    val wakeNames: String = tr("Искра, Искорка", "Iskra, Spark"),
     /** «Экономия»: frame rate, display refresh, hearing; replaces the 0.8 frame-rate choice. */
     val economy: EconomyMode = EconomyMode.AUTO,
     /** Fewer big movements (no walking around); also on when Android's "remove animations" is set. */
@@ -113,7 +131,7 @@ class SettingsRepo(context: Context) {
         alwaysListen = prefs.getBoolean("alwaysListen", false),
         listenScreenOff = prefs.getBoolean("listenScreenOff", false),
         followUp = prefs.getBoolean("followUp", true),
-        wakeNames = prefs.getString("wakeNames", null) ?: "Искра, Искорка",
+        wakeNames = prefs.getString("wakeNames", null) ?: tr("Искра, Искорка", "Iskra, Spark"),
         economy = prefs.getString("economy", null)?.let { runCatching { EconomyMode.valueOf(it) }.getOrNull() }
             ?: EconomyPolicy.fromLegacyFps(prefs.getString("fpsMode", null)),
         calmMotion = prefs.getBoolean("calmMotion", false),

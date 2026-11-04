@@ -1,5 +1,6 @@
 package ru.iskra.app.overlay
 
+import ru.iskra.core.i18n.tr
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -36,7 +37,7 @@ class SpriteBitmaps(private val ctx: Context, private val box: Int) {
             if (px < raw.width) Bitmap.createScaledBitmap(raw, px, px, true).also { if (it !== raw) raw.recycle() } else raw
         } catch (e: Throwable) {
             failed = true
-            Diag.e("avatar", "Спрайт ${s.file} не загрузился", e)
+            Diag.e("avatar", tr("Спрайт ${s.file} не загрузился", "Sprite ${s.file} didn't load"), e)
             null
         }
     }
@@ -146,7 +147,7 @@ internal fun drawEffects(c: Canvas, box: Float, p: AvatarPose, effects: AvatarEf
 internal class FallbackNotes {
     private val seen = HashSet<String>()
     fun log(note: String) {
-        if (seen.size < 40 && seen.add(note)) Diag.i("avatar", "Нет своей позы: $note")
+        if (seen.size < 40 && seen.add(note)) Diag.i("avatar", tr("Нет своей позы: $note", "No own pose: $note"))
     }
 }
 
