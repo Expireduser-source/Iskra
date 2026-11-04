@@ -1,6 +1,7 @@
 package ru.iskra.app.data
 
 import ru.iskra.core.power.EconomyMode
+import ru.iskra.core.usage.UsageLimits
 import ru.iskra.core.power.EconomyPolicy
 import ru.iskra.core.skills.Place
 import ru.iskra.core.skills.ProactiveFrequency
@@ -71,6 +72,14 @@ data class AppSettings(
     val calmMotion: Boolean = false,
     /** Chat microphone through the on-phone model only (the system recognizer may send audio to a server). */
     val voiceInputOffline: Boolean = false,
+    /** Daily cloud limits (0 = none) and the owner's prices per million, for «Экономия». */
+    val limitRequests: Int = 0,
+    val limitTokens: Long = 0,
+    val limitTtsChars: Long = 0,
+    val priceInPerM: Double = 0.0,
+    val priceOutPerM: Double = 0.0,
+    val priceTtsPerM: Double = 0.0,
+    val currency: String = "₽",
     val liveliness: Int = 1,
     val avatarLook: AvatarLook = AvatarLook.RIG,
     val economicalEar: Boolean = true,
@@ -83,6 +92,7 @@ data class AppSettings(
     val voiceOrDefault get() = ttsVoice.ifBlank { ttsEngine.defaultVoice }
     val ttsModelOrDefault get() = ttsModel.ifBlank { ttsEngine.defaultModel }
     val wakeNameList get() = wakeNames.split(',', ';').map { it.trim() }.filter { it.length >= 3 }
+    val usageLimits get() = UsageLimits(limitRequests, limitTokens, limitTtsChars, priceInPerM, priceOutPerM, priceTtsPerM, currency.ifBlank { "₽" })
 }
 
 class SettingsRepo(context: Context) {
@@ -108,6 +118,13 @@ class SettingsRepo(context: Context) {
             ?: EconomyPolicy.fromLegacyFps(prefs.getString("fpsMode", null)),
         calmMotion = prefs.getBoolean("calmMotion", false),
         voiceInputOffline = prefs.getBoolean("voiceInputOffline", false),
+        limitRequests = prefs.getInt("limitRequests", 0).coerceAtLeast(0),
+        limitTokens = prefs.getLong("limitTokens", 0L).coerceAtLeast(0L),
+        limitTtsChars = prefs.getLong("limitTtsChars", 0L).coerceAtLeast(0L),
+        priceInPerM = prefs.getFloat("priceInPerM", 0f).toDouble(),
+        priceOutPerM = prefs.getFloat("priceOutPerM", 0f).toDouble(),
+        priceTtsPerM = prefs.getFloat("priceTtsPerM", 0f).toDouble(),
+        currency = prefs.getString("currency", null) ?: "₽",
         liveliness = prefs.getInt("liveliness", 1).coerceIn(0, 2),
         avatarLook = runCatching { AvatarLook.valueOf(prefs.getString("avatarLook", null) ?: "RIG") }.getOrDefault(AvatarLook.RIG),
         economicalEar = prefs.getBoolean("economicalEar", true),
@@ -144,6 +161,8 @@ class SettingsRepo(context: Context) {
         "alwaysListen" to s.alwaysListen, "listenScreenOff" to s.listenScreenOff, "followUp" to s.followUp,
         "wakeNames" to s.wakeNames, "economy" to s.economy.name, "calmMotion" to s.calmMotion,
         "voiceInputOffline" to s.voiceInputOffline, "liveliness" to s.liveliness,
+        "limitRequests" to s.limitRequests, "limitTokens" to s.limitTokens, "limitTtsChars" to s.limitTtsChars,
+        "priceInPerM" to s.priceInPerM, "priceOutPerM" to s.priceOutPerM, "priceTtsPerM" to s.priceTtsPerM, "currency" to s.currency,
         "avatarLook" to s.avatarLook.name, "economicalEar" to s.economicalEar,
         "weatherCity" to s.weatherCity, "proactive" to s.proactive.name, "quietFrom" to s.quietFrom, "quietTo" to s.quietTo,
         "proactiveVoice" to s.proactiveVoice,
@@ -154,6 +173,8 @@ class SettingsRepo(context: Context) {
         fun str(k: String) = m[k] as? String
         fun bool(k: String) = m[k] as? Boolean
         fun int(k: String) = (m[k] as? Int) ?: (m[k] as? Long)?.toInt()
+        fun long(k: String) = (m[k] as? Long) ?: (m[k] as? Int)?.toLong()
+        fun num(k: String) = (m[k] as? Number)?.toDouble()
         fun https(v: String?) = v?.takeIf { it.isEmpty() || it.startsWith("https://") }
         return base.copy(
             preset = str("preset")?.let { runCatching { ProviderPreset.valueOf(it) }.getOrNull() } ?: base.preset,
@@ -174,6 +195,13 @@ class SettingsRepo(context: Context) {
                 ?: str("fpsMode")?.let { EconomyPolicy.fromLegacyFps(it) } ?: base.economy,
             calmMotion = bool("calmMotion") ?: base.calmMotion,
             voiceInputOffline = bool("voiceInputOffline") ?: base.voiceInputOffline,
+            limitRequests = int("limitRequests")?.coerceAtLeast(0) ?: base.limitRequests,
+            limitTokens = long("limitTokens")?.coerceAtLeast(0L) ?: base.limitTokens,
+            limitTtsChars = long("limitTtsChars")?.coerceAtLeast(0L) ?: base.limitTtsChars,
+            priceInPerM = num("priceInPerM")?.coerceAtLeast(0.0) ?: base.priceInPerM,
+            priceOutPerM = num("priceOutPerM")?.coerceAtLeast(0.0) ?: base.priceOutPerM,
+            priceTtsPerM = num("priceTtsPerM")?.coerceAtLeast(0.0) ?: base.priceTtsPerM,
+            currency = str("currency")?.take(8) ?: base.currency,
             liveliness = int("liveliness")?.coerceIn(0, 2) ?: base.liveliness,
             avatarLook = str("avatarLook")?.let { runCatching { AvatarLook.valueOf(it) }.getOrNull() } ?: base.avatarLook,
             economicalEar = bool("economicalEar") ?: base.economicalEar,
@@ -205,6 +233,13 @@ class SettingsRepo(context: Context) {
             .putString("economy", s.economy.name)
             .putBoolean("calmMotion", s.calmMotion)
             .putBoolean("voiceInputOffline", s.voiceInputOffline)
+            .putInt("limitRequests", s.limitRequests)
+            .putLong("limitTokens", s.limitTokens)
+            .putLong("limitTtsChars", s.limitTtsChars)
+            .putFloat("priceInPerM", s.priceInPerM.toFloat())
+            .putFloat("priceOutPerM", s.priceOutPerM.toFloat())
+            .putFloat("priceTtsPerM", s.priceTtsPerM.toFloat())
+            .putString("currency", s.currency.trim().take(8))
             .putInt("liveliness", s.liveliness)
             .putString("avatarLook", s.avatarLook.name)
             .putBoolean("economicalEar", s.economicalEar)

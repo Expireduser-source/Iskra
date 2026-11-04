@@ -58,6 +58,7 @@ object DiagCollector {
             "Служба спец. возможностей" to CompanionAccessibilityService.describe(ctx),
             "Кадры/с у Искры" to if (FrameStats.hz > 0) "экран ~${FrameStats.hz}, отрисовка ~${FrameStats.drawnHz}" else "нет данных (Искра не на экране)",
             "Экономия" to "${s.economy.title} → ${Diag.economyState}",
+            "Облако" to app.usage.describe(),
             "Телефон" to "${DeviceHelper.vendor.title}, ${DeviceHelper.deviceClass(ctx).title}, " +
                 "${DeviceHelper.totalRamMb(ctx)} МБ ОЗУ, ${Runtime.getRuntime().availableProcessors()} ядер" +
                 (if (DeviceHelper.animationsOff(ctx)) ", анимации выключены в системе" else ""),

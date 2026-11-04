@@ -29,6 +29,8 @@ class OpenAiCompatibleProvider(
     /** Newer OpenAI models reject "max_tokens" and require "max_completion_tokens". */
     private val useMaxCompletionTokens: Boolean = false,
     private val extraHeaders: Map<String, String> = emptyMap(),
+    /** stream_options.include_usage: OpenAI, DeepSeek and OpenRouter report tokens at the end of a stream. */
+    private val streamUsage: Boolean = false,
 ) : LlmProvider {
 
     override val id: String = "openai-compatible:$model"
@@ -55,7 +57,9 @@ class OpenAiCompatibleProvider(
      */
     override suspend fun stream(request: LlmRequest, onText: (String) -> Unit): LlmResponse {
         if (apiKey.isBlank()) throw LlmException("No API key", LlmException.Kind.NOT_CONFIGURED)
-        val body = JsonObject(buildBody(request) + ("stream" to JsonPrimitive(true))).toString()
+        val extra = mutableMapOf<String, kotlinx.serialization.json.JsonElement>("stream" to JsonPrimitive(true))
+        if (streamUsage) extra["stream_options"] = buildJsonObject { put("include_usage", true) }
+        val body = JsonObject(buildBody(request) + extra).toString()
         val httpRequest = Request.Builder()
             .url(baseUrl.trimEnd('/') + "/chat/completions")
             .header("Authorization", "Bearer $apiKey")

@@ -145,6 +145,8 @@ class CompanionAgent(
             else -> askModel(provider, text, state, sink).also { r ->
                 if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE)
                     cloudPause = (clock() + cloudPauseMs) to r.errorKind
+                // The owner's daily limit: no cloud until midnight (the meter refuses anyway, this just skips it).
+                if (r.errorKind == LlmException.Kind.LIMIT) cloudPause = nextMidnight() to LlmException.Kind.LIMIT
             }
         }
 
@@ -164,7 +166,12 @@ class CompanionAgent(
         reply
     }
 
+    private fun nextMidnight(): Long = java.time.LocalDate.now().plusDays(1)
+        .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+
     private fun pausedLine(kind: LlmException.Kind, minutes: Long): String {
+        if (kind == LlmException.Kind.LIMIT) return "Сегодняшний лимит облака исчерпан — до завтра я без модели. " +
+            "Команды работают: будильник, таймер, заметки, напоминания, погода. Лимит меняется в «Настройки → Экономия»."
         val why = if (kind == LlmException.Kind.BALANCE) "на счёте сервиса закончились деньги" else "ключ API не подошёл"
         return "Облако пока недоступно: $why. Без него я умею команды — будильник, таймер, фонарик, приложения, " +
             "заметки, напоминания. Снова попробую через $minutes мин или сразу после нового ключа в настройках."

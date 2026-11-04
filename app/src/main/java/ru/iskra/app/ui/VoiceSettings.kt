@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import androidx.compose.runtime.saveable.rememberSaveable
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -212,19 +213,56 @@ fun EarSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
     }
 }
 
+private fun plain(d: Double): String = if (d == kotlin.math.floor(d)) d.toLong().toString() else d.toString()
+
+/** A number field that keeps what is typed (even an empty field) and reports only valid values; empty = 0. */
+@Composable
+private fun NumberField(label: String, initial: String, decimal: Boolean = false, onValue: (Double) -> Unit) {
+    var text by remember { mutableStateOf(if (initial == "0") "" else initial) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { v ->
+            val t = v.replace(',', '.').filter { it.isDigit() || (decimal && it == '.') }.take(12)
+            text = t
+            val n = if (t.isEmpty()) 0.0 else t.toDoubleOrNull()
+            if (n != null) onValue(n.coerceAtLeast(0.0))
+        },
+        label = { Text(label) }, placeholder = { Text("0") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(keyboardType = if (decimal) KeyboardType.Decimal else KeyboardType.Number),
+    )
+}
+
 /** «Экономия», look, smoothness and how restless she is. */
 @Composable
 fun MotionSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
     val ctx = LocalContext.current
     var hz by remember { mutableIntStateOf(FrameStats.hz) }
     var now by remember { mutableStateOf(Diag.economyState) }
-    LaunchedEffect(Unit) { while (true) { hz = FrameStats.hz; now = Diag.economyState; delay(1000) } }
+    var cloud by remember { mutableStateOf(IskraApp.instance.usage.describe()) }
+    LaunchedEffect(Unit) {
+        while (true) { hz = FrameStats.hz; now = Diag.economyState; cloud = IskraApp.instance.usage.describe(); delay(1000) }
+    }
+    var limitsOpen by rememberSaveable { mutableStateOf(s.usageLimits.any || s.usageLimits.priced) }
     val systemCalm = remember { DeviceHelper.animationsOff(ctx) }
     Section("Экономия") {
         EconomyMode.entries.forEach { m -> RadioRow(s.economy == m, m.title, m.hint) { onChange(s.copy(economy = m)) } }
         Hint("Сейчас: $now")
         Hint(if (hz > 0) "Экран отдаёт Искре ~$hz кадров/с." else "Частота появится, когда Искра будет на экране.")
         Hint("Телефон: ${DeviceHelper.deviceClass(ctx).title}. Расход батареи за час — в «Диагностике», строка «Расход в покое».")
+        Hint("Облако: $cloud")
+        TextButton(onClick = { limitsOpen = !limitsOpen }) { Text(if (limitsOpen) "Скрыть лимиты и цены" else "Лимиты и цены облака") }
+        if (limitsOpen) {
+            Hint("Дневные лимиты: на 80 % Искра предупредит, на 100 % до завтра ответит без модели и скажет системным голосом. 0 — без лимита.")
+            NumberField("Запросов к модели в день", s.limitRequests.toString()) { onChange(s.copy(limitRequests = it.toInt())) }
+            NumberField("Токенов в день", s.limitTokens.toString()) { onChange(s.copy(limitTokens = it.toLong())) }
+            NumberField("Символов облачного голоса в день", s.limitTtsChars.toString()) { onChange(s.copy(limitTtsChars = it.toLong())) }
+            Hint("Цены за 1 млн — с сайта твоего сервиса. Без цен Искра считает только количество. Если сервис не сообщает токены, они оцениваются по длине текста (≈).")
+            NumberField("Цена 1 млн входных токенов", plain(s.priceInPerM), decimal = true) { onChange(s.copy(priceInPerM = it)) }
+            NumberField("Цена 1 млн выходных токенов", plain(s.priceOutPerM), decimal = true) { onChange(s.copy(priceOutPerM = it)) }
+            NumberField("Цена 1 млн символов голоса", plain(s.priceTtsPerM), decimal = true) { onChange(s.copy(priceTtsPerM = it)) }
+            OutlinedTextField(value = s.currency, onValueChange = { onChange(s.copy(currency = it.take(8))) },
+                label = { Text("Валюта") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        }
     }
     Section("Движение") {
         Text("Вид")

@@ -172,6 +172,12 @@ class ChatController(private val app: IskraApp) {
         }
         if (!spoken && !stream.voiceStopped) CompanionBus.emit(AvatarCue.Talk(reply.text.take(80)))
         _replies.tryEmit(spoken)
+        // Once a day at 80 % of the owner's cloud limit (and when it runs out): say it plainly.
+        app.usage.takeWarning()?.let { w ->
+            append(UiMessage(ids.getAndIncrement(), false, w))
+            CompanionBus.emit(AvatarCue.Say(w))
+            Diag.i("usage", "Предупреждение о лимите облака: ${(app.usage.fraction() * 100).toInt()} %")
+        }
     }
 
     private val _replies = MutableSharedFlow<Boolean>(extraBufferCapacity = 4)

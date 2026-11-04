@@ -1,5 +1,6 @@
 package ru.iskra.app.voice
 
+import ru.iskra.core.usage.UsageMeter
 import ru.iskra.core.skills.Script
 import ru.iskra.core.skills.Scripts
 import android.content.Context
@@ -70,6 +71,8 @@ class Speaker(
     private val settings: () -> AppSettings,
     private val ttsKey: () -> String?,
     private val llmKeyIfOpenAi: () -> String?,
+    /** Counts cloud voice characters and stops the cloud voice at the owner's daily limit. */
+    private val usage: UsageMeter? = null,
 ) {
     private val appContext = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
@@ -97,6 +100,7 @@ class Speaker(
     @Volatile private var track: AudioTrack? = null
     private var focus: AudioFocusRequest? = null
     @Volatile private var cloudBlockedUntil = 0L
+    @Volatile private var limitLoggedDay = ""
 
     /** Counters for diagnostics (since start). */
     @Volatile var phrases = 0; private set
@@ -209,9 +213,14 @@ class Speaker(
         stopNow()
         val s = settings()
         val now = SystemClock.elapsedRealtime()
-        val client = if (now < cloudBlockedUntil) null else runCatching { cloudClient(s) }.getOrNull()
-        if (client == null && s.ttsEngine != TtsEngine.SYSTEM && now >= cloudBlockedUntil)
-            Diag.w("tts", "${s.ttsEngine.title} не настроен (нет ключа или адреса) — говорю системным")
+        val allowed = usage?.ttsAllowed() != false
+        val client = if (now < cloudBlockedUntil || !allowed) null else runCatching { cloudClient(s) }.getOrNull()
+        if (s.ttsEngine != TtsEngine.SYSTEM && now >= cloudBlockedUntil) {
+            val today = java.time.LocalDate.now().toString()
+            if (!allowed) {
+                if (limitLoggedDay != today) { limitLoggedDay = today; Diag.w("tts", "Дневной лимит облачного голоса исчерпан — до завтра говорю системным") }
+            } else if (client == null) Diag.w("tts", "${s.ttsEngine.title} не настроен (нет ключа или адреса) — говорю системным")
+        }
         val ss = Session(commandAt, client, emotion)
         session = ss
         _speaking.value = true
@@ -303,6 +312,7 @@ class Speaker(
                         if (keep != null && keep.size() + n <= PcmCache.MAX_CLIP) keep.write(bytes, 0, n)
                     }
                     clip.data.close()
+                    usage?.recordTts(clip.text.length) // synthesised by the service (cache hits are free)
                     val f = fmt
                     if (keep != null && f != null && keep.size() > 0 && session === ss) runCatching { cache.put(key, f, keep.toByteArray()) }
                 } finally {

@@ -53,7 +53,7 @@ class LlmException(
     val kind: Kind,
     cause: Throwable? = null,
 ) : Exception(message, cause) {
-    enum class Kind { AUTH, RATE_LIMIT, NETWORK, SERVER, BAD_RESPONSE, NOT_CONFIGURED, BALANCE }
+    enum class Kind { AUTH, RATE_LIMIT, NETWORK, SERVER, BAD_RESPONSE, NOT_CONFIGURED, BALANCE, LIMIT }
 
     /** Message suitable for the user (Russian). Never contains the API key. */
     fun userMessage(): String = when (kind) {
@@ -64,10 +64,11 @@ class LlmException(
         Kind.BAD_RESPONSE -> "Модель ответила в непонятном формате."
         Kind.NOT_CONFIGURED -> "Облачная модель не настроена — я работаю в простом офлайн-режиме."
         Kind.BALANCE -> "На счёте сервиса модели закончились деньги или лимит. Пополни баланс. $OFFLINE"
+        Kind.LIMIT -> "Сегодняшний лимит облака, который ты задал, исчерпан. До завтра отвечаю без модели. $OFFLINE"
     }
 
     /** Errors that will repeat on the next try: no point in asking again right away. */
-    val persistent get() = kind == Kind.AUTH || kind == Kind.BALANCE || kind == Kind.NOT_CONFIGURED
+    val persistent get() = kind == Kind.AUTH || kind == Kind.BALANCE || kind == Kind.NOT_CONFIGURED || kind == Kind.LIMIT
 
     private companion object {
         const val OFFLINE = "Пока работаю без облака: будильники, таймеры, фонарик, приложения, заметки и напоминания — как обычно."

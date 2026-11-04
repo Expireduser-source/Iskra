@@ -1,5 +1,8 @@
 package ru.iskra.app
 
+import ru.iskra.app.data.PrefsUsageStore
+import ru.iskra.core.usage.MeteredProvider
+import ru.iskra.core.usage.UsageMeter
 import android.app.Application
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -54,6 +57,8 @@ class IskraApp : Application() {
     lateinit var agent: CompanionAgent; private set
     lateinit var chat: ChatController; private set
     lateinit var speaker: Speaker; private set
+    /** Today's cloud usage and the owner's daily limits («Экономия»). */
+    lateinit var usage: UsageMeter; private set
     lateinit var notes: SqliteNoteStore; private set
     lateinit var reminders: SqliteReminderStore; private set
     lateinit var reminderScheduler: AndroidReminderScheduler; private set
@@ -65,6 +70,7 @@ class IskraApp : Application() {
         super.onCreate()
         instance = this
         settings = SettingsRepo(this)
+        usage = UsageMeter(PrefsUsageStore(this), limits = { settings.load().usageLimits }, today = { java.time.LocalDate.now().toString() })
         vault = KeyVault(this)
         ttsVault = KeyVault(this, "tts_key")
         Diag.init(this) { DiagCollector.knownSecrets(this) }
@@ -109,6 +115,7 @@ class IskraApp : Application() {
         )
         speaker = Speaker(
             this,
+            usage = usage,
             settings = { settings.load() },
             ttsKey = { ttsVault.load() },
             llmKeyIfOpenAi = { if (settings.load().preset == ProviderPreset.OPENAI) vault.load() else null },
@@ -126,11 +133,13 @@ class IskraApp : Application() {
         if (model.isBlank()) return null
         val base = s.baseUrl.ifBlank { s.preset.baseUrl }
         if (!base.startsWith("https://")) return null
-        return if (s.preset.anthropic) AnthropicProvider(apiKey = key, model = model, baseUrl = base)
+        val provider = if (s.preset.anthropic) AnthropicProvider(apiKey = key, model = model, baseUrl = base)
         else OpenAiCompatibleProvider(
             baseUrl = base, apiKey = key, model = model,
             extraHeaders = if (s.preset == ProviderPreset.OPENROUTER) mapOf("X-Title" to "Iskra") else emptyMap(),
+            streamUsage = s.preset == ProviderPreset.OPENAI || s.preset == ProviderPreset.DEEPSEEK || s.preset == ProviderPreset.OPENROUTER,
         )
+        return MeteredProvider(provider, usage) // counts tokens, enforces the owner's daily limit
     }
 
     /** "Forget everything": memory, dialogue, mood, keys, diagnostics journal. Settings stay. */
