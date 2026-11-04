@@ -8,21 +8,23 @@ plugins {
 
 android {
     namespace = "ru.iskra.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         // Release: ru.iskra.app. Debug: ru.iskra.app.debug (suffix below), so both can be installed side by side.
         applicationId = "ru.iskra.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 18
         versionName = "0.9.3"
         // Shown on the diagnostics screen: which CI run and commit this APK came from.
         buildConfigField("String", "CI_BUILD", "\"${System.getenv("GITHUB_RUN_NUMBER") ?: "local"}\"")
         buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA")?.take(7) ?: ""}\"")
         // Redmi Note 14 and nearly all current phones are arm64; armeabi-v7a kept for old devices.
-        // Dropping x86 keeps the speech engine from adding ~20 MB.
-        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
+        // Dropping x86 keeps the speech engine from adding ~20 MB. The CI emulator check adds x86/x86_64
+        // with -Piskra.abis=... (never in the published APKs).
+        val abis = (project.findProperty("iskra.abis") as String?)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
+        ndk { abiFilters += abis ?: listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     signingConfigs {

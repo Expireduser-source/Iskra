@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -120,7 +121,7 @@ fun Onboarding(onDone: () -> Unit) {
                             "Для этого Android спросит разрешение «Поверх других приложений».")
                         if (!overlay) Button(onClick = { DeviceHelper.openOverlaySettings(ctx) }, modifier = Modifier.fillMaxWidth()) {
                             Text("Разрешить")
-                        } else SwitchRow(shown, "Показать Искру на экране") { on ->
+                        } else SwitchRow(shown, "Показать Искру на экране", tag = "overlay_switch") { on ->
                             shown = on
                             app.settings.save(app.settings.load().copy(overlayEnabled = on))
                             if (on) {
@@ -150,11 +151,11 @@ fun Onboarding(onDone: () -> Unit) {
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (step > 0) TextButton(onClick = { step-- }) { Text("Назад") }
+                    if (step > 0) TextButton(onClick = { step-- }, modifier = Modifier.testTag("onb_back")) { Text("Назад") }
                     Spacer(Modifier.weight(1f))
-                    if (step < total - 1) TextButton(onClick = { finish("пропущено") }) { Text("Пропустить") }
+                    if (step < total - 1) TextButton(onClick = { finish("пропущено") }, modifier = Modifier.testTag("onb_skip")) { Text("Пропустить") }
                     Spacer(Modifier.size(8.dp))
-                    FilledTonalButton(onClick = { if (step < total - 1) step++ else finish("пройдено") }) {
+                    FilledTonalButton(onClick = { if (step < total - 1) step++ else finish("пройдено") }, modifier = Modifier.testTag("onb_next")) {
                         Text(if (step < total - 1) "Дальше" else "Начать")
                     }
                 }

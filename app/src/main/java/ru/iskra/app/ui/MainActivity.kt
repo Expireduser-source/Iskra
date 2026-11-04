@@ -6,6 +6,9 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.testTagsAsResourceId
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.platform.testTag
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -80,13 +83,17 @@ import ru.iskra.core.memory.MemoryKind
 import ru.iskra.core.memory.MemorySource
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
             IskraTheme {
-                var intro by remember { mutableStateOf(OnboardingState.needed(this)) }
-                if (intro) Onboarding { OnboardingState.done(this); intro = false } else MainScreen()
+                // Test tags become resource ids, so the CI emulator check can find buttons in any language.
+                Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
+                    var intro by remember { mutableStateOf(OnboardingState.needed(this@MainActivity)) }
+                    if (intro) Onboarding { OnboardingState.done(this@MainActivity); intro = false } else MainScreen()
+                }
             }
         }
     }
@@ -108,7 +115,7 @@ private fun MainScreen() {
         bottomBar = {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 tabs.forEachIndexed { i, (icon, label) ->
-                    NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Text(icon, Modifier.clearAndSetSemantics {}) }, label = { Text(label) })
+                    NavigationBarItem(selected = tab == i, onClick = { tab = i }, modifier = Modifier.testTag("tab_$i"), icon = { Text(icon, Modifier.clearAndSetSemantics {}) }, label = { Text(label) })
                 }
             }
         },
@@ -451,7 +458,7 @@ private fun PermissionsScreen(modifier: Modifier) {
         PermCard("Поверх других приложений", "Нужно, чтобы Искра жила на экране, а не только в приложении.", overlay) {
             DeviceHelper.openOverlaySettings(ctx)
         }
-        if (overlay) SwitchRow(overlayOn, "Показать Искру на экране") { on ->
+        if (overlay) SwitchRow(overlayOn, "Показать Искру на экране", tag = "overlay_switch") { on ->
             overlayOn = on
             app.settings.save(app.settings.load().copy(overlayEnabled = on))
             if (on) {

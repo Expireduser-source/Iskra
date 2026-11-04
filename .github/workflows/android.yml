@@ -75,6 +75,66 @@ jobs:
             Установка: скачай APK на телефон и открой его. Подробности — README.md.
           files: Iskra-${{ github.run_number }}-debug.apk
 
+      # The same debug app with x86/x86_64 libraries for the emulator check below (never published).
+      - name: Emulator APK
+        run: |
+          ./gradlew --no-daemon :app:assembleDebug -Piskra.abis=x86,x86_64,arm64-v8a,armeabi-v7a
+          mkdir -p dist && cp app/build/outputs/apk/debug/app-debug.apk dist/smoke.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smoke-apk
+          path: dist/smoke.apk
+          retention-days: 3
+
+  # Real start-up on emulators: Android 8.0 (oldest supported), 11 and 16 (newest target). Walks through
+  # onboarding and all tabs, shows Iskra over the home screen, dark theme, large font, landscape.
+  # Fails on a crash. Screenshots go to the build-N release as smoke-apiNN.zip.
+  smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { api: 26, target: default }
+          - { api: 30, target: google_apis }
+          - { api: 36, target: google_apis }
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: smoke-apk
+          path: dist
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Emulator check, Android API ${{ matrix.api }}
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          target: ${{ matrix.target }}
+          arch: x86_64
+          disable-animations: true
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: python3 .github/scripts/smoke.py --apk dist/smoke.apk --out shots --api ${{ matrix.api }}
+
+      - name: Attach screenshots to the build release
+        if: always() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -d shots || exit 0
+          (cd shots && zip -qr "../smoke-api${{ matrix.api }}.zip" .)
+          gh release upload "build-${{ github.run_number }}" "smoke-api${{ matrix.api }}.zip" --clobber
+
   # Release APK only for a version tag (v0.4.0, ...). Package ru.iskra.app, signed with the owner's key
   # from GitHub Secrets. The key file exists only on the runner during this job.
   # Also from "Run workflow" with release = true on main: the tag is then created by this job.
@@ -165,8 +225,10 @@ jobs:
           if grep -qi "debug" certs.txt || grep -qi "15ad001f995aa0a5" certs.txt; then
             echo "::error::APK is signed with a debug key"; exit 1
           fi
-          cp "$apk" "Iskra-${{ env.RELEASE_TAG }}-release.apk"
-          sha256sum "Iskra-${{ env.RELEASE_TAG }}-release.apk" > "Iskra-${{ env.RELEASE_TAG }}-release.apk.sha256"
+          # A constant name, so https://github.com/<repo>/releases/latest/download/Iskra.apk always gives the newest
+          # version (README, site, QR code, «Рассказать другу»).
+          cp "$apk" Iskra.apk
+          sha256sum Iskra.apk > Iskra.apk.sha256
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
@@ -179,6 +241,6 @@ jobs:
             Release-сборка из коммита ${{ github.sha }} (пакет ru.iskra.app, подпись владельца).
             Ставится рядом с debug-версией (ru.iskra.app.debug). Данные переносятся через «Память → Сохранить копию / Восстановить». Ключи API нужно ввести заново.
           files: |
-            Iskra-${{ env.RELEASE_TAG }}-release.apk
-            Iskra-${{ env.RELEASE_TAG }}-release.apk.sha256
+            Iskra.apk
+            Iskra.apk.sha256
 

@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.snapshotFlow
 import android.Manifest
@@ -176,10 +177,10 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
             OutlinedTextField(
                 value = input, onValueChange = { input = it.take(4000) },
-                modifier = Modifier.weight(1f), placeholder = { Text("Напиши Искре…") }, maxLines = 4,
+                modifier = Modifier.weight(1f).testTag("chat_input"), placeholder = { Text("Напиши Искре…") }, maxLines = 4,
             )
             Spacer(Modifier.size(6.dp))
-            IconButton(enabled = !busy || listening, modifier = Modifier.semantics {
+            IconButton(enabled = !busy || listening, modifier = Modifier.testTag("chat_mic").semantics {
                 contentDescription = if (listening) "Остановить запись" else "Голосовое сообщение"
             }, onClick = {
                 voiceError = null
@@ -197,7 +198,7 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
             }) { Text(if (listening) "■" else "🎤", Modifier.clearAndSetSemantics {}) }
             Spacer(Modifier.size(6.dp))
             IconButton(enabled = !busy && input.isNotBlank(),
-                modifier = Modifier.semantics { contentDescription = "Отправить сообщение" },
+                modifier = Modifier.testTag("chat_send").semantics { contentDescription = "Отправить сообщение" },
                 onClick = { send(input); input = "" }) { Text("➤", Modifier.clearAndSetSemantics {}, color = if (!busy && input.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }

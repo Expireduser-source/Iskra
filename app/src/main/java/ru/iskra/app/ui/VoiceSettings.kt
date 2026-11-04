@@ -1,5 +1,6 @@
 package ru.iskra.app.ui
 
+import androidx.compose.ui.platform.testTag
 import androidx.compose.runtime.saveable.rememberSaveable
 import android.Manifest
 import android.content.pm.PackageManager
@@ -70,8 +71,8 @@ private fun Hint(text: String) = Text(text, fontSize = 13.sp, color = MaterialTh
 
 /** The whole row is the switch: one big touch target, and TalkBack reads the label with the state. */
 @Composable
-internal fun SwitchRow(checked: Boolean, label: String, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+internal fun SwitchRow(checked: Boolean, label: String, enabled: Boolean = true, tag: String? = null, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().then(if (tag != null) Modifier.testTag(tag) else Modifier).toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
         .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
         Spacer(Modifier.size(8.dp)); Text(label)
