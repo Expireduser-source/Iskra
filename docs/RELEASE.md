@@ -41,3 +41,8 @@ keytool -genkeypair -keystore iskra-release.jks -storetype PKCS12 -alias iskra \
   -keyalg RSA -keysize 4096 -validity 10958 -dname "CN=Iskra, O=Iskra"
 base64 -w0 iskra-release.jks > iskra-release.b64   # macOS: base64 -i iskra-release.jks
 ```
+
+## Если публикация падает: «Resource not accessible by integration»
+APK собран и подпись проверена, но GitHub не даёт создать релиз. Так было с 0.11.0, пока ждал подтверждения запуск
+с изменённым `.github/workflows/android.yml` (статус *action_required*). Подтверди его (Actions → запуск → «Approve and run»)
+и запусти выпуск снова: тег ещё не создан, ничего чистить не нужно.
