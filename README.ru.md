@@ -16,6 +16,8 @@
 заметки, рассказывает погоду, а если захочешь — болтает с тобой через модель ИИ. **Бесплатно, без рекламы и аккаунтов,
 данные остаются на телефоне.**
 
+<p align="center"><img src="fastlane/metadata/android/ru-RU/images/phoneScreenshots/1.png" width="180" alt=""> <img src="fastlane/metadata/android/ru-RU/images/phoneScreenshots/2.png" width="180" alt=""> <img src="fastlane/metadata/android/ru-RU/images/phoneScreenshots/3.png" width="180" alt=""> <img src="fastlane/metadata/android/ru-RU/images/phoneScreenshots/4.png" width="180" alt=""></p>
+
 ## Что она умеет
 - **Сразу и без интернета:** будильники и таймеры («поставь таймер на 10 минут»), напоминания, которые переживут
   перезагрузку («напомни завтра в 9 позвонить маме»), заметки («запиши заметку: купить молоко»), погода («нужен ли

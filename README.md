@@ -21,6 +21,8 @@ Iskra is a small animated cat-girl who lives on your phone's screen. Tap her to 
 her wander, nap and peek out from behind the edges. She sets alarms and reminders, keeps notes, tells the weather and —
 if you want — chats with you through an AI model. **Free, no ads, no accounts, your data stays on your phone.**
 
+<p align="center"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="180" alt=""> <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="180" alt=""> <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="180" alt=""> <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="180" alt=""></p>
+
 ## What she can do
 - **Right away, offline:** alarms and timers (“set a timer for 10 minutes”), reminders that survive a restart
   (“remind me tomorrow at 9 to call mom”), notes (“note: buy milk”), weather (“do I need an umbrella?”), the

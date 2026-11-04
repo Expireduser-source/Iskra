@@ -14,7 +14,7 @@ import sys
 from PIL import Image
 
 # In this order on the store page; the first that exists for each name is used.
-WANTED = ["home-with-iskra", "chat-surprise", "share-sheet", "share-note-saved", "settings", "permissions", "dark", "memory"]
+WANTED = ["chat-surprise", "home-with-iskra", "share-sheet", "settings", "share-note-saved", "dark", "permissions", "memory"]
 
 
 def trim(img: Image.Image) -> Image.Image:

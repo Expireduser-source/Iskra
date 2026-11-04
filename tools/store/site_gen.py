@@ -22,6 +22,8 @@ section{padding:30px 0}h2{font-size:30px;margin:0 0 16px}
 ol.steps{padding-left:22px}ol.steps li{margin:6px 0}
 details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:10px 0}
 summary{cursor:pointer;font-weight:600}
+.shots{display:flex;gap:14px;overflow-x:auto;padding:10px 0 4px;scroll-snap-type:x mandatory}
+.shots img{flex:0 0 auto;width:220px;height:auto;border-radius:22px;border:1px solid var(--line);scroll-snap-align:start;box-shadow:0 10px 30px rgba(0,0,0,.18)}
 footer{border-top:1px solid var(--line);margin-top:30px;padding:22px 0 40px;color:var(--muted);font-size:14px}
 @media (max-width:760px){.hero{grid-template-columns:1fr}.hero img.char{max-width:300px;order:-1}.grid{grid-template-columns:1fr}.btn.ghost{margin:10px 0 0}}
 """
@@ -72,6 +74,7 @@ T = {
 for code, t in T.items():
     cards = "".join(f'<div class="card"><img src="{t["img"]}{i}.webp" alt="" loading="lazy"><h3>{h}</h3><p>{p}</p></div>' for i, h, p in t["cards"])
     steps = "".join(f"<li>{s}</li>" for s in t["steps"])
+    shots = "".join(f'<img src="{t["img"]}screens/{code}/{i}.webp" alt="" loading="lazy" width="270" height="540">' for i in (1, 2, 3, 4))
     qa = "".join(f"<details><summary>{q}</summary><p>{a}</p></details>" for q, a in t["qa"])
     html = f"""<!doctype html>
 <html lang="{t['lang']}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -85,6 +88,7 @@ for code, t in T.items():
 <p class="small" style="margin-top:12px">{t['note']}</p>
 <div class="qr"><img src="{t['img']}qr-download.svg" alt="QR"><span class="small">{t['qr']}</span></div></div>
 <img class="char" src="{t['img']}iskra-demo.webp" alt="{'Iskra waves, walks, jumps and wags her tail' if code == 'en' else 'Искра машет, идёт, прыгает и виляет хвостом'}"></div>
+<section class="shots">{shots}</section>
 <section><h2>{t['feat']}</h2><div class="grid">{cards}</div></section>
 <section><h2>{t['how']}</h2><ol class="steps">{steps}</ol></section>
 <section><h2>{t['faq']}</h2>{qa}</section>
