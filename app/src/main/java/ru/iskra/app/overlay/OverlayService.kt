@@ -474,6 +474,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             }
         }
         scope.launch { app.chat.replies.collect { spoken -> if (!spoken) ear?.replyFinished() } }
+        // Her own screens in front: she rests and lets taps through (see setPassThrough).
+        scope.launch { app.ownScreenInFront.collect { setPassThrough(it) } }
         // A dangerous action asked for confirmation, but no chat screen is open (e.g. voice command):
         // open the quick chat so the dialog is visible. Overlay permission allows this from the background.
         scope.launch {
@@ -551,9 +553,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         if (hidden != windowHidden) {
             windowHidden = hidden
             v.visibility = if (hidden) View.INVISIBLE else View.VISIBLE
-            lp.flags = if (hidden) lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            else lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-            changed = true
+            changed = touchMode(lp) || true
         }
         if (!hidden) {
             val w = x1 - x0; val h = y1 - y0
@@ -565,6 +565,32 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         }
         if (changed) try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
         if (bubble?.visibility == View.VISIBLE) positionBubble()
+    }
+
+    /**
+     * While one of Iskra's own screens is in front she rests: half transparent and taps go through her to the
+     * app and the keyboard (she would otherwise cover buttons like «Дальше» or the keyboard's Enter key).
+     * Alpha ≤ 0.8 is also what Android 12+ needs to let touches pass an overlay to another app's window (the keyboard).
+     */
+    private var passThrough = false
+
+    /** Sets touchability and alpha from [windowHidden] and [passThrough]; true if something changed. */
+    private fun touchMode(lp: WindowManager.LayoutParams): Boolean {
+        val notTouchable = windowHidden || passThrough
+        val flags = if (notTouchable) lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        else lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        val alpha = if (passThrough) 0.55f else 1f
+        if (flags == lp.flags && lp.alpha == alpha) return false
+        lp.flags = flags; lp.alpha = alpha
+        return true
+    }
+
+    private fun setPassThrough(on: Boolean) {
+        if (passThrough == on) return
+        passThrough = on
+        val v = avatar ?: return
+        val lp = params ?: return
+        if (touchMode(lp)) try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
     }
 
     private fun openQuickChat() {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -101,8 +102,11 @@ fun Onboarding(onDone: () -> Unit) {
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().safeDrawingPadding(), contentAlignment = Alignment.TopCenter) {
+            // The buttons stay pinned at the bottom: with long Russian text, large fonts or a small screen the
+            // content scrolls, but «Дальше» never hides below the fold.
+            Column(Modifier.widthIn(max = 560.dp).fillMaxWidth().fillMaxHeight()) {
             Column(
-                Modifier.widthIn(max = 560.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(24.dp),
+                Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(tr("Шаг ${step + 1} из $total", "Step ${step + 1} of $total"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -151,7 +155,8 @@ fun Onboarding(onDone: () -> Unit) {
                             "На вкладке «Разрешения» есть короткая инструкция именно для твоего телефона.", "${DeviceHelper.vendor.title}: the firmware sometimes unloads apps in the background. The “Permissions” tab has a short guide for exactly your phone."))
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
+            }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (step > 0) TextButton(onClick = { step-- }, modifier = Modifier.testTag("onb_back")) { Text(tr("Назад", "Back")) }
                     Spacer(Modifier.weight(1f))
                     if (step < total - 1) TextButton(onClick = { finish(tr("пропущено", "skipped")) }, modifier = Modifier.testTag("onb_skip")) { Text(tr("Пропустить", "Skip")) }

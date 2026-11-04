@@ -172,6 +172,9 @@ def main():
     time.sleep(2)
 
     s.shot("chat")
+    if s.tap_id("chat_surprise", quiet=True):
+        time.sleep(4)
+        s.shot("chat-surprise")
     for i, name in [(1, "memory"), (2, "settings"), (3, "permissions")]:
         if s.tap_id(f"tab_{i}"):
             s.shot(name)

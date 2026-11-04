@@ -49,6 +49,10 @@ class IskraApp : Application() {
     lateinit var vault: KeyVault; private set
     /** Separate key for the voice service (may be a different vendor than the "brain"). */
     lateinit var ttsVault: KeyVault; private set
+    /** One of the app's own screens is in front (not just the overlay): the character lets taps through. */
+    val ownScreenInFront = kotlinx.coroutines.flow.MutableStateFlow(false)
+    private var resumedScreens = 0
+
     /** How many chat screens are in the foreground (they show confirmation dialogs). */
     val chatScreensResumed = java.util.concurrent.atomic.AtomicInteger(0)
     lateinit var db: IskraDb; private set
@@ -78,6 +82,21 @@ class IskraApp : Application() {
         instance = this
         // Before anything produces text: Russian or English (the phone's language or the owner's choice).
         AppLanguage.apply(this)
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityResumed(a: android.app.Activity) {
+                if (a is ru.iskra.app.system.ToggleActivity) return
+                resumedScreens++; ownScreenInFront.value = true
+            }
+            override fun onActivityPaused(a: android.app.Activity) {
+                if (a is ru.iskra.app.system.ToggleActivity) return
+                resumedScreens = maxOf(0, resumedScreens - 1); ownScreenInFront.value = resumedScreens > 0
+            }
+            override fun onActivityCreated(a: android.app.Activity, b: android.os.Bundle?) = Unit
+            override fun onActivityStarted(a: android.app.Activity) = Unit
+            override fun onActivityStopped(a: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(a: android.app.Activity, b: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(a: android.app.Activity) = Unit
+        })
         settings = SettingsRepo(this)
         usage = UsageMeter(PrefsUsageStore(this), limits = { settings.load().usageLimits }, today = { java.time.LocalDate.now().toString() })
         vault = KeyVault(this)

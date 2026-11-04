@@ -240,7 +240,7 @@ private fun Welcome(compact: Boolean, enabled: Boolean, onSend: (String) -> Unit
         Text(if (compact) tr("Я тут. Что придумаем?", "I'm here. What shall we come up with?") else
             tr("Я Искра. Дела — в лапки, любопытство — с собой. Начнём с чего-нибудь маленького?", "I'm Iskra. Tasks go in my paws, curiosity comes along. Shall we start with something small?"),
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        FilledTonalButton(enabled = enabled, onClick = { onSend(tr("Удиви меня", "Surprise me")) }, modifier = Modifier.fillMaxWidth()) {
+        FilledTonalButton(enabled = enabled, onClick = { onSend(tr("Удиви меня", "Surprise me")) }, modifier = Modifier.fillMaxWidth().testTag("chat_surprise")) {
             Text(tr("Удиви меня", "Surprise me"))
         }
         if (!compact) {
