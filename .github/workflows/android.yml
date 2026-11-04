@@ -41,7 +41,11 @@ jobs:
           name: test-reports
           path: core/build/reports/tests/
 
-      # Lint does not fail the build; the text report is read when reviewing compatibility (old Android, OEMs).
+      # Lint does not fail the build. Its findings (old Android versions, OEM quirks) become annotations.
+      - name: Lint findings as annotations
+        if: always()
+        run: python3 .github/scripts/lint_annotations.py app/build/reports/lint-results-debug.xml
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
