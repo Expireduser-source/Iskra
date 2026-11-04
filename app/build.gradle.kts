@@ -70,6 +70,8 @@ android {
     }
     lint {
         abortOnError = false
+        textReport = true
+        textOutput = file("build/reports/lint-results-debug.txt")
     }
 }
 
