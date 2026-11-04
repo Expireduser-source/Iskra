@@ -45,14 +45,20 @@ class ProactivePolicy(
     /**
      * [screenOnSinceMs]: when the screen was last turned on, null if it is off.
      * [lastContactMs]: last message or tap from the owner.
+     * [unlockedSinceMs]: when the owner unlocked the screen; distinct from merely waking it.
+     * [listening] covers both wake-word attention and the chat's microphone.
      */
-    fun decide(now: LocalDateTime, nowMs: Long, st: ProactiveState, lastContactMs: Long, screenOnSinceMs: Long?, random: Random): ProactiveTrigger? {
-        if (frequency == ProactiveFrequency.OFF || screenOnSinceMs == null || isQuiet(now.hour)) return null
+    fun decide(
+        now: LocalDateTime, nowMs: Long, st: ProactiveState, lastContactMs: Long,
+        screenOnSinceMs: Long?, random: Random,
+        unlockedSinceMs: Long? = screenOnSinceMs, screenLocked: Boolean = false, listening: Boolean = false,
+    ): ProactiveTrigger? {
+        if (frequency == ProactiveFrequency.OFF || screenOnSinceMs == null || screenLocked || listening || isQuiet(now.hour)) return null
         val today = now.toLocalDate().toString()
         val count = if (st.day == today) st.countToday else 0
         if (count >= frequency.perDay) return null
         if (nowMs - st.lastAtMs < frequency.minGapMin * 60_000L) return null
-        val justUnlocked = nowMs - screenOnSinceMs < 2 * 60_000L
+        val justUnlocked = unlockedSinceMs != null && nowMs - unlockedSinceMs in 0L until 2 * 60_000L
         val sinceContact = nowMs - lastContactMs
         return when {
             justUnlocked && st.morningDay != today && now.hour < 11 -> ProactiveTrigger.MORNING

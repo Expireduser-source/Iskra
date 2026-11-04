@@ -17,12 +17,17 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import ru.iskra.app.AvatarCue
 import ru.iskra.app.CompanionBus
 import ru.iskra.app.data.AppSettings
@@ -42,6 +47,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.sqrt
 
 /**
@@ -81,7 +88,10 @@ class Speaker(
     private var sysSeq = 0
 
     // --- current speech
-    private var session: Session? = null
+    @Volatile private var session: Session? = null
+    @Volatile private var resetting = false
+    private val speechGeneration = AtomicLong()
+    private val activeCalls = ConcurrentHashMap.newKeySet<TtsCall>()
     @Volatile private var track: AudioTrack? = null
     private var focus: AudioFocusRequest? = null
     @Volatile private var cloudBlockedUntil = 0L
@@ -100,7 +110,7 @@ class Speaker(
     private inner class Session(val commandAt: Long?, val client: TtsClient?, val emotion: Emotion) {
         val startedAt = SystemClock.elapsedRealtime()
         val clips = Channel<Clip>(Channel.UNLIMITED)
-        val all = ArrayList<Clip>()
+        val all = CopyOnWriteArrayList<Clip>()
         val fetchSlots = Semaphore(2)
         var player: Job? = null
         @Volatile var system = client == null
@@ -142,9 +152,11 @@ class Speaker(
      * command — only for the latency journal. Returns false if nothing will be spoken.
      */
     fun speak(text: String, emotion: Emotion = Emotion.NEUTRAL, commandAtMs: Long? = null): Boolean {
+        val generation = speechGeneration.get()
         val parts = ReplyStream.split(text, emotion)
-        if (parts.isEmpty() || !canSpeak()) return false
+        if (parts.isEmpty() || resetting || !canSpeak()) return false
         onMain {
+            if (resetting || speechGeneration.get() != generation) return@onMain
             beginNow(commandAtMs, emotion)
             parts.forEach { enqueueNow(it, emotion) }
             endNow()
@@ -153,14 +165,36 @@ class Speaker(
     }
 
     /** Starts a reply that will arrive in pieces. Interrupts whatever she was saying. */
-    fun beginStream(commandAtMs: Long?, emotion: Emotion = Emotion.NEUTRAL) = onMain { beginNow(commandAtMs, emotion) }
-    fun enqueue(text: String, emotion: Emotion) = onMain { enqueueNow(text, emotion) }
+    fun beginStream(commandAtMs: Long?, emotion: Emotion = Emotion.NEUTRAL) = forCurrentSpeech { beginNow(commandAtMs, emotion) }
+    fun enqueue(text: String, emotion: Emotion) = forCurrentSpeech { enqueueNow(text, emotion) }
     /** No more pieces will come: finish speaking what is queued. */
-    fun endStream() = onMain { endNow() }
+    fun endStream() = forCurrentSpeech { endNow() }
 
     fun canSpeak(): Boolean = sysReady || runCatching { cloudClient(settings()) }.getOrNull() != null
 
-    fun stop() = onMain { stopNow() }
+    fun stop() {
+        speechGeneration.incrementAndGet()
+        onMain { stopNow() }
+    }
+
+    private fun forCurrentSpeech(block: () -> Unit) {
+        if (resetting) return
+        val generation = speechGeneration.get()
+        onMain { if (!resetting && speechGeneration.get() == generation) block() }
+    }
+
+    /** Stops network/cache writers before erasure and rejects speech until erasure completes. */
+    suspend fun withSpeechStopped(action: suspend () -> Unit) = withContext(Dispatchers.Main.immediate) {
+        resetting = true
+        speechGeneration.incrementAndGet()
+        try {
+            stopNow()
+            scope.coroutineContext.job.children.toList().joinAll()
+            action()
+        } finally {
+            resetting = false
+        }
+    }
 
     fun shutdown() { stop(); main.post { tts?.shutdown(); tts = null; scope.cancel() } }
 
@@ -211,9 +245,11 @@ class Speaker(
         if (ss != null) {
             ss.closed = true
             ss.clips.close()
-            ss.player?.cancel()
             ss.all.forEach { it.call?.cancel(); it.data.cancel() }
         }
+        // Includes prefetch jobs, even from a session that has just finished playback.
+        scope.coroutineContext.job.children.forEach { it.cancel() }
+        activeCalls.forEach { it.cancel() }
         releaseTrack()
         tts?.stop()
         sysTexts.clear()
@@ -253,15 +289,22 @@ class Speaker(
                 }
                 val call = client.newCall(clip.text, clip.emotion)
                 clip.call = call
-                val keep = if (PcmCache.cacheable(clip.text)) ByteArrayOutputStream() else null
-                var fmt: PcmFormat? = null
-                call.stream(onFormat = { f -> fmt = f; clip.format.complete(f) }) { bytes, n ->
-                    clip.data.trySend(bytes.copyOf(n))
-                    if (keep != null && keep.size() + n <= PcmCache.MAX_CLIP) keep.write(bytes, 0, n)
+                activeCalls += call
+                try {
+                    // stopNow may run between the session check above and installing the call.
+                    currentCoroutineContext().ensureActive()
+                    val keep = if (PcmCache.cacheable(clip.text)) ByteArrayOutputStream() else null
+                    var fmt: PcmFormat? = null
+                    call.stream(onFormat = { f -> fmt = f; clip.format.complete(f) }) { bytes, n ->
+                        clip.data.trySend(bytes.copyOf(n))
+                        if (keep != null && keep.size() + n <= PcmCache.MAX_CLIP) keep.write(bytes, 0, n)
+                    }
+                    clip.data.close()
+                    val f = fmt
+                    if (keep != null && f != null && keep.size() > 0 && session === ss) runCatching { cache.put(key, f, keep.toByteArray()) }
+                } finally {
+                    activeCalls -= call
                 }
-                clip.data.close()
-                val f = fmt
-                if (keep != null && f != null && keep.size() > 0 && session === ss) runCatching { cache.put(key, f, keep.toByteArray()) }
             }
         } catch (e: Exception) {
             clip.format.completeExceptionally(e)

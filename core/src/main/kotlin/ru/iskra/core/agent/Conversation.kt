@@ -9,6 +9,8 @@ data class Turn(val role: Role, val text: String, val atMs: Long, val emotion: E
 /** Short-term conversation log (the last N turns are sent to the model). */
 interface ConversationStore {
     fun recent(limit: Int): List<Turn>
+    /** Reads the oldest turns without removing them, so failed summaries preserve history. */
+    fun oldest(limit: Int): List<Turn>
     fun append(turn: Turn)
     fun count(): Int
     /** Removes the oldest [n] turns and returns them (used for summarisation into episodes). */
@@ -19,6 +21,7 @@ interface ConversationStore {
 class InMemoryConversationStore : ConversationStore {
     private val turns = ArrayList<Turn>()
     @Synchronized override fun recent(limit: Int) = turns.takeLast(limit)
+    @Synchronized override fun oldest(limit: Int) = turns.take(limit)
     @Synchronized override fun append(turn: Turn) { turns += turn }
     @Synchronized override fun count() = turns.size
     @Synchronized override fun popOldest(n: Int): List<Turn> {

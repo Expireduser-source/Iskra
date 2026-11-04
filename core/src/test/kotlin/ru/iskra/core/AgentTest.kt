@@ -1,5 +1,6 @@
 package ru.iskra.core
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -7,6 +8,7 @@ import kotlinx.serialization.json.put
 import ru.iskra.core.agent.CompanionAgent
 import ru.iskra.core.agent.InMemoryConversationStore
 import ru.iskra.core.agent.InMemoryStateStore
+import ru.iskra.core.agent.Turn
 import ru.iskra.core.llm.ChatMessage
 import ru.iskra.core.llm.LlmException
 import ru.iskra.core.llm.LlmProvider
@@ -28,6 +30,7 @@ import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class FakeProvider(private val script: MutableList<(LlmRequest) -> LlmResponse>) : LlmProvider {
@@ -133,4 +136,116 @@ class AgentTest {
         agent(p, tool).handle("спамь таймеры")
         assertTrue(tool.calls.size <= 6, "executed ${tool.calls.size}")
     }
+
+    private fun seedHistory(): List<Turn> {
+        convo.clear()
+        return List(58) { i ->
+            Turn(if (i % 2 == 0) Turn.Role.USER else Turn.Role.ASSISTANT, "Реплика $i", now - 60_000 + i)
+                .also(convo::append)
+        }
+    }
+
+    @Test fun authAndBalanceErrorsNeverStartSummaryOrDeleteHistory() = runTest {
+        for (kind in listOf(LlmException.Kind.AUTH, LlmException.Kind.BALANCE)) {
+            val original = seedHistory()
+            val p = FakeProvider(mutableListOf({ throw LlmException("unavailable", kind) }))
+            val a = agent(p)
+            val reply = a.handle("привет")
+            assertEquals(kind, reply.errorKind)
+            assertEquals(1, p.requests.size)
+            assertEquals(original, convo.oldest(58))
+            assertEquals(60, convo.count())
+            a.handle("как дела?")
+            assertEquals(1, p.requests.size, "Cloud pause must also suppress summarization")
+        }
+    }
+
+    @Test fun failedSummaryPreservesHistoryAndBacksOffBeforeRetry() = runTest {
+        val original = seedHistory()
+        val p = FakeProvider(mutableListOf(
+            { LlmResponse("[happy] Привет!", emptyList()) },
+            { throw LlmException("offline", LlmException.Kind.NETWORK) },
+            { LlmResponse("[happy] Я тут.", emptyList()) },
+            { LlmResponse("[happy] Слушаю.", emptyList()) },
+            { LlmResponse("Владелец планирует поездку в Казань.", emptyList()) },
+        ))
+        val a = agent(p)
+        a.handle("привет")
+        assertEquals(original, convo.oldest(58))
+        assertEquals(60, convo.count())
+        a.handle("как дела?")
+        assertEquals(3, p.requests.size, "A failed summary must not be retried on each message")
+        assertEquals(62, convo.count())
+        now += 5 * 60_000
+        a.handle("поговорим?")
+        assertEquals(5, p.requests.size)
+        assertEquals(34, convo.count())
+        assertEquals(original.drop(30), convo.oldest(28))
+        assertEquals("Владелец планирует поездку в Казань.", memory.all().single().text)
+    }
+
+    @Test fun canceledSummaryPreservesSourceTurns() = runTest {
+        val original = seedHistory()
+        val p = FakeProvider(mutableListOf(
+            { LlmResponse("[happy] Привет!", emptyList()) },
+            { throw CancellationException("Stopped by owner") },
+        ))
+        assertFailsWith<CancellationException> { agent(p).handle("привет") }
+        assertEquals(original, convo.oldest(58))
+        assertEquals(60, convo.count())
+        assertTrue(memory.all().isEmpty())
+    }
+
+    @Test fun explicitNoUsefulFactsCompactsHistoryWithoutInventingMemory() = runTest {
+        seedHistory()
+        val p = FakeProvider(mutableListOf(
+            { LlmResponse("[happy] Привет!", emptyList()) },
+            { LlmResponse("НЕТ", emptyList()) },
+        ))
+        agent(p).handle("привет")
+        assertEquals(30, convo.count())
+        assertTrue(memory.all().isEmpty())
+    }
+
+    @Test fun emptyOrRejectedSummaryCannotDiscardHistory() = runTest {
+        for (summary in listOf("", "Мой пароль qwerty123")) {
+            val original = seedHistory()
+            val p = FakeProvider(mutableListOf(
+                { LlmResponse("[happy] Привет!", emptyList()) },
+                { LlmResponse(summary, emptyList()) },
+            ))
+            agent(p).handle("привет")
+            assertEquals(original, convo.oldest(58))
+            assertEquals(60, convo.count())
+            assertTrue(memory.all().isEmpty())
+        }
+    }
+
+    @Test fun summaryAuthFailurePausesFurtherCloudCalls() = runTest {
+        val original = seedHistory()
+        val p = FakeProvider(mutableListOf(
+            { LlmResponse("[happy] Привет!", emptyList()) },
+            { throw LlmException("unauthorized", LlmException.Kind.AUTH) },
+        ))
+        val a = agent(p)
+        a.handle("привет")
+        val reply = a.handle("как дела?")
+        assertFalse(reply.usedLlm)
+        assertEquals(2, p.requests.size)
+        assertEquals(original, convo.oldest(58))
+    }
+
+    @Test fun localCommandsAndPocketSparkStayFreeEvenWhenSummaryIsDue() = runTest {
+        seedHistory()
+        val p = FakeProvider(mutableListOf())
+        val a = agent(p)
+        a.handle("таймер на 2 минуты")
+        val spark = a.handle("удиви меня")
+        assertEquals(Emotion.CURIOUS, spark.emotion)
+        assertTrue(spark.text.isNotBlank())
+        assertFalse(spark.usedLlm)
+        assertTrue(p.requests.isEmpty())
+        assertEquals(62, convo.count())
+    }
+
 }

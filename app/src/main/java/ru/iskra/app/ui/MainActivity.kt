@@ -38,6 +38,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -192,6 +193,7 @@ private fun AccessibilityWarning() {
 @Composable
 private fun MemoryScreen(modifier: Modifier) {
     val app = IskraApp.instance
+    val clearing by app.chat.clearing.collectAsState()
     var items by remember { mutableStateOf(app.memory.all()) }
     var notes by remember { mutableStateOf(app.notes.all()) }
     var reminders by remember { mutableStateOf(app.reminders.pending()) }
@@ -203,7 +205,7 @@ private fun MemoryScreen(modifier: Modifier) {
     var backupMsg by remember { mutableStateOf<String?>(null) }
     var preview by remember { mutableStateOf<Backups.Preview?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        if (uri == null || app.chat.clearing.value) return@rememberLauncherForActivityResult
         scope.launch {
             backupMsg = try {
                 val n = Backups.export(ctx, uri)
@@ -215,7 +217,7 @@ private fun MemoryScreen(modifier: Modifier) {
         }
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
+        if (uri == null || app.chat.clearing.value) return@rememberLauncherForActivityResult
         scope.launch {
             try {
                 preview = Backups.read(ctx, uri)
@@ -236,7 +238,7 @@ private fun MemoryScreen(modifier: Modifier) {
         Spacer(Modifier.size(8.dp))
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(items.sortedByDescending { it.createdAtMs }, key = { it.id }) { item ->
-                MemoryRow(item) {
+                MemoryRow(item, enabled = !clearing) {
                     app.memory.delete(item.id); refresh()
                     Diag.i("memory", "Запись удалена владельцем, осталось ${items.size}")
                 }
@@ -244,7 +246,7 @@ private fun MemoryScreen(modifier: Modifier) {
             item(key = "rem-h") { Text("⏰ Напоминания (${reminders.size})", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
             if (reminders.isEmpty()) item(key = "rem-e") { Text("«Напомни через 10 минут позвонить маме»", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             items(reminders, key = { "r" + it.id }) { r ->
-                SimpleRow("${timeFmt.format(java.util.Date(r.atMs))} — ${r.text}") {
+                SimpleRow("${timeFmt.format(java.util.Date(r.atMs))} — ${r.text}", enabled = !clearing) {
                     app.reminderScheduler.cancel(r.id); app.reminders.delete(r.id); refresh()
                     Diag.i("remind", "Напоминание удалено владельцем, осталось ${reminders.size}")
                 }
@@ -252,36 +254,37 @@ private fun MemoryScreen(modifier: Modifier) {
             item(key = "note-h") { Text("📝 Заметки (${notes.size})", fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
             if (notes.isEmpty()) item(key = "note-e") { Text("«Запиши заметку: купить молоко»", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             items(notes, key = { "n" + it.id }) { n ->
-                SimpleRow(n.text) {
+                SimpleRow(n.text, enabled = !clearing) {
                     app.notes.delete(n.id); refresh()
                     Diag.i("notes", "Заметка удалена владельцем, осталось ${notes.size}")
                 }
             }
         }
+        if (clearing) Text("Стираю данные…", color = MaterialTheme.colorScheme.onSurfaceVariant)
         backupMsg?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary) }
         Row {
-            OutlinedButton(onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text("💾 Сохранить копию") }
+            OutlinedButton(enabled = !clearing, onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text("💾 Сохранить копию") }
             Spacer(Modifier.size(8.dp))
-            OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text("📂 Восстановить") }
+            OutlinedButton(enabled = !clearing, onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text("📂 Восстановить") }
         }
         var autoState by remember { mutableStateOf(AutoBackup.describe(ctx)) }
         val treeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-            if (uri == null) return@rememberLauncherForActivityResult
+            if (uri == null || app.chat.clearing.value) return@rememberLauncherForActivityResult
             runCatching { AutoBackup.enable(ctx, uri) }.onFailure { backupMsg = "Папка не подходит: ${it.javaClass.simpleName}" }
             scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) }
         }
         Text("🗓 Ежедневная копия: $autoState", fontSize = 13.sp)
         Row {
-            OutlinedButton(onClick = { treeLauncher.launch(null) }) { Text(if (AutoBackup.folder(ctx) == null) "Включить: выбрать папку" else "Другая папка") }
+            OutlinedButton(enabled = !clearing, onClick = { treeLauncher.launch(null) }) { Text(if (AutoBackup.folder(ctx) == null) "Включить: выбрать папку" else "Другая папка") }
             if (AutoBackup.folder(ctx) != null) {
-                TextButton(onClick = { scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) } }) { Text("Сейчас") }
-                TextButton(onClick = { AutoBackup.disable(ctx); autoState = AutoBackup.describe(ctx) }) { Text("Выключить") }
+                TextButton(enabled = !clearing, onClick = { scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) } }) { Text("Сейчас") }
+                TextButton(enabled = !clearing, onClick = { AutoBackup.disable(ctx); autoState = AutoBackup.describe(ctx) }) { Text("Выключить") }
             }
         }
         Row {
-            OutlinedButton(onClick = { app.chat.clearHistory(); Diag.i("memory", "Переписка очищена владельцем") }) { Text("Очистить переписку") }
+            OutlinedButton(enabled = !clearing, onClick = { app.chat.clearHistory { Diag.i("memory", "Переписка очищена владельцем") } }) { Text("Очистить переписку") }
             Spacer(Modifier.size(8.dp))
-            OutlinedButton(onClick = { confirmWipe = true }) { Text("Стереть всё") }
+            OutlinedButton(enabled = !clearing, onClick = { confirmWipe = true }) { Text("Стереть всё") }
         }
     }
     preview?.let { p ->
@@ -294,7 +297,7 @@ private fun MemoryScreen(modifier: Modifier) {
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = !clearing, onClick = {
                     preview = null
                     scope.launch {
                         val skipped = Backups.apply(p.backup)
@@ -305,20 +308,20 @@ private fun MemoryScreen(modifier: Modifier) {
                     }
                 }) { Text("Заменить") }
             },
-            dismissButton = { TextButton(onClick = { preview = null }) { Text("Отмена") } },
+            dismissButton = { TextButton(enabled = !clearing, onClick = { preview = null }) { Text("Отмена") } },
         )
     }
     if (confirmWipe) AlertDialog(
         onDismissRequest = { confirmWipe = false },
         title = { Text("Стереть все данные?") },
-        text = { Text("Будут удалены память, переписка, настроение, ключи API и журнал диагностики. Это необратимо.") },
-        confirmButton = { TextButton(onClick = { app.wipeAllData(); refresh(); confirmWipe = false }) { Text("Стереть") } },
-        dismissButton = { TextButton(onClick = { confirmWipe = false }) { Text("Отмена") } },
+        text = { Text("Будут удалены память, заметки, напоминания, переписка, настроение, ключи API, кэш голоса и журнал диагностики. Настройки и сохранённые файлы резервных копий останутся. Это необратимо.") },
+        confirmButton = { TextButton(enabled = !clearing, onClick = { app.wipeAllData { refresh() }; confirmWipe = false }) { Text("Стереть") } },
+        dismissButton = { TextButton(enabled = !clearing, onClick = { confirmWipe = false }) { Text("Отмена") } },
     )
 }
 
 @Composable
-private fun MemoryRow(item: MemoryItem, onDelete: () -> Unit) {
+private fun MemoryRow(item: MemoryItem, enabled: Boolean = true, onDelete: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             val badge = when {
@@ -327,7 +330,7 @@ private fun MemoryRow(item: MemoryItem, onDelete: () -> Unit) {
                 else -> "🤖"
             }
             Text("$badge ${item.text}", Modifier.weight(1f))
-            TextButton(onClick = onDelete) { Text("✕") }
+            TextButton(enabled = enabled, onClick = onDelete) { Text("✕") }
         }
     }
 }
@@ -489,11 +492,11 @@ private fun PermCard(title: String, text: String, granted: Boolean, onOpen: () -
 }
 
 @Composable
-private fun SimpleRow(text: String, onDelete: () -> Unit) {
+private fun SimpleRow(text: String, enabled: Boolean = true, onDelete: () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(text, Modifier.weight(1f), fontSize = 14.sp)
-            TextButton(onClick = onDelete) { Text("✕") }
+            TextButton(enabled = enabled, onClick = onDelete) { Text("✕") }
         }
     }
 }

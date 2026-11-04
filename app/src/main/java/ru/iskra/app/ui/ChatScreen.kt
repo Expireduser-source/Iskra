@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,10 +22,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,6 +41,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import ru.iskra.app.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -73,6 +80,8 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
     var listening by remember { mutableStateOf(false) }
     var voiceError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
+    val dragging by listState.interactionSource.collectIsDraggedAsState()
+    var followReply by remember { mutableStateOf(true) }
 
     val listener = remember {
         Listener(ctx,
@@ -109,26 +118,49 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
         if (granted) startListening() else voiceError = "Без доступа к микрофону голосовой ввод не работает."
     }
 
-    LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
+    // Following the tail is the owner's choice. A drag pauses it; reaching the end resumes it.
+    LaunchedEffect(dragging, listState.canScrollForward) {
+        if (dragging) followReply = false
+        else if (!listState.canScrollForward) followReply = true
+    }
+    LaunchedEffect(messages.lastOrNull(), busy, followReply, listState.layoutInfo.viewportSize.height) {
+        if (followReply && !dragging && messages.isNotEmpty()) {
+            // A trailing item also keeps the end of a message taller than the viewport visible.
+            listState.scrollToItem(messages.size)
+        }
+    }
+
+    LaunchedEffect(messages.isEmpty()) {
+        if (messages.isEmpty()) {
+            followReply = true
+            listState.scrollToItem(0)
+        }
+    }
+
+    fun send(text: String) {
+        followReply = true
+        app.chat.send(text)
+    }
 
     Column(modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (messages.isEmpty() && !compact) item {
-                Text(
-                    "Привет! Я Искра. Могу поставить будильник или таймер, включить фонарик, открыть приложение, " +
-                        "запомнить что-то важное («запомни: …»). Для свободной беседы подключи модель в «Настройках».",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 16.dp),
-                )
+            if (messages.isEmpty()) item(key = "welcome") {
+                Welcome(compact, enabled = !busy, onSend = ::send)
             }
             items(messages, key = { it.id }) { m -> Bubble(m) }
-            if (busy) item {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
+            item(key = "tail") {
+                if (busy) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.size(8.dp))
-                    Text("думаю…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Думаю…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.weight(1f))
                     TextButton(onClick = { app.chat.cancel() }) { Text("Стоп") }
-                }
+                } else Spacer(Modifier.size(1.dp))
+            }
+        }
+        if (!followReply && messages.isNotEmpty()) {
+            TextButton(onClick = { followReply = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Text("К последнему сообщению ↓")
             }
         }
         voiceError?.let {
@@ -140,15 +172,19 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
                 modifier = Modifier.weight(1f), placeholder = { Text("Напиши Искре…") }, maxLines = 4,
             )
             Spacer(Modifier.size(6.dp))
-            FilledTonalButton(onClick = {
+            IconButton(enabled = !busy || listening, modifier = Modifier.semantics {
+                contentDescription = if (listening) "Остановить запись" else "Голосовое сообщение"
+            }, onClick = {
                 voiceError = null
-                if (listening) { listener.stop(); return@FilledTonalButton }
-                if (!listener.available()) { voiceError = "На телефоне нет службы распознавания речи."; return@FilledTonalButton }
+                if (listening) { listener.stop(); return@IconButton }
+                if (!listener.available()) { voiceError = "На телефоне нет службы распознавания речи."; return@IconButton }
                 if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
                 else micPermission.launch(Manifest.permission.RECORD_AUDIO)
             }) { Text(if (listening) "■" else "🎤") }
             Spacer(Modifier.size(6.dp))
-            Button(enabled = !busy && input.isNotBlank(), onClick = { app.chat.send(input); input = "" }) { Text("➤") }
+            IconButton(enabled = !busy && input.isNotBlank(),
+                modifier = Modifier.semantics { contentDescription = "Отправить сообщение" },
+                onClick = { send(input); input = "" }) { Text("➤", color = if (!busy && input.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 
@@ -160,6 +196,33 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
             confirmButton = { TextButton(onClick = { req.respond(true) }) { Text("Разрешить") } },
             dismissButton = { TextButton(onClick = { req.respond(false) }) { Text("Отмена") } },
         )
+    }
+}
+
+/** The existing character art anchors the welcome; every suggestion works without an API key. */
+@Composable
+private fun Welcome(compact: Boolean, enabled: Boolean, onSend: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = if (compact) 8.dp else 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (!compact) {
+            Image(painterResource(R.drawable.iskra_wave), contentDescription = null,
+                modifier = Modifier.size(132.dp).align(Alignment.CenterHorizontally))
+            Text("Ну что, знакомиться?", style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+        }
+        Text(if (compact) "Я тут. Что придумаем?" else
+            "Я Искра. Дела — в лапки, любопытство — с собой. Начнём с чего-нибудь маленького?",
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FilledTonalButton(enabled = enabled, onClick = { onSend("Удиви меня") }, modifier = Modifier.fillMaxWidth()) {
+            Text("Удиви меня")
+        }
+        if (!compact) {
+            Text("Маленькая игра с привычным миром. Работает без интернета.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(enabled = enabled, onClick = { onSend("Что ты помнишь") }) { Text("Заглянуть в память") }
+            Text("Таймеры, заметки и напоминания тоже доступны сразу. Для свободной беседы подключи модель в «Настройках».",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

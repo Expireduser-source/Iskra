@@ -1,6 +1,7 @@
 package ru.iskra.app.overlay
 
 import android.Manifest
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -86,7 +87,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private var micInForeground = false
     private var earProblem: String? = null
     private var screenOn = true
-    private var screenOnSince: Long? = System.currentTimeMillis()
+    private var screenOnSince: Long? = null
+    private var unlockedSince: Long? = null
     private val proactiveCheck = Runnable { checkProactive() }
     private val proactiveTick = object : Runnable {
         override fun run() { checkProactive(); handler.postDelayed(this, 3 * 60_000L) }
@@ -96,10 +98,18 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
-                Intent.ACTION_SCREEN_OFF -> { screenOn = false; screenOnSince = null; avatar?.stop(); PowerWatch.sample("экран выключен") }
-                Intent.ACTION_SCREEN_ON -> { screenOn = true; screenOnSince = System.currentTimeMillis(); avatar?.start(); PowerWatch.sample("экран включён") }
+                Intent.ACTION_SCREEN_OFF -> {
+                    screenOn = false; screenOnSince = null; unlockedSince = null
+                    handler.removeCallbacks(proactiveCheck)
+                    avatar?.stop(); PowerWatch.sample("экран выключен")
+                }
+                Intent.ACTION_SCREEN_ON -> {
+                    screenOn = true; screenOnSince = System.currentTimeMillis()
+                    unlockedSince = screenOnSince.takeUnless { isScreenLocked() }
+                    avatar?.start(); PowerWatch.sample("экран включён")
+                }
                 Intent.ACTION_USER_PRESENT -> {
-                    screenOn = true; avatar?.start()
+                    screenOn = true; unlockedSince = System.currentTimeMillis(); avatar?.start()
                     // Morning greeting / "welcome back" a moment after unlocking, not in the middle of it.
                     handler.removeCallbacks(proactiveCheck); handler.postDelayed(proactiveCheck, 15_000)
                 }
@@ -114,6 +124,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         super.onCreate()
         wm = getSystemService(WINDOW_SERVICE) as WindowManager
         screenOn = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+        screenOnSince = System.currentTimeMillis().takeIf { screenOn }
+        unlockedSince = screenOnSince.takeUnless { isScreenLocked() }
         Diag.i("overlay", "Служба создана")
     }
 
@@ -485,6 +497,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         startActivity(Intent(this, QuickChatActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    private fun isScreenLocked() = (getSystemService(KEYGUARD_SERVICE) as KeyguardManager).isKeyguardLocked
+
     /** Stage 3: a line of her own, within [ProactivePolicy]'s limits (frequency, quiet hours, screen on). */
     private fun checkProactive() {
         val s = settings
@@ -499,7 +513,11 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val policy = ProactivePolicy(s.proactive, s.quietFrom, s.quietTo)
         val now = java.time.LocalDateTime.now()
         val ms = System.currentTimeMillis()
-        val trigger = policy.decide(now, ms, st, app.lastContactMs, screenOnSince, kotlin.random.Random.Default) ?: return
+        val trigger = policy.decide(
+            now, ms, st, app.lastContactMs, screenOnSince, kotlin.random.Random.Default,
+            unlockedSinceMs = unlockedSince, screenLocked = isScreenLocked(),
+            listening = MicArbiter.busy.value || ear?.isAttentive == true || avatar?.brain?.isListening == true,
+        ) ?: return
         val next = policy.record(trigger, now, ms, st)
         prefs.edit().putString("day", next.day).putInt("count", next.countToday).putLong("last", next.lastAtMs)
             .putString("morning", next.morningDay).putString("evening", next.eveningDay).apply()

@@ -1,6 +1,8 @@
 package ru.iskra.app
 
 import android.app.Application
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import ru.iskra.app.data.IskraDb
 import ru.iskra.app.diag.Diag
 import ru.iskra.app.diag.DiagCollector
@@ -132,20 +134,25 @@ class IskraApp : Application() {
     }
 
     /** "Forget everything": memory, dialogue, mood, keys, diagnostics journal. Settings stay. */
-    fun wipeAllData() {
-        memory.deleteAll()
-        conversation.clear()
-        stateStore.reset()
-        vault.clear()
-        ttsVault.clear()
-        speaker.clearCache()
-        Diag.clearCrashes()
-        notes.deleteAll()
-        reminders.pending().forEach { reminderScheduler.cancel(it.id) }
-        reminders.deleteAll()
-        Diag.clear()
-        chat.reload()
-        Diag.i("app", "Все данные стёрты владельцем")
+    fun wipeAllData(onComplete: () -> Unit = {}) {
+        chat.clearData(erase = {
+            speaker.withSpeechStopped {
+                withContext(Dispatchers.IO) {
+                    memory.deleteAll()
+                    conversation.clear()
+                    stateStore.reset()
+                    vault.clear()
+                    ttsVault.clear()
+                    speaker.clearCache()
+                    Diag.clearCrashes()
+                    notes.deleteAll()
+                    reminders.pending().forEach { reminderScheduler.cancel(it.id) }
+                    reminders.deleteAll()
+                    Diag.clear()
+                    Diag.i("app", "Все данные стёрты владельцем")
+                }
+            }
+        }, onComplete = onComplete)
     }
 
     companion object {

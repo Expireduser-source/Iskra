@@ -141,6 +141,21 @@ class SqliteConversationStore(private val helper: IskraDb) : ConversationStore {
         return out
     }
 
+    override fun oldest(limit: Int): List<Turn> {
+        val out = ArrayList<Turn>()
+        helper.readableDatabase.rawQuery(
+            "SELECT role, text, at, emotion FROM turns ORDER BY id ASC LIMIT ?", arrayOf(limit.toString())
+        ).use { c ->
+            while (c.moveToNext()) out += Turn(
+                role = if (c.getString(0) == "USER") Turn.Role.USER else Turn.Role.ASSISTANT,
+                text = c.getString(1),
+                atMs = c.getLong(2),
+                emotion = c.getString(3)?.let { e -> runCatching { Emotion.valueOf(e) }.getOrNull() },
+            )
+        }
+        return out
+    }
+
     override fun append(turn: Turn) {
         val v = ContentValues().apply {
             put("role", turn.role.name); put("text", turn.text); put("at", turn.atMs); put("emotion", turn.emotion?.name)

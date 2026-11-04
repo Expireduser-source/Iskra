@@ -51,6 +51,8 @@ class VoiceEar(
     private val nameMatcher = WakeWordMatcher(names)
     /** Main thread → audio thread: a command is expected without the name, so the full recogniser runs. */
     @Volatile private var attentive = false
+    /** Includes the name-free follow-up window after Iskra finishes speaking. */
+    val isAttentive: Boolean get() = attentive
     @Volatile private var running = false
     @Volatile private var paused = false
     private var thread: Thread? = null

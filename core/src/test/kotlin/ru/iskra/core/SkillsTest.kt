@@ -199,6 +199,49 @@ class ProactiveTest {
         assertTrue(ProactivePolicy(ProactiveFrequency.NORMAL, 22, 7).isQuiet(3) && !ProactivePolicy(ProactiveFrequency.NORMAL, 22, 7).isQuiet(12))
     }
 
+    @Test fun morningGreetingWaitsForUnlockEvenAfterLongLockScreen() {
+        val policy = ProactivePolicy(ProactiveFrequency.NORMAL)
+        val state = ProactiveState()
+        val screenOnAt = ms - 3 * 60_000
+        assertNull(policy.decide(
+            morning, ms, state, 0, screenOnAt, Random(1),
+            unlockedSinceMs = null, screenLocked = true,
+        ))
+        assertEquals(ProactiveTrigger.MORNING, policy.decide(
+            morning, ms, state, 0, screenOnAt, Random(1), unlockedSinceMs = ms - 15_000,
+        ))
+        // A stale screen-on timestamp must not be mistaken for a fresh unlock.
+        assertNull(policy.decide(
+            morning, ms, state, ms, screenOnAt, Random(1), unlockedSinceMs = null,
+        ))
+    }
+
+    @Test fun microphoneAttentionDefersGreetingWithoutConsumingIt() {
+        val policy = ProactivePolicy(ProactiveFrequency.NORMAL)
+        val state = ProactiveState()
+        assertNull(policy.decide(morning, ms, state, 0, ms, Random(1), listening = true))
+        val trigger = policy.decide(morning, ms + 30_000, state, 0, ms, Random(1))
+        assertEquals(ProactiveTrigger.MORNING, trigger)
+        val after = policy.record(trigger!!, morning, ms + 30_000, state)
+        assertEquals(1, after.countToday)
+        assertNull(policy.decide(morning, ms + 60_000, after, 0, ms, Random(1)))
+    }
+
+    @Test fun lockAndMicrophoneBlockEveryTrigger() {
+        val policy = ProactivePolicy(ProactiveFrequency.OFTEN)
+        // Repeated evening/idle checks must not eventually pass their random gate while blocked.
+        for (seed in 0..30) {
+            assertNull(policy.decide(
+                morning.withHour(21), ms, ProactiveState(), 0, ms - 3 * 3_600_000,
+                Random(seed), screenLocked = true,
+            ))
+            assertNull(policy.decide(
+                morning.withHour(21), ms, ProactiveState(), 0, ms - 3 * 3_600_000,
+                Random(seed), listening = true,
+            ))
+        }
+    }
+
     @Test fun phraseBankDoesNotRepeatRightAway() {
         val bank = PhraseBank(Random(3))
         val lines = (1..8).map { bank.proactive(ProactiveTrigger.IDLE) }

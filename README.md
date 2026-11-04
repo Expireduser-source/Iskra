@@ -6,6 +6,7 @@
 Первое целевое устройство — Xiaomi Redmi Note 14 (HyperOS, Android 14/15). Работает на Android 8.0+.
 
 * Аудит прототипа ChatGPT, архитектура и план: [`docs/AUDIT.md`](docs/AUDIT.md)
+* Новое в 0.8.1: [внимательное общение и «Удиви меня»](docs/POLISH-0.8.1.md)
 * Ручной чек-лист проверки на телефоне: [`docs/TESTING.md`](docs/TESTING.md)
 
 ## Структура

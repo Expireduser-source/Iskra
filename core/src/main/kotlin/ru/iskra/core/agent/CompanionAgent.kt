@@ -1,6 +1,8 @@
 package ru.iskra.core.agent
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -17,6 +19,7 @@ import ru.iskra.core.persona.MoodEvent
 import ru.iskra.core.persona.PersonaSpec
 import ru.iskra.core.persona.Sentiment
 import ru.iskra.core.persona.StyleFeedback
+import ru.iskra.core.skills.PocketSpark
 import ru.iskra.core.tools.ActionRecord
 import ru.iskra.core.tools.CommandParser
 import ru.iskra.core.tools.Risk
@@ -67,6 +70,7 @@ class CompanionAgent(
 ) {
     private val moodEngine = MoodEngine(persona.traits)
     private val mutex = Mutex()
+    private val pocketSpark = PocketSpark(random)
 
     /**
      * After a key or balance error the cloud is skipped for [cloudPauseMs]: replies come at once from
@@ -75,7 +79,9 @@ class CompanionAgent(
     @Volatile private var cloudPause: Pair<Long, LlmException.Kind>? = null
     private val cloudPauseMs = 5 * 60_000L
 
-    fun resumeCloud() { cloudPause = null }
+    @Volatile private var summaryRetryAtMs = 0L
+
+    fun resumeCloud() { cloudPause = null; summaryRetryAtMs = 0L }
 
     init {
         if (tools[ToolNames.REMEMBER] == null) tools.register(RememberTool(memory, clock))
@@ -153,7 +159,8 @@ class CompanionAgent(
 
         conversation.append(Turn(Turn.Role.USER, text, now))
         if (reply.text.isNotBlank()) conversation.append(Turn(Turn.Role.ASSISTANT, reply.text, clock(), reply.emotion))
-        if (provider != null) maybeSummarize(provider)
+        // Local commands stay free; an unsuccessful cloud reply must not trigger another request.
+        if (provider != null && reply.usedLlm && reply.error == null) maybeSummarize(provider)
         reply
     }
 
@@ -164,6 +171,7 @@ class CompanionAgent(
     }
 
     private suspend fun handleLocally(text: String, llmAvailable: Boolean): AgentReply? {
+        if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         val now = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault())
         return when (val parsed = CommandParser.parse(text, now) ?: return null) {
             is CommandParser.Parsed.Remember -> {
@@ -252,8 +260,8 @@ class CompanionAgent(
 
     /** Compresses the oldest part of the dialogue into an EPISODE memory so context stays small. */
     private suspend fun maybeSummarize(provider: LlmProvider) {
-        if (conversation.count() < summarizeAfterTurns) return
-        val old = conversation.popOldest(summarizeAfterTurns / 2)
+        if (conversation.count() < summarizeAfterTurns || clock() < summaryRetryAtMs) return
+        val old = conversation.oldest(summarizeAfterTurns / 2)
         val transcript = old.joinToString("\n") { (if (it.role == Turn.Role.USER) "Владелец: " else "${persona.name}: ") + it.text.take(500) }
         try {
             val r = provider.complete(LlmRequest(
@@ -263,14 +271,26 @@ class CompanionAgent(
                 messages = listOf(ChatMessage.User(transcript)),
                 maxTokens = 200, temperature = 0.2,
             ))
+            currentCoroutineContext().ensureActive()
             val summary = r.text.trim()
-            if (summary.isNotEmpty() && !summary.equals("НЕТ", ignoreCase = true)) {
-                memory.add(summary.take(400), MemoryKind.EPISODE, MemorySource.SUMMARY, 2, clock())
+            val saved = when {
+                summary.equals("НЕТ", ignoreCase = true) -> true
+                summary.isEmpty() -> false
+                else -> memory.add(summary.take(400), MemoryKind.EPISODE, MemorySource.SUMMARY, 2, clock()) !is MemoryManager.AddResult.Rejected
+            }
+            if (saved) {
+                conversation.popOldest(old.size)
+                summaryRetryAtMs = 0L
+            } else {
+                summaryRetryAtMs = clock() + cloudPauseMs
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
-            // Summaries are best-effort; the turns are already dropped from the short-term window.
+        } catch (e: Exception) {
+            // Keep source turns until a summary is saved; do not retry on every message.
+            summaryRetryAtMs = clock() + cloudPauseMs
+            if (e is LlmException && (e.kind == LlmException.Kind.AUTH || e.kind == LlmException.Kind.BALANCE))
+                cloudPause = summaryRetryAtMs to e.kind
         }
     }
 }

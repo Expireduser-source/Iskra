@@ -2,6 +2,8 @@ name: Build APK
 
 on:
   push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -25,11 +27,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # GitHub's ubuntu runners ship the Android SDK (ANDROID_HOME); missing platforms are auto-installed by AGP.
-      - name: Unit tests (core)
-        run: ./gradlew --no-daemon :core:test
-
-      - name: Build debug APK
-        run: ./gradlew --no-daemon :app:assembleDebug
+      - name: Test core and build debug APK
+        run: ./gradlew --no-daemon :core:test :app:assembleDebug
 
       - uses: actions/upload-artifact@v4
         with:
