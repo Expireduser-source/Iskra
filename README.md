@@ -1,85 +1,91 @@
-# Искра — ИИ-компаньон для Android
+<p align="center"><img src="fastlane/metadata/android/en-US/images/featureGraphic.png" alt="Iskra — a cat-girl companion on your screen" width="720"></p>
 
-Анимированная чиби-кошкодевочка поверх экрана: разговаривает (текст/голос), выполняет разрешённые
-действия на телефоне, помнит важное о владельце, имеет устойчивый характер и настроение.
+<h1 align="center">Iskra — your cat-girl companion for Android</h1>
 
-Первое целевое устройство — Xiaomi Redmi Note 14 (HyperOS, Android 14/15). Работает на Android 8.0+.
+<p align="center">
+  <a href="https://github.com/Expireduser-source/Iskra/releases/latest/download/Iskra.apk"><b>📥 Download the APK</b></a> ·
+  <a href="https://github.com/Expireduser-source/Iskra/releases/latest">All releases</a> ·
+  <a href="README.ru.md">Русский</a> ·
+  <a href="PRIVACY.md">Privacy</a>
+</p>
+<p align="center">
+  <a href="https://github.com/Expireduser-source/Iskra/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Expireduser-source/Iskra?label=release&color=7a4fb0"></a>
+  <img alt="Android 8.0 to 16" src="https://img.shields.io/badge/Android-8.0%E2%80%9316-3ddc84">
+  <a href="LICENSE"><img alt="GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
+  <img alt="No ads, no trackers" src="https://img.shields.io/badge/ads%20%26%20trackers-none-success">
+</p>
 
-**Для любого телефона и человека (0.9):** подсказки для прошивок Xiaomi, Samsung, Huawei, Honor, OPPO/realme, OnePlus,
-vivo, Tecno/Infinix, ASUS, Meizu; режимы «Экономии» (на слабых телефонах и при низком заряде — сама); TalkBack и
-крупный шрифт; светлая и тёмная тема; знакомство при первом запуске; голосовой ввод без сервисов Google.
+Iskra is a small animated cat-girl who lives on your phone's screen. Tap her to talk, drag her anywhere, or just let
+her wander, nap and peek out from behind the edges. She sets alarms and reminders, keeps notes, tells the weather and —
+if you want — chats with you through an AI model. **Free, no ads, no accounts, your data stays on your phone.**
 
-* Аудит прототипа ChatGPT, архитектура и план: [`docs/AUDIT.md`](docs/AUDIT.md)
-* Новое в 0.9.1: [дневные лимиты облака и потоковые ответы Claude](docs/reports/2026-11-04-0.9.1.md)
-* Новое в 0.9.0: [для всех телефонов и людей](docs/reports/2026-11-04-0.9.0.md)
-* Новое в 0.8.1: [внимательное общение и «Удиви меня»](docs/POLISH-0.8.1.md)
-* Ручной чек-лист проверки на телефоне: [`docs/TESTING.md`](docs/TESTING.md)
+## What she can do
+- **Right away, offline:** alarms and timers (“set a timer for 10 minutes”), reminders that survive a restart
+  (“remind me tomorrow at 9 to call mom”), notes (“note: buy milk”), weather (“do I need an umbrella?”), the
+  flashlight, volume, apps, settings, web search, and “Surprise me” — tiny games with the world around you.
+- **A real conversation:** connect a **free brain with one tap** (OpenRouter — sign in with Google or e-mail, nothing to
+  copy) or use your own key from DeepSeek, OpenAI, Anthropic Claude or any OpenAI-compatible server.
+- **Voice:** natural cloud voices (Yandex SpeechKit, ElevenLabs, OpenAI) or the free system voice; say “Iskra” or
+  “Spark” and she listens — recognized fully on the phone.
+- **From any app:** share text to Iskra or select it and tap **“Ask Iskra”** — explain, summarize, translate, save as a
+  note or a reminder. A Quick Settings tile and launcher shortcuts (Ask, Voice, Reminder, On screen).
+- **For every phone and person:** English and Russian (follows the phone), Android 8 to 16, tablets and foldables,
+  guides for Xiaomi, Samsung, Huawei, Honor, OPPO, OnePlus, vivo, Tecno and others, TalkBack, large fonts, light and
+  dark themes, calm motion, battery modes and daily cloud spending limits.
 
-## Структура
+## Install
+1. On your phone, open **[Iskra.apk](https://github.com/Expireduser-source/Iskra/releases/latest/download/Iskra.apk)**
+   (always the newest version).
+2. Open the downloaded file. If Android asks, allow installing apps from your browser.
+3. Iskra introduces herself in four short steps; every permission is optional.
 
+Prefer automatic updates? Add the repository in [Obtainium](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/Expireduser-source/Iskra).
+Copies installed from here also show a small “new version” notice (you can turn it off in Settings → About).
+
+Each release has a `.sha256` checksum next to the APK, and every APK is signed with the same key, so updates install
+over the previous version without losing memory or settings.
+
+## Privacy
+Memory, notes, the chat and settings are stored only on your phone; keys are encrypted with the Android Keystore.
+Something leaves the phone only when you use a feature that needs it — the cloud model you chose, the cloud voice (reply
+text only), the weather (the city only) — see the full table in **[PRIVACY.md](PRIVACY.md)**. Listening for her name
+works offline; audio never leaves the phone. No ads, no analytics, no trackers.
+
+## Questions
+- **Is it free?** Yes. Commands, memory, notes, reminders and weather need nothing. The free OpenRouter brain gives about
+  50 messages a day; paid services cost fractions of a cent per reply, and you can set daily limits.
+- **Is it safe to install an APK?** The code is open, every build is made by GitHub Actions from this repository, and
+  the APK is signed with the project's own key. Android protects such apps with “restricted settings”; the app explains it.
+- **She disappears after a while.** Some phones close background apps. The «Permissions» tab shows exactly what to switch
+  on for your phone's maker.
+- **Is she a person?** No — Iskra is an AI program, and she says so if you ask.
+
+## Help the project
+⭐ Star the repository, tell a friend (Settings → About → “Tell a friend” shows a QR code), report problems in
+[Issues](https://github.com/Expireduser-source/Iskra/issues) — a diagnostics report from Settings helps a lot.
+
+---
+
+## For developers
 ```
 iskra/
-├── core/                      чистый Kotlin/JVM, без Android — тестируется на любом ПК
-│   └── src/main/kotlin/ru/iskra/core/
-│       ├── llm/               LlmProvider + OpenAI-совместимый и Anthropic клиенты
-│       ├── persona/           ядро личности, настроение (MoodEngine), адаптация стиля
-│       ├── memory/            долговременная память, поиск, фильтр секретов
-│       ├── tools/             контракты инструментов, SafetyPolicy, офлайн-парсер команд, AppMatcher
-│       ├── agent/             CompanionAgent (цикл решения), PromptComposer, ReplyParser
-│       └── avatar/            AvatarBrain — поведение/анимация персонажа (физика, моргание, сон…)
-├── app/                       Android-приложение
-│   └── src/main/java/ru/iskra/app/
-│       ├── IskraApp.kt        сборка зависимостей
-│       ├── overlay/           OverlayService (поверх приложений), AvatarView, CatgirlRenderer
-│       ├── ui/                Compose: чат, память, настройки, разрешения, быстрый чат
-│       ├── tools/             реализации инструментов через Intent/CameraManager/AudioManager
-│       ├── system/            AccessibilityService (только глобальные действия), DeviceHelper (экраны прошивок)
-│       ├── voice/             TTS и распознавание речи
-│       └── data/              SQLite (память, диалог), настройки, KeyVault (Android Keystore)
-└── .github/workflows/android.yml   сборка APK в GitHub Actions
+├── core/   pure Kotlin/JVM, no Android: persona and mood, memory, offline commands (ru + en), tools and safety policy,
+│           LLM clients (OpenAI-compatible, Anthropic, OpenRouter sign-in), voice logic, avatar brain — tested on any PC
+├── app/    Android app: overlay, Compose UI, Android tools, voice, storage, tile, shortcuts, sharing
+├── tools/  translation helper, store graphics, QR code, sprite converter
+└── fastlane/metadata/android/   store listing (en-US, ru-RU)
 ```
+- Core tests without the Android SDK: `ISKRA_CORE_ONLY=1 ./gradlew :core:test`
+- Full build: JDK 17 + Android SDK 36, `./gradlew :core:test :app:assembleDebug`
+- CI builds the debug app on every push (pre-release `build-N`, package `ru.iskra.app.debug`, “Iskra β”) and runs it on
+  Android 8, 11 and 16 emulators with screenshots; the signed release (`ru.iskra.app`) comes from “Run workflow” with
+  `release = true` — see [docs/RELEASE.md](docs/RELEASE.md).
+- Texts are written in both languages side by side: `tr("Привет", "Hi")` (`core/…/i18n/I18n.kt`);
+  `tools/i18n/kt_strings.py` lists Russian strings and wraps them.
+- Plans and reports: [docs/ROADMAP.md](docs/ROADMAP.md), [docs/TESTING.md](docs/TESTING.md), [docs/reports](docs/reports).
 
-## Сборка APK
-
-Нужны JDK 17 и Android SDK (платформа 35). Три способа — от самого простого:
-
-### 1. GitHub Actions (ничего не ставить локально)
-1. Создай **приватный** репозиторий на GitHub и загрузи туда эту папку.
-2. Вкладка **Actions** → workflow **Build APK** запустится сам (или нажми *Run workflow*).
-3. Через ~5–8 минут скачай артефакт `iskra-debug-apk` → внутри `app-debug.apk`.
-
-### 2. Android Studio
-Открой папку `iskra` (File → Open), дождись синхронизации Gradle, подключи телефон с включённой
-отладкой по USB и нажми **Run**. Либо *Build → Build APK(s)*.
-
-### 3. Командная строка
-```bash
-export ANDROID_HOME=$HOME/Android/Sdk      # путь к SDK
-./gradlew :core:test :app:assembleDebug
-# APK: app/build/outputs/apk/debug/app-debug.apk
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-```
-
-Только ядро (без Android SDK): `ISKRA_CORE_ONLY=1 ./gradlew :core:test`.
-
-Release-сборка (`ru.iskra.app`, ставится рядом с debug `ru.iskra.app.debug`) собирается в CI по тегу `v*`
-и подписывается ключом владельца из GitHub Secrets — см. [docs/RELEASE.md](docs/RELEASE.md). Без ключа release
-остаётся неподписанным, debug-ключом он не подписывается никогда.
-
-## Первый запуск на Redmi Note 14
-1. Установи APK (разреши установку из этого источника).
-2. Вкладка **Разрешения**: «Поверх других приложений» → включить → переключатель «Показать Искру на экране».
-3. Для «Домой/Назад/шторки»: *О приложении → ⋮ → Разрешить ограниченные настройки*, затем
-   *Специальные возможности → Искра · управление*.
-4. HyperOS: Автозапуск — вкл; Контроль активности — «Нет ограничений»; закрепить карточку в недавних.
-5. Вкладка **Настройки**: выбери провайдера модели и вставь свой ключ API. Без ключа работают
-   команды телефона и память («запомни: …»), но не свободная беседа.
-6. **Голос** (по желанию): Yandex SpeechKit / ElevenLabs / OpenAI / свой сервер — отдельный ключ.
-   В сервис уходит только текст ответа Искры.
-7. **Слух** (по желанию): скачать офлайн-модель Vosk (45 МБ) → «Слушать постоянно». Распознавание на
-   телефоне, звук никуда не уходит. Работает, пока Искра на экране; после включения открой приложение
-   хотя бы раз — Android даёт доступ к микрофону в фоне только так.
-
-## Лицензии
-Код проекта — твой. Зависимости: Kotlin, kotlinx (Apache-2.0), OkHttp (Apache-2.0), AndroidX/Compose
-(Apache-2.0), Vosk + модель small-ru (Apache-2.0), JNA (Apache-2.0/LGPL, двойная лицензия). Графика персонажа рисуется кодом — сторонних ассетов нет.
+## License
+The code is free software under the [GNU General Public License v3](LICENSE). The character artwork (sprites and rig
+layers in `app/src/main/res/drawable-nodpi` and `app/src/main/assets/rig`) © the project owner, all rights reserved.
+Dependencies: Kotlin, kotlinx, OkHttp, AndroidX/Compose, Material Icons (Apache-2.0), Vosk and its models (Apache-2.0),
+JNA (Apache-2.0/LGPL-2.1). Weather data: [Open-Meteo](https://open-meteo.com) (CC BY 4.0).

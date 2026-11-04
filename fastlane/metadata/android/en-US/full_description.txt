@@ -1,0 +1,29 @@
+Iskra is a small animated cat-girl who lives on your phone's screen. Tap her to talk, drag her anywhere, or just let her wander, nap and peek out from behind the edges.
+
+<b>She helps right away — no sign-up, no internet:</b>
+• alarms and timers: “set a timer for 10 minutes”
+• reminders that survive a restart: “remind me tomorrow at 9 to call mom”
+• notes: “note: buy milk and bread”
+• the weather in your city: “do I need an umbrella?”
+• the flashlight, volume, apps, settings, web search
+• “Surprise me” — tiny games with the world around you
+
+<b>A real conversation when you want one.</b> Connect a free “brain” with one tap (OpenRouter: sign in with Google or e-mail, nothing to copy) or use your own key from DeepSeek, OpenAI, Anthropic Claude or any OpenAI-compatible server. Replies arrive sentence by sentence and can be spoken with natural cloud voices or the free system voice. Say “Iskra” or “Spark” and she listens — recognized right on the phone.
+
+<b>Made for everyone:</b>
+• English and Russian, following your phone's language
+• Share any text to Iskra, or select it and tap “Ask Iskra”: explain, summarize, translate, save as a note or a reminder
+• Quick Settings tile and launcher shortcuts
+• Android 8 to 16, phones, tablets and foldables; step-by-step tips for Xiaomi, Samsung, Huawei, Honor, OPPO, OnePlus, vivo, Tecno and others so the system doesn't close her
+• TalkBack, large fonts, light and dark theme, calm motion
+• Battery modes; she asks for the fast refresh rate only while moving
+
+<b>Private by design:</b>
+• memory, notes and the chat stay on your phone; delete anything at any time
+• API keys are encrypted with the Android Keystore
+• listening for her name works fully offline; audio never leaves the phone
+• no ads, no trackers, no accounts
+• daily cloud limits and prices, so you never overspend
+• free and open source (GNU GPL v3)
+
+Iskra is an AI program, not a person — and she says so if you ask.

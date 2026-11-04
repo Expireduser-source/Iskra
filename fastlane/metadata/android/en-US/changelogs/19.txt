@@ -1,0 +1,6 @@
+• English everywhere: interface, offline commands, voice and hearing (Iskra / Spark)
+• Free “brain” in one tap through OpenRouter
+• Share text to Iskra or “Ask Iskra” from any app
+• Quick Settings tile and launcher shortcuts
+• Update notice, About and licenses, tell a friend with a QR code
+• Android 16, new icon
