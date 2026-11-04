@@ -31,6 +31,9 @@ class RigAnimator(val rig: RigState = RigState()) {
     private var lastX = Float.NaN
     private var lastVx = 0f
     private var accX = 0f
+    private var lastY = Float.NaN
+    /** Vertical speed in box sizes per second (negative = up), smoothed. */
+    private var vy = 0f
     private var wasWaving = false
     private var wasListening = false
     private var lastEmotion = Emotion.NEUTRAL
@@ -75,6 +78,9 @@ class RigAnimator(val rig: RigState = RigState()) {
         if (p.waving && !wasWaving) rig.gesture(RigState.Gesture.WAVE, 1.6f)
         if (p.listening && !wasListening) rig.gesture(RigState.Gesture.NOD, 0.9f)
         if (p.emotion == Emotion.POUTY && lastEmotion != Emotion.POUTY) rig.gesture(RigState.Gesture.SHAKE, 1.2f)
+        val glad = p.emotion == Emotion.HAPPY || p.emotion == Emotion.EXCITED
+        if (glad && lastEmotion != Emotion.HAPPY && lastEmotion != Emotion.EXCITED) rig.joy()
+        rig.listening = p.listening
         wasWaving = p.waving; wasListening = p.listening; lastEmotion = p.emotion
 
         // Body acceleration in box sizes / s², in her own facing (the picture is mirrored when she faces right).
@@ -88,6 +94,11 @@ class RigAnimator(val rig: RigState = RigState()) {
             lastX = p.x
         }
         val walking = p.activity == Activity.WALKING || p.activity == Activity.RUNNING
+        if (d > 0f && box > 0f) {
+            if (!lastY.isNaN()) vy = vy + ((p.y - lastY) / box / d - vy) * 0.5f
+            lastY = p.y
+        }
+        rig.setActivity(p.activity, vy)
         rig.tick(d, walking, if (p.facingRight) -accX else accX)
     }
 
@@ -96,19 +107,13 @@ class RigAnimator(val rig: RigState = RigState()) {
         fun choose(p: AvatarPose): Pair<Visual, String?> {
             val emo = p.emotion != Emotion.NEUTRAL
             fun pic(s: Sprite, what: String?) = Visual.Picture(s) to what
-            fun rig(what: String) = Visual.Rig to tr("$what → риг без своей позы", "$what → rig has no own pose")
             return when (p.activity) {
                 Activity.SLEEPING -> pic(Sprite.SLEEP, null)
                 Activity.SITTING -> pic(Sprite.SIT, if (emo) tr("сидит + ${p.emotion} → sit", "sits + ${p.emotion} → sit") else null)
                 Activity.IDLE -> if (p.thinking) pic(Sprite.PHONE, null) else Visual.Rig to null
-                Activity.WALKING, Activity.HIDDEN -> Visual.Rig to null
-                Activity.RUNNING -> rig(tr("бежит", "runs"))
-                Activity.JUMPING -> rig(tr("прыжок", "jump"))
-                Activity.FALLING -> rig(tr("падает", "falls"))
-                Activity.DRAGGED -> rig(tr("её несут пальцем", "carried by a finger"))
-                Activity.CLIMBING -> rig(tr("держится за край", "holds the edge"))
-                Activity.HANGING -> rig(tr("висит на верхнем крае", "hangs from the top edge"))
-                Activity.PEEKING -> rig(tr("выглядывает", "peeks out"))
+                // 0.11: the rig has its own poses for all of these (RigPose.forActivity).
+                Activity.WALKING, Activity.HIDDEN, Activity.RUNNING, Activity.JUMPING, Activity.FALLING, Activity.DRAGGED,
+                Activity.CLIMBING, Activity.HANGING, Activity.PEEKING -> Visual.Rig to null
             }
         }
     }

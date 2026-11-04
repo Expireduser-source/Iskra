@@ -9,7 +9,6 @@ import ru.iskra.core.avatar.Visual
 import ru.iskra.core.persona.Emotion
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -26,7 +25,9 @@ class RigAnimatorTest {
         assertEquals(Visual.Picture(Sprite.PHONE), RigAnimator.choose(pose(thinking = true)).first)
         assertEquals(Visual.Rig to null, RigAnimator.choose(pose()))
         assertEquals(Visual.Rig to null, RigAnimator.choose(pose(Activity.WALKING)))
-        assertNotNull(RigAnimator.choose(pose(Activity.HANGING)).second)
+        // 0.11: the rig has its own pose for everything in the air, so no "no own pose" note any more.
+        listOf(Activity.RUNNING, Activity.JUMPING, Activity.FALLING, Activity.DRAGGED, Activity.CLIMBING, Activity.HANGING, Activity.PEEKING)
+            .forEach { assertEquals(Visual.Rig to null, RigAnimator.choose(pose(it)), "$it") }
         Activity.entries.forEach { RigAnimator.choose(pose(it)) }
     }
 

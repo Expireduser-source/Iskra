@@ -92,6 +92,58 @@ class Spring(private val stiffness: Float, private val damping: Float) {
 }
 
 /**
+ * Where the body and limbs go for an activity, as offsets from the standing rig (radians, model px).
+ * Angles in screen terms: positive turns clockwise. armL up is +, armR up is −; ears > 0 flatten them.
+ * Arms stay below ~1.4 rad: the big chibi head is drawn over them, a hand raised higher would vanish behind it.
+ */
+data class RigPose(
+    val armL: Float = 0f, val armR: Float = 0f,
+    val legL: Float = 0f, val legR: Float = 0f,
+    /** Knees up (model px): the leg layer is lifted, so the feet tuck under her. */
+    val tuck: Float = 0f,
+    /** Whole-body tilt around the hips; negative leans forward (she faces image-left when not mirrored). */
+    val lean: Float = 0f,
+    /** > 0 squashed (wider and lower), < 0 stretched. */
+    val squash: Float = 0f,
+    val headTilt: Float = 0f,
+    val tail: Float = 0f,
+    val ears: Float = 0f,
+    val hair: Float = 0f,
+    /** 0..1 rhythmic parts: running stride, flailing arms and legs, alternating climbing reach, dangling legs. */
+    val run: Float = 0f, val flail: Float = 0f, val climb: Float = 0f, val dangle: Float = 0f,
+) {
+    fun mix(o: RigPose, k: Float) = RigPose(
+        mix(armL, o.armL, k), mix(armR, o.armR, k), mix(legL, o.legL, k), mix(legR, o.legR, k), mix(tuck, o.tuck, k),
+        mix(lean, o.lean, k), mix(squash, o.squash, k), mix(headTilt, o.headTilt, k), mix(tail, o.tail, k), mix(ears, o.ears, k),
+        mix(hair, o.hair, k), mix(run, o.run, k), mix(flail, o.flail, k), mix(climb, o.climb, k), mix(dangle, o.dangle, k),
+    )
+
+    companion object {
+        val STAND = RigPose()
+
+        /**
+         * The rig's own poses for everything that had none (docs/AVATAR.md: "rig has no own pose").
+         * [vy]: vertical speed in box sizes per second (negative = going up) — a jump stretches on the way up
+         * and opens its arms on the way down.
+         */
+        fun forActivity(a: Activity, vy: Float = 0f): RigPose = when (a) {
+            Activity.IDLE, Activity.WALKING, Activity.SITTING, Activity.SLEEPING, Activity.HIDDEN -> STAND
+            Activity.RUNNING -> RigPose(lean = -0.11f, run = 1f, tail = 0.25f, ears = 0.12f, hair = 0.2f)
+            Activity.JUMPING -> if (vy < 0f)
+                RigPose(armL = 1.15f, armR = -1.15f, legL = 0.12f, legR = -0.12f, tuck = 34f, squash = -0.07f, tail = 0.35f, ears = 0.18f, hair = 0.25f)
+            else RigPose(armL = 0.9f, armR = -0.9f, legL = 0.22f, legR = -0.22f, tuck = 14f, squash = -0.03f, tail = 0.15f, ears = -0.1f, hair = -0.25f)
+            Activity.FALLING -> RigPose(armL = 1.05f, armR = -1.05f, legL = 0.28f, legR = -0.28f, squash = -0.04f, tail = 0.5f,
+                ears = -0.22f, hair = -0.4f, flail = 1f)
+            Activity.DRAGGED -> RigPose(armL = 0.55f, armR = -0.55f, legL = 0.05f, legR = -0.05f, squash = -0.05f, tail = -0.15f,
+                ears = 0.1f, dangle = 1f)
+            Activity.CLIMBING -> RigPose(armL = 1.25f, armR = -1.25f, legL = 0.1f, legR = -0.1f, tuck = 10f, lean = -0.05f, tail = 0.2f, climb = 1f)
+            Activity.HANGING -> RigPose(armL = 1.32f, armR = -1.32f, squash = -0.06f, tail = -0.3f, ears = 0.06f, hair = 0.1f, dangle = 0.8f)
+            Activity.PEEKING -> RigPose(armL = 1.1f, lean = -0.07f, headTilt = -0.13f, ears = -0.05f, tail = 0.2f)
+        }
+    }
+}
+
+/**
  * Animation state of the rig: expression blend, blink, gaze, mouth, head with inertia, ears, tail and
  * the side ponytail on springs, gestures wave / nod / shake, walking in place.
  * Deterministic for a given sequence of calls (own LCG random, as in rig.js).
@@ -128,6 +180,34 @@ class RigState {
     var walk = 0f; private set
     var walkPhase = 0f; private set
     var energy = 1f
+    /** The body pose, easing towards the one of the current activity. */
+    var pose = RigPose.STAND; private set
+    private var poseTarget = RigPose.STAND
+    var activity = Activity.IDLE; private set
+    /** Squash on landing after a jump or a fall, decays in about 0.3 s. */
+    var landing = 0f; private set
+    /** Legs swinging with inertia while she dangles (carried, hanging). */
+    val legSwingL = Spring(30f, 3.2f)
+    val legSwingR = Spring(30f, 3.6f)
+
+    /** Tail wagging after something nice happened (1 → 0 in about 1.5 s). */
+    var wag = 0f; private set
+    /** Ears perked up: she heard her name and listens. */
+    var listening = false
+
+    /** Joy: a little hop (squash) and a burst of tail wagging. */
+    fun joy() {
+        landing = max(landing, 0.09f)
+        wag = 1f
+    }
+
+    /** What she is doing now; [vy] = vertical speed in box sizes / s (negative = up). */
+    fun setActivity(a: Activity, vy: Float = 0f) {
+        if ((activity == Activity.JUMPING || activity == Activity.FALLING) && a != Activity.JUMPING && a != Activity.FALLING &&
+            a != Activity.DRAGGED && a != Activity.HANGING && a != Activity.CLIMBING) landing = 0.16f
+        activity = a
+        poseTarget = RigPose.forActivity(a, vy)
+    }
 
     private fun random(): Float {
         seed = (1664525L * seed + 1013904223L) and 0xFFFFFFFFL
@@ -192,17 +272,25 @@ class RigState {
             gazeTX = (random() - 0.5f) * 0.6f; gazeTY = (random() - 0.5f) * 0.4f
         }
         walk = mix(walk, if (walking) 1f else 0f, 1f - exp(-dt * 6f))
-        walkPhase += dt
+        walkPhase += dt * (1f + pose.run * 0.65f)
+        pose = pose.mix(poseTarget, 1f - exp(-dt * 9f))
+        landing *= exp(-dt * 9f)
+        wag *= exp(-dt * 1.8f)
         val want = (gazeX * 0.035f + sin(time * 0.82f) * 0.009f) * energy
         headVelocity += (want - head) * 70f * dt - headVelocity * 13f * dt
         head += headVelocity * dt
 
         val acc = bodyAccX.coerceIn(-30f, 30f) * 0.6f
-        pony.step(dt, sin(time * 1.65f) * 0.025f * energy, headVelocity * 9f + acc)
+        pony.step(dt, sin(time * 1.65f) * 0.025f * energy + pose.hair, headVelocity * 9f + acc)
         val twitch = max(0f, sin(time * 0.61f)).pow(18) * sin(time * 17f) * 0.04f * energy
-        earL.step(dt, -0.014f * sin(time * 2f) * energy + twitch, headVelocity * 4f + acc * 0.5f)
-        earR.step(dt, 0.014f * sin(time * 2f + 0.5f) * energy - twitch * 0.7f, headVelocity * 4f + acc * 0.5f)
-        tail.step(dt, (sin(time * 1.7f) * 0.065f + gazeX * 0.025f) * energy, acc * 0.8f)
+        val perk = if (listening) 0.07f else 0f
+        earL.step(dt, -0.014f * sin(time * 2f) * energy + twitch - pose.ears + perk, headVelocity * 4f + acc * 0.5f)
+        earR.step(dt, 0.014f * sin(time * 2f + 0.5f) * energy - twitch * 0.7f + pose.ears - perk, headVelocity * 4f + acc * 0.5f)
+        tail.step(dt, (sin(time * 1.7f) * 0.065f + gazeX * 0.025f) * energy + pose.tail + sin(time * 9f) * 0.3f * wag, acc * 0.8f)
+        // Dangling legs: a little pendulum of their own, pushed by the body's sideways motion.
+        val d = pose.dangle
+        legSwingL.step(dt, sin(time * 2.3f) * 0.05f * d, acc * 1.1f * d)
+        legSwingR.step(dt, sin(time * 2.3f + 1.1f) * 0.05f * d, acc * 1.25f * d)
     }
 
     companion object {
@@ -254,19 +342,31 @@ object RigDrawer {
         c.translate(box / 2f - ANCHOR_X * k, box * SpriteLayout.BASELINE - FEET * k)
         c.scale(k, k)
         val t = s.time; val e = s.energy
+        val pose = s.pose
         val breath = sin(t * 2.1f) * 2.6f * e
         val phase = t - s.gestureStart
         val env = s.envelope
         val walk = sin(s.walkPhase * 8f) * s.walk
-        c.translate(0f, breath - abs(walk) * 6f)
+        val stride = 1f + pose.run * 0.9f
+        // Whole body: squash/stretch on the feet (landing, jumping), lean around the hips.
+        val squash = (pose.squash + s.landing).coerceIn(-0.2f, 0.25f)
+        c.translate(ANCHOR_X, FEET); c.scale(1f + squash * 0.6f, 1f - squash); c.translate(-ANCHOR_X, -FEET)
+        c.translate(615f, 975f); c.rotate(pose.lean + walk * pose.run * 0.03f); c.translate(-615f, -975f)
+        c.translate(0f, breath - abs(walk) * 6f * stride)
+        val flail = pose.flail
+        val climb = pose.climb
+        val kickL = sin(t * 11f) * 0.25f * flail + sin(t * 5f) * 0.18f * climb
+        val kickR = -sin(t * 11f + 1.3f) * 0.25f * flail - sin(t * 5f) * 0.18f * climb
         part(c, m, "tail", s.tail.angle)
-        part(c, m, "legL", walk * .15f, 0f, -max(0f, walk) * 12f)
-        part(c, m, "legR", -walk * .15f, 0f, -max(0f, -walk) * 12f)
-        part(c, m, "armR", sin(t * 2.1f) * .012f * e - walk * .12f)
+        part(c, m, "legL", walk * .15f * stride + pose.legL + kickL + s.legSwingL.angle, 0f, -max(0f, walk) * 12f * stride - pose.tuck)
+        part(c, m, "legR", -walk * .15f * stride + pose.legR + kickR + s.legSwingR.angle, 0f, -max(0f, -walk) * 12f * stride - pose.tuck)
+        val reach = sin(t * 5f) * 0.24f * climb
+        val armSwing = 0.12f + pose.run * 0.3f
+        part(c, m, "armR", sin(t * 2.1f) * .012f * e - walk * armSwing + pose.armR - sin(t * 13f + 0.9f) * 0.35f * flail - reach)
         part(c, m, "torso", 0f, 0f, 0f, 1f, 1f + breath * .0008f)
         val waving = if (s.gesture == RigState.Gesture.WAVE) env * (1.55f + sin(phase * 10f) * .17f) else 0f
-        if (waving == 0f) part(c, m, "armL", walk * .12f - sin(t * 2.1f) * .012f * e)
-        var head = s.head
+        if (waving == 0f) part(c, m, "armL", walk * armSwing - sin(t * 2.1f) * .012f * e + pose.armL + sin(t * 13f) * 0.35f * flail - reach)
+        var head = s.head + pose.headTilt
         var hy = s.gazeY * 5f
         if (s.gesture == RigState.Gesture.NOD) hy += sin(phase * 7f) * 9f * env
         if (s.gesture == RigState.Gesture.SHAKE) head += sin(phase * 8f) * .065f * env

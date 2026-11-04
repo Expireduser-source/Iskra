@@ -22,6 +22,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -233,6 +234,7 @@ private fun AccessibilityWarning() {
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun MemoryScreen(modifier: Modifier) {
     val app = IskraApp.instance
@@ -305,9 +307,8 @@ private fun MemoryScreen(modifier: Modifier) {
         }
         if (clearing) Text(tr("Стираю данные…", "Erasing data…"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         backupMsg?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary) }
-        Row {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(enabled = !clearing, onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text(tr("💾 Сохранить копию", "💾 Save a backup")) }
-            Spacer(Modifier.size(8.dp))
             OutlinedButton(enabled = !clearing, onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text(tr("📂 Восстановить", "📂 Restore")) }
         }
         var autoState by remember { mutableStateOf(AutoBackup.describe(ctx)) }
@@ -317,16 +318,15 @@ private fun MemoryScreen(modifier: Modifier) {
             scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) }
         }
         Text(tr("🗓 Ежедневная копия: $autoState", "🗓 Daily backup: $autoState"), fontSize = 13.sp)
-        Row {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(enabled = !clearing, onClick = { treeLauncher.launch(null) }) { Text(if (AutoBackup.folder(ctx) == null) tr("Включить: выбрать папку", "Turn on: choose a folder") else tr("Другая папка", "Another folder")) }
             if (AutoBackup.folder(ctx) != null) {
                 TextButton(enabled = !clearing, onClick = { scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) } }) { Text(tr("Сейчас", "Now")) }
                 TextButton(enabled = !clearing, onClick = { AutoBackup.disable(ctx); autoState = AutoBackup.describe(ctx) }) { Text(tr("Выключить", "Turn off")) }
             }
         }
-        Row {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(enabled = !clearing, onClick = { app.chat.clearHistory { Diag.i("memory", tr("Переписка очищена владельцем", "Chat history cleared by the owner")) } }) { Text(tr("Очистить переписку", "Clear chat history")) }
-            Spacer(Modifier.size(8.dp))
             OutlinedButton(enabled = !clearing, onClick = { confirmWipe = true }) { Text(tr("Стереть всё", "Erase everything")) }
         }
     }

@@ -84,7 +84,7 @@ for code, t in T.items():
 <a class="btn" href="{APK}">{t['dl']}</a><a class="btn ghost" href="{REPO}">{t['src']}</a>
 <p class="small" style="margin-top:12px">{t['note']}</p>
 <div class="qr"><img src="{t['img']}qr-download.svg" alt="QR"><span class="small">{t['qr']}</span></div></div>
-<img class="char" src="{t['img']}iskra_wave.webp" alt="{'Iskra waving' if code == 'en' else 'Искра машет лапкой'}"></div>
+<img class="char" src="{t['img']}iskra-demo.webp" alt="{'Iskra waves, walks, jumps and wags her tail' if code == 'en' else 'Искра машет, идёт, прыгает и виляет хвостом'}"></div>
 <section><h2>{t['feat']}</h2><div class="grid">{cards}</div></section>
 <section><h2>{t['how']}</h2><ol class="steps">{steps}</ol></section>
 <section><h2>{t['faq']}</h2>{qa}</section>

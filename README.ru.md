@@ -1,4 +1,6 @@
 <p align="center"><img src="fastlane/metadata/android/ru-RU/images/featureGraphic.png" alt="Искра — котодевочка-компаньон на твоём экране" width="720"></p>
+<p align="center"><img src="docs/img/iskra-demo.webp" alt="Искра машет, идёт, прыгает и виляет хвостом" width="260"></p>
+
 
 <h1 align="center">Искра — котодевочка-компаньон для Android</h1>
 

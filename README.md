@@ -1,4 +1,6 @@
 <p align="center"><img src="fastlane/metadata/android/en-US/images/featureGraphic.png" alt="Iskra — a cat-girl companion on your screen" width="720"></p>
+<p align="center"><img src="docs/img/iskra-demo.webp" alt="Iskra waves, walks, jumps and wags her tail" width="260"></p>
+
 
 <h1 align="center">Iskra — your cat-girl companion for Android</h1>
 

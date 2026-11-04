@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -39,6 +40,7 @@ import ru.iskra.core.i18n.tr
 import ru.iskra.core.update.UpdateCheck
 
 /** «О приложении»: version, the GPL notice (no warranty, where the source is), third-party licenses, updates, sharing. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun AboutSection() {
     val ctx = LocalContext.current
@@ -62,7 +64,7 @@ fun AboutSection() {
         "Inside: Kotlin, kotlinx, OkHttp, AndroidX and Jetpack Compose, Material Icons (Apache-2.0); Vosk and its models (Apache-2.0); " +
             "JNA (Apache-2.0 / LGPL-2.1). Weather: Open-Meteo.com (data under CC BY 4.0).",
     ), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Row {
+    FlowRow {
         TextButton(onClick = { open(UpdateCheck.PROJECT) }) { Text(tr("Исходный код", "Source code")) }
         TextButton(onClick = { open("https://www.gnu.org/licenses/gpl-3.0.html") }) { Text(tr("Лицензия", "License")) }
         TextButton(onClick = { open(UpdateCheck.PROJECT + "/issues") }) { Text(tr("Сообщить о проблеме", "Report a problem")) }

@@ -15,8 +15,8 @@ android {
         applicationId = "ru.iskra.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.10.0"
+        versionCode = 20
+        versionName = "0.11.0"
         // Shown on the diagnostics screen: which CI run and commit this APK came from.
         buildConfigField("String", "CI_BUILD", "\"${System.getenv("GITHUB_RUN_NUMBER") ?: "local"}\"")
         buildConfigField("String", "GIT_SHA", "\"${System.getenv("GITHUB_SHA")?.take(7) ?: ""}\"")
