@@ -92,16 +92,18 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.hasExtra(EXTRA_TAB)) { requestedTab = intent.getIntExtra(EXTRA_TAB, 0); tabRequests++ }
+        if (intent.data?.host == "connected") { requestedTab = TAB_SETTINGS; tabRequests++ }
     }
 
     companion object {
         const val EXTRA_TAB = "tab"
+        const val TAB_SETTINGS = 2
         const val TAB_PERMISSIONS = 3
     }
 
     @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
-        requestedTab = intent.getIntExtra(EXTRA_TAB, 0)
+        requestedTab = if (intent?.data?.host == "connected") TAB_SETTINGS else intent.getIntExtra(EXTRA_TAB, 0)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
@@ -385,6 +387,7 @@ private fun SettingsScreen(modifier: Modifier) {
     var hasKey by remember { mutableStateOf(app.vault.hasKey()) }
     var saved by remember { mutableStateOf(false) }
     var diagnostics by rememberSaveable { mutableStateOf(false) }
+    val freeBrain by ru.iskra.app.data.FreeBrain.state.collectAsState()
     if (diagnostics) { DiagnosticsScreen(modifier) { diagnostics = false }; return }
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -398,6 +401,8 @@ private fun SettingsScreen(modifier: Modifier) {
                 "Команды телефона и «запомни» работают без облака.", "The API key is stored encrypted (Android Keystore) and is sent only to the chosen service. Messages, relevant memory notes and the mood go to the cloud only when you write. Phone commands and “remember” work without the cloud."),
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (s.preset == ProviderPreset.OFFLINE || !hasKey || freeBrain !is ru.iskra.app.data.FreeBrain.State.Idle)
+            FreeBrainCard(onConnected = { s = app.settings.load(); hasKey = app.vault.hasKey(); saved = true })
         ProviderPreset.entries.forEach { p ->
             RadioRow(s.preset == p, p.title) { s = s.copy(preset = p, baseUrl = p.baseUrl, model = p.defaultModel); saved = false }
         }
@@ -421,8 +426,8 @@ private fun SettingsScreen(modifier: Modifier) {
         }
         if (s.preset == ProviderPreset.OFFLINE) Text(
             tr("Сейчас у Искры нет «мозга»: она понимает только команды телефона. Чтобы она нормально разговаривала, " +
-                "выбери сервис и вставь ключ. Дешевле всего DeepSeek (доли копейки за реплику, оплата картой) " +
-                "или OpenRouter (много моделей через один ключ).", "Right now Iskra has no “brain”: she understands only phone commands. To really chat with her, choose a service and paste a key — or connect OpenRouter for free below. DeepSeek is the cheapest paid option (a fraction of a cent per reply)."),
+                "подключи OpenRouter бесплатно кнопкой выше — или выбери сервис и вставь свой ключ. Из платных дешевле всего DeepSeek " +
+                "(доли копейки за реплику).", "Right now Iskra has no “brain”: she understands only phone commands. To really chat with her, connect OpenRouter for free with the button above — or choose a service and paste your own key. DeepSeek is the cheapest paid option (a fraction of a cent per reply)."),
             fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary,
         )
         VoiceSection(s, onChange = { s = it; saved = false }, persist = { app.settings.save(s.copy(overlayEnabled = app.settings.load().overlayEnabled)) })

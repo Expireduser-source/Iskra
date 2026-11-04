@@ -144,8 +144,11 @@ class CompanionAgent(
             pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> AgentReply(Lines.offline(random), Emotion.NEUTRAL)
             else -> askModel(provider, text, state, sink).also { r ->
-                if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE)
+                if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE ||
+                    r.errorKind == LlmException.Kind.POLICY || r.errorKind == LlmException.Kind.MODEL)
                     cloudPause = (clock() + cloudPauseMs) to r.errorKind
+                // Free messages: OpenRouter resets the counter at midnight UTC.
+                if (r.errorKind == LlmException.Kind.FREE_QUOTA) cloudPause = nextUtcMidnight() to LlmException.Kind.FREE_QUOTA
                 // The owner's daily limit: no cloud until midnight (the meter refuses anyway, this just skips it).
                 if (r.errorKind == LlmException.Kind.LIMIT) cloudPause = nextMidnight() to LlmException.Kind.LIMIT
             }
@@ -170,7 +173,14 @@ class CompanionAgent(
     private fun nextMidnight(): Long = java.time.LocalDate.now().plusDays(1)
         .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
 
+    private fun nextUtcMidnight(): Long = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(1)
+        .atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+
     private fun pausedLine(kind: LlmException.Kind, minutes: Long): String {
+        if (kind == LlmException.Kind.FREE_QUOTA) return tr("Бесплатные сообщения на сегодня закончились — до завтра я без модели. " +
+            "Команды работают: будильник, таймер, заметки, напоминания, погода.",
+            "Today's free messages are used up — until tomorrow I'm without the model. Commands work: alarm, timer, notes, reminders, weather.")
+        if (kind == LlmException.Kind.POLICY || kind == LlmException.Kind.MODEL) return LlmException("", kind).userMessage()
         if (kind == LlmException.Kind.LIMIT) return tr("Сегодняшний лимит облака исчерпан — до завтра я без модели. " +
             "Команды работают: будильник, таймер, заметки, напоминания, погода. Лимит меняется в «Настройки → Экономия».", "Today's cloud limit is used up — until tomorrow I'm without the model. Commands work: alarm, timer, notes, reminders, weather. The limit is in “Settings → Economy”.")
         val why = if (kind == LlmException.Kind.BALANCE) tr("на счёте сервиса закончились деньги", "the service account is out of money") else tr("ключ API не подошёл", "the API key didn't work")

@@ -85,10 +85,17 @@ internal object Http {
 
     private val balanceHints = Regex("insufficient_quota|quota_exceeded|insufficient[_ ]credits|insufficient[_ ]funds|credit balance|balance is too low|payment required", RegexOption.IGNORE_CASE)
 
+    private val freeQuota = Regex("free-models-per-day|free model.*per day|per-day", RegexOption.IGNORE_CASE)
+    private val dataPolicy = Regex("data policy|privacy settings", RegexOption.IGNORE_CASE)
+    private val modelGone = Regex("not a valid model|model not found|no endpoints found for|model .* does not exist|is not available", RegexOption.IGNORE_CASE)
+
     fun kindFor(code: Int, body: String): LlmException.Kind = when {
         code == 402 || (code in 400..499 && balanceHints.containsMatchIn(body)) -> LlmException.Kind.BALANCE
         code == 401 || code == 403 -> LlmException.Kind.AUTH
+        code == 429 && freeQuota.containsMatchIn(body) -> LlmException.Kind.FREE_QUOTA
         code == 429 -> LlmException.Kind.RATE_LIMIT
+        code == 404 && dataPolicy.containsMatchIn(body) -> LlmException.Kind.POLICY
+        (code == 404 || code == 400) && modelGone.containsMatchIn(body) -> LlmException.Kind.MODEL
         code in 500..599 -> LlmException.Kind.SERVER
         else -> LlmException.Kind.BAD_RESPONSE
     }

@@ -94,6 +94,8 @@ class ChatController(private val app: IskraApp) {
                     CompanionBus.emit(AvatarCue.Thinking(false))
                 }
             }
+            // A free model that disappeared: pick another one for the next message.
+            if (reply.errorKind == ru.iskra.core.llm.LlmException.Kind.MODEL) ru.iskra.app.data.FreeBrain.repick()
             if (interactions.isCurrent(token)) deliver(reply, commandAt, stream)
         }
     }

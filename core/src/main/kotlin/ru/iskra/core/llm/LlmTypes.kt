@@ -54,7 +54,15 @@ class LlmException(
     val kind: Kind,
     cause: Throwable? = null,
 ) : Exception(message, cause) {
-    enum class Kind { AUTH, RATE_LIMIT, NETWORK, SERVER, BAD_RESPONSE, NOT_CONFIGURED, BALANCE, LIMIT }
+    enum class Kind {
+        AUTH, RATE_LIMIT, NETWORK, SERVER, BAD_RESPONSE, NOT_CONFIGURED, BALANCE, LIMIT,
+        /** OpenRouter: today's free messages are used up (the counter resets at midnight UTC). */
+        FREE_QUOTA,
+        /** OpenRouter: the account's privacy settings exclude every provider of this free model. */
+        POLICY,
+        /** The model no longer exists (free models come and go). */
+        MODEL,
+    }
 
     /** Message for the user in the current language. Never contains the API key. */
     fun userMessage(): String = when (kind) {
@@ -66,10 +74,19 @@ class LlmException(
         Kind.NOT_CONFIGURED -> tr("Облачная модель не настроена — я работаю в простом офлайн-режиме.", "The cloud model isn't set up — I'm working in simple offline mode.")
         Kind.BALANCE -> tr("На счёте сервиса модели закончились деньги или лимит. Пополни баланс. $OFFLINE", "The model service account is out of money or credits. Top it up. $OFFLINE")
         Kind.LIMIT -> tr("Сегодняшний лимит облака, который ты задал, исчерпан. До завтра отвечаю без модели. $OFFLINE", "The daily cloud limit you set is used up. Until tomorrow I answer without the model. $OFFLINE")
+        Kind.FREE_QUOTA -> tr("Бесплатные сообщения на сегодня закончились. До завтра отвечаю без модели. $OFFLINE",
+            "Today's free messages are used up. Until tomorrow I answer without the model. $OFFLINE")
+        Kind.POLICY -> tr("OpenRouter не даёт эту бесплатную модель из-за настроек приватности аккаунта: открой openrouter.ai/settings/privacy " +
+            "и разреши бесплатные модели (они могут учиться на переписке) — или выбери платную модель. $OFFLINE",
+            "OpenRouter won't serve this free model because of your account's privacy settings: open openrouter.ai/settings/privacy " +
+            "and allow free models (they may learn from the chat) — or choose a paid model. $OFFLINE")
+        Kind.MODEL -> tr("Эта модель больше недоступна. Нажми в настройках «Подключить бесплатно» ещё раз — я выберу другую. $OFFLINE",
+            "This model is no longer available. Tap “Connect for free” in Settings again — I'll pick another one. $OFFLINE")
     }
 
     /** Errors that will repeat on the next try: no point in asking again right away. */
-    val persistent get() = kind == Kind.AUTH || kind == Kind.BALANCE || kind == Kind.NOT_CONFIGURED || kind == Kind.LIMIT
+    val persistent get() = kind == Kind.AUTH || kind == Kind.BALANCE || kind == Kind.NOT_CONFIGURED || kind == Kind.LIMIT ||
+        kind == Kind.FREE_QUOTA || kind == Kind.POLICY || kind == Kind.MODEL
 
     private companion object {
         val OFFLINE get() = tr("Пока работаю без облака: будильники, таймеры, фонарик, приложения, заметки и напоминания — как обычно.", "For now I work without the cloud: alarms, timers, the flashlight, apps, notes and reminders work as usual.")

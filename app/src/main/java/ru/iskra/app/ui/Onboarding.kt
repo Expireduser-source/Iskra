@@ -145,8 +145,8 @@ fun Onboarding(onDone: () -> Unit) {
                         Title(tr("Мозг — по желанию", "A brain — if you want"))
                         Body(tr("Без подключения я понимаю команды: «поставь будильник на 7», «напомни через 10 минут позвонить маме», " +
                             "«запиши заметку: купить молоко», «какая погода», «удиви меня».", "Without a connection I understand commands: “set an alarm for 7”, “remind me in 10 minutes to call mom”, “note: buy milk”, “what's the weather”, “surprise me”."))
-                        Body(tr("Чтобы свободно болтать, в «Настройках» можно подключить модель ИИ по ключу (DeepSeek, OpenRouter и другие). " +
-                            "Ключ хранится зашифрованным и уходит только выбранному сервису.", "To chat freely, connect an AI model in “Settings”: free with one tap through OpenRouter, or with your own key (DeepSeek, OpenAI and others). The key is stored encrypted and goes only to the chosen service."))
+                        Body(tr("Чтобы свободно болтать, подключи в «Настройках» модель ИИ: бесплатно одной кнопкой через OpenRouter или своим ключом " +
+                            "(DeepSeek, OpenAI и другие). Ключ хранится зашифрованным и уходит только выбранному сервису.", "To chat freely, connect an AI model in “Settings”: free with one tap through OpenRouter, or with your own key (DeepSeek, OpenAI and others). The key is stored encrypted and goes only to the chosen service."))
                         if (DeviceHelper.vendor != Vendor.NEAR_STOCK) Hint(tr("${DeviceHelper.vendor.title}: прошивка иногда выгружает приложения в фоне. " +
                             "На вкладке «Разрешения» есть короткая инструкция именно для твоего телефона.", "${DeviceHelper.vendor.title}: the firmware sometimes unloads apps in the background. The “Permissions” tab has a short guide for exactly your phone."))
                     }
