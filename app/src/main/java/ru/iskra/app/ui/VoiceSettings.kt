@@ -18,6 +18,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,7 +46,9 @@ import kotlinx.coroutines.launch
 import ru.iskra.app.IskraApp
 import ru.iskra.app.data.AppSettings
 import ru.iskra.app.data.AvatarLook
-import ru.iskra.app.data.FpsMode
+import ru.iskra.app.diag.Diag
+import ru.iskra.app.system.DeviceHelper
+import ru.iskra.core.power.EconomyMode
 import ru.iskra.app.data.TtsEngine
 import ru.iskra.app.overlay.FrameStats
 import ru.iskra.app.voice.SpeechModel
@@ -62,11 +67,27 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun Hint(text: String) = Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
+/** The whole row is the switch: one big touch target, and TalkBack reads the label with the state. */
 @Composable
-private fun SwitchRow(checked: Boolean, label: String, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
+internal fun SwitchRow(checked: Boolean, label: String, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+        .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
         Spacer(Modifier.size(8.dp)); Text(label)
+    }
+}
+
+/** A radio choice whose label is part of the touch target and of the TalkBack announcement. */
+@Composable
+internal fun RadioRow(selected: Boolean, label: String, hint: String? = null, onClick: () -> Unit) {
+    Row(Modifier.fillMaxWidth().selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+        .padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+        RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.size(8.dp))
+        Column {
+            Text(label)
+            if (hint != null) Text(hint, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
@@ -74,6 +95,7 @@ private fun SwitchRow(checked: Boolean, label: String, enabled: Boolean = true, 
 @Composable
 fun VoiceSection(s: AppSettings, onChange: (AppSettings) -> Unit, persist: () -> Unit) {
     val app = IskraApp.instance
+    val ctx = LocalContext.current
     var key by remember { mutableStateOf("") }
     var hasKey by remember { mutableStateOf(app.ttsVault.hasKey()) }
     val error by app.speaker.lastError.collectAsState()
@@ -82,12 +104,14 @@ fun VoiceSection(s: AppSettings, onChange: (AppSettings) -> Unit, persist: () ->
     Section("Голос") {
         SwitchRow(s.ttsEnabled, "Озвучивать ответы") { onChange(s.copy(ttsEnabled = it)) }
         TtsEngine.entries.forEach { e ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = s.ttsEngine == e, onClick = { onChange(s.copy(ttsEngine = e, ttsVoice = "", ttsModel = "")) })
-                Text(e.title)
-            }
+            RadioRow(s.ttsEngine == e, e.title) { onChange(s.copy(ttsEngine = e, ttsVoice = "", ttsModel = "")) }
         }
         Hint(s.ttsEngine.note)
+        if (s.ttsEngine == TtsEngine.SYSTEM && app.speaker.systemVoiceMissing) {
+            Text("В телефоне нет русского голоса, поэтому Искра молчит. Установи его в настройках синтеза речи " +
+                "(например, «Синтезатор речи Google» → русский).", fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary)
+            OutlinedButton(onClick = { DeviceHelper.openTtsSettings(ctx) }) { Text("Открыть настройки голоса") }
+        }
         if (s.ttsEngine != TtsEngine.SYSTEM) {
             Hint("В сервис голоса уходит только текст ответа Искры — не твои сообщения и не память.")
             if (s.ttsEngine == TtsEngine.CUSTOM) OutlinedTextField(
@@ -179,43 +203,50 @@ fun EarSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
         SwitchRow(s.followUp, "Продолжать разговор без имени (6 с после ответа)") { onChange(s.copy(followUp = it)) }
         SwitchRow(s.economicalEar, "Экономный слух: в тишине не распознавать, в ожидании слушать только имя") { onChange(s.copy(economicalEar = it)) }
         SwitchRow(s.listenScreenOff, "Слушать и при выключенном экране") { onChange(s.copy(listenScreenOff = it)) }
+        SwitchRow(s.voiceInputOffline, "Микрофон в чате — тоже только на телефоне", enabled = ready || s.voiceInputOffline) {
+            onChange(s.copy(voiceInputOffline = it))
+        }
+        Hint("Системное распознавание (обычно Google) может отправлять звук на сервер. С этим переключателем чат " +
+            "распознаёт речь той же моделью, что и слух. На телефонах без сервисов Google так работает всегда.")
         Hint("Скажи «Искра, стоп», чтобы прервать ответ. Тап по Искре во время речи — тоже замолчит.")
     }
 }
 
-/** Smoothness and how restless she is. */
+/** «Экономия», look, smoothness and how restless she is. */
 @Composable
 fun MotionSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
+    val ctx = LocalContext.current
     var hz by remember { mutableIntStateOf(FrameStats.hz) }
-    LaunchedEffect(Unit) { while (true) { hz = FrameStats.hz; delay(1000) } }
+    var now by remember { mutableStateOf(Diag.economyState) }
+    LaunchedEffect(Unit) { while (true) { hz = FrameStats.hz; now = Diag.economyState; delay(1000) } }
+    val systemCalm = remember { DeviceHelper.animationsOff(ctx) }
+    Section("Экономия") {
+        EconomyMode.entries.forEach { m -> RadioRow(s.economy == m, m.title, m.hint) { onChange(s.copy(economy = m)) } }
+        Hint("Сейчас: $now")
+        Hint(if (hz > 0) "Экран отдаёт Искре ~$hz кадров/с." else "Частота появится, когда Искра будет на экране.")
+        Hint("Телефон: ${DeviceHelper.deviceClass(ctx).title}. Расход батареи за час — в «Диагностике», строка «Расход в покое».")
+    }
     Section("Движение") {
         Text("Вид")
-        AvatarLook.entries.forEach { m ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = s.avatarLook == m, onClick = { onChange(s.copy(avatarLook = m)) })
-                Text(m.title)
-            }
+        AvatarLook.entries.forEach { m -> RadioRow(s.avatarLook == m, m.title) { onChange(s.copy(avatarLook = m)) } }
+        SwitchRow(s.calmMotion || systemCalm, "Спокойные движения (не гуляет по экрану)", enabled = !systemCalm) {
+            onChange(s.copy(calmMotion = it))
         }
-        Text("Плавность")
-        FpsMode.entries.forEach { m ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = s.fpsMode == m, onClick = { onChange(s.copy(fpsMode = m)) })
-                Text(m.title)
-            }
-        }
-        Hint(if (hz > 0) "Сейчас экран отдаёт Искре ~$hz кадров/с. HyperOS сама снижает частоту в некоторых приложениях и при экономии энергии." else "Частота появится, когда Искра будет на экране.")
-        Hint("Когда Искра стоит на месте, она перерисовывается 30 раз в секунду (в «Экономии» — 24): так меньше тратится батарея. В движении — с выбранной частотой. Расход батареи — в Диагностике.")
-        SwitchRow(s.wander, "Живёт своей жизнью (гуляет, прыгает, лазает)") { onChange(s.copy(wander = it)) }
-        if (s.wander) {
+        if (systemCalm) Hint("В Android выключены анимации — Искра двигается спокойно, пока они выключены.")
+        SwitchRow(s.wander, "Живёт своей жизнью (гуляет, прыгает, лазает)", enabled = !(s.calmMotion || systemCalm)) { onChange(s.copy(wander = it)) }
+        if (s.wander && !(s.calmMotion || systemCalm)) {
             Text("Непоседливость")
             Row(verticalAlignment = Alignment.CenterVertically) {
                 listOf("спокойная", "обычная", "шустрая").forEachIndexed { i, label ->
-                    RadioButton(selected = s.liveliness == i, onClick = { onChange(s.copy(liveliness = i)) })
-                    Text(label, fontSize = 13.sp)
+                    Row(Modifier.weight(1f).selectable(s.liveliness == i, role = Role.RadioButton) { onChange(s.copy(liveliness = i)) },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = s.liveliness == i, onClick = null)
+                        Text(label, fontSize = 13.sp)
+                    }
                 }
             }
             Hint("Прыгает, забирается на край экрана и висит, ползает по верхнему краю, убегает за экран и выглядывает. " +
-                "Если бросить её в край — зацепится.")
+                "Если бросить её в край — зацепится. В «Батарее» она всегда спокойная.")
         }
     }
 }
@@ -251,10 +282,7 @@ fun SkillsSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
     }
     Section("Сама заговаривает") {
         ru.iskra.core.skills.ProactiveFrequency.entries.forEach { f ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = s.proactive == f, onClick = { onChange(s.copy(proactive = f)) })
-                Text(f.title)
-            }
+            RadioRow(s.proactive == f, f.title) { onChange(s.copy(proactive = f)) }
         }
         if (s.proactive != ru.iskra.core.skills.ProactiveFrequency.OFF) {
             Row(verticalAlignment = Alignment.CenterVertically) {

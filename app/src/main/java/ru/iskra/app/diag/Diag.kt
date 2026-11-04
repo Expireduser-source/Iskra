@@ -27,6 +27,8 @@ object Diag {
     /** Runtime states shown on the diagnostics screen, updated by the services themselves. */
     @Volatile var overlayState: String = "не запущен"
     @Volatile var earState: String = "выключен"
+    /** The economy plan the overlay applies right now (Settings → «Экономия», auto switches). */
+    @Volatile var economyState: String = "Искра не на экране"
 
     fun init(ctx: Context, knownSecrets: () -> Collection<String>) {
         secrets = knownSecrets

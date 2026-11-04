@@ -32,7 +32,10 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
@@ -44,9 +47,14 @@ import ru.iskra.core.persona.Emotion
 import ru.iskra.app.R
 import ru.iskra.app.data.AppSettings
 import ru.iskra.app.data.AvatarLook
-import ru.iskra.app.data.FpsMode
 import ru.iskra.app.diag.PowerWatch
+import ru.iskra.core.power.EconomyPlan
+import ru.iskra.core.power.EconomyPolicy
+import ru.iskra.core.power.RefreshPolicy
+import ru.iskra.core.skills.MomentLines
+import ru.iskra.core.skills.Moments
 import ru.iskra.core.skills.ProactiveFrequency
+import ru.iskra.core.skills.WeatherClient
 import ru.iskra.core.skills.ProactivePolicy
 import ru.iskra.core.skills.ProactiveState
 import ru.iskra.core.skills.ProactiveTrigger
@@ -91,9 +99,28 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private var unlockedSince: Long? = null
     private val proactiveCheck = Runnable { checkProactive() }
     private val proactiveTick = object : Runnable {
-        override fun run() { checkProactive(); handler.postDelayed(this, 3 * 60_000L) }
+        override fun run() { applyEconomy("заряд изменился"); checkProactive(); handler.postDelayed(this, 3 * 60_000L) }
     }
     private var settings = AppSettings()
+
+    /** «Экономия» as applied now; re-resolved on power events, screen on and every proactive tick. */
+    private var plan: EconomyPlan? = null
+    /** Highest refresh mode at the current resolution, or null if the screen has only ~60 Hz. */
+    private var highMode: Display.Mode? = null
+    private var movingNow = false
+    private val weather by lazy { WeatherClient() }
+
+    private val powerReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_POWER_CONNECTED) onCharging()
+            applyEconomy(when (intent.action) {
+                PowerManager.ACTION_POWER_SAVE_MODE_CHANGED -> "экономия энергии Android"
+                Intent.ACTION_BATTERY_LOW -> "низкий заряд"
+                Intent.ACTION_POWER_CONNECTED -> "зарядка подключена"
+                else -> "питание"
+            })
+        }
+    }
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -106,6 +133,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
                 Intent.ACTION_SCREEN_ON -> {
                     screenOn = true; screenOnSince = System.currentTimeMillis()
                     unlockedSince = screenOnSince.takeUnless { isScreenLocked() }
+                    applyEconomy("экран включён")
                     avatar?.start(); PowerWatch.sample("экран включён")
                 }
                 Intent.ACTION_USER_PRESENT -> {
@@ -211,7 +239,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private fun syncEar() {
         val want = wantsEar() && micInForeground
         if (want && ear == null) {
-            ear = VoiceEar(this, settings.wakeNameList, settings.followUp, this, economical = settings.economicalEar).also { it.start() }
+            ear = VoiceEar(this, settings.wakeNameList, settings.followUp, this,
+                economical = settings.economicalEar || plan?.forceEconomicalEar == true).also { it.start() }
             if (ear?.isRunning == true) Diag.i("ear", "Слух включён")
         } else if (!want && ear != null) {
             ear?.stop(); ear = null
@@ -291,14 +320,56 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         }
     }
 
-    /** Pick the display mode for the chosen smoothness (same resolution, highest / 60 Hz refresh). */
-    private fun preferredMode(): Display.Mode? {
+    /** The highest refresh rate at the current resolution, if the screen has more than ~60 Hz. */
+    private fun highestMode(): Display.Mode? {
         val display = (getSystemService(DISPLAY_SERVICE) as DisplayManager).getDisplay(Display.DEFAULT_DISPLAY) ?: return null
         val cur = display.mode
-        val same = display.supportedModes.filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
-        return when (settings.fpsMode) {
-            FpsMode.AUTO -> same.maxByOrNull { it.refreshRate }
-            else -> same.minByOrNull { kotlin.math.abs(it.refreshRate - 60f) }
+        return display.supportedModes
+            .filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+            .maxByOrNull { it.refreshRate }?.takeIf { it.refreshRate > 61f }
+    }
+
+    /**
+     * The overlay's display vote applies to the whole screen: asking for 120 Hz while she stands still
+     * kept every app at 120 Hz. Now the vote follows [RefreshPolicy]; no vote = the system decides.
+     */
+    private fun applyRefresh() {
+        val v = avatar ?: return
+        val lp = params ?: return
+        val want = when (plan?.refresh) {
+            RefreshPolicy.ALWAYS_HIGH -> highMode
+            RefreshPolicy.HIGH_WHILE_MOVING -> highMode.takeIf { movingNow }
+            else -> null
+        }
+        val id = want?.modeId ?: 0
+        val rate = want?.refreshRate ?: 0f
+        if (lp.preferredDisplayModeId == id && lp.preferredRefreshRate == rate) return
+        lp.preferredDisplayModeId = id; lp.preferredRefreshRate = rate
+        try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
+    }
+
+    override fun onMotionChanged(moving: Boolean) {
+        movingNow = moving
+        applyRefresh()
+    }
+
+    /** Resolves «Экономия» for the phone's state now and applies what changed. */
+    private fun applyEconomy(why: String?) {
+        val p = EconomyPolicy.resolve(settings.economy, DeviceHelper.powerState(this), DeviceHelper.deviceClass(this))
+        val old = plan
+        plan = p
+        Diag.economyState = p.describe()
+        if (old == null || old.mode != p.mode) Diag.i("power", "Экономия: ${p.describe()}" + (why?.let { " — $it" } ?: ""))
+        avatar?.let { v -> v.movingFps = p.movingFps; v.idleFps = p.idleFps; v.sleepFps = p.sleepFps }
+        avatar?.brain?.let { b ->
+            val calm = settings.calmMotion || DeviceHelper.animationsOff(this)
+            b.wanderEnabled = settings.wander && !calm
+            b.liveliness = minOf(settings.liveliness, p.maxLiveliness)
+        }
+        applyRefresh()
+        // Economical hearing forced on/off: restart the ear with the new mode.
+        if (old != null && old.forceEconomicalEar != p.forceEconomicalEar && ear != null && !settings.economicalEar) {
+            ear?.stop(); ear = null; syncEar()
         }
     }
 
@@ -346,16 +417,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             gravity = Gravity.TOP or Gravity.START
             x = brain.x.toInt(); y = brain.y.toInt()
             if (Build.VERSION.SDK_INT >= 28) layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            preferredMode()?.let { preferredDisplayModeId = it.modeId; preferredRefreshRate = it.refreshRate }
         }
-        val view = AvatarView(this, brain, sizePx, this, createRenderer()).apply {
-            // Standing still: 24–30 fps is enough for breathing and blinking and saves battery.
-            when (settings.fpsMode) {
-                FpsMode.AUTO -> { movingFps = 0; idleFps = 30 }
-                FpsMode.HZ60 -> { movingFps = 60; idleFps = 30 }
-                FpsMode.ECO -> { movingFps = 30; idleFps = 24 }
-            }
-        }
+        val view = AvatarView(this, brain, sizePx, this, createRenderer())
         try {
             wm.addView(view, lp)
         } catch (e: Exception) {
@@ -365,9 +428,11 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             stopSelf(); return
         }
         Diag.overlayState = "на экране"
-        Diag.i("overlay", "Искра на экране, ${sizePx}px, вид ${lookName}, режим кадров ${settings.fpsMode.name}")
+        Diag.i("overlay", "Искра на экране, ${sizePx}px, вид ${lookName}, экономия ${settings.economy.name}")
         PowerWatch.start(this) { lookName }
         avatar = view; params = lp
+        highMode = highestMode()
+        applyEconomy(null) // frame rates, calm motion and the display vote before the first frame
         view.start()
         createBubble()
         handler.postDelayed(proactiveTick, 60_000)
@@ -376,6 +441,11 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_USER_PRESENT)
         }
         ContextCompat.registerReceiver(this, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        val power = IntentFilter().apply {
+            addAction(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED); addAction(Intent.ACTION_BATTERY_LOW)
+            addAction(Intent.ACTION_BATTERY_OKAY); addAction(Intent.ACTION_POWER_CONNECTED); addAction(Intent.ACTION_POWER_DISCONNECTED)
+        }
+        ContextCompat.registerReceiver(this, powerReceiver, power, ContextCompat.RECEIVER_NOT_EXPORTED)
 
         val app = IskraApp.instance
         scope.launch {
@@ -424,6 +494,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             background = GradientDrawable().apply { cornerRadius = 18 * resources.displayMetrics.density; setColor(Color.parseColor("#E62A1F3A")) }
             visibility = View.GONE
             maxLines = 4
+            // Without voice, TalkBack reads her lines aloud (with voice it would say them twice).
+            if (!settings.ttsEnabled) accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
@@ -521,15 +593,51 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val next = policy.record(trigger, now, ms, st)
         prefs.edit().putString("day", next.day).putInt("count", next.countToday).putLong("last", next.lastAtMs)
             .putString("morning", next.morningDay).putString("evening", next.eveningDay).apply()
-        val line = app.phrases.proactive(trigger)
+        val base = app.phrases.proactive(trigger)
+        if (trigger != ProactiveTrigger.MORNING) { deliverProactive(trigger, base, next.countToday); return }
+        // Morning: the weather in the owner's city and today's reminders, only if known (≤ 3 s wait).
+        scope.launch {
+            val w = if (s.weatherCity.isBlank()) null else withTimeoutOrNull(3_000) {
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        val place = app.settings.weatherPlace() ?: weather.geocode(s.weatherCity)?.also { app.settings.saveWeatherPlace(it) }
+                        place?.let { Moments.weatherNow(weather.forecast(it)) }
+                    }
+                }.getOrNull()
+            }
+            val end = java.time.LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val today = runCatching { app.reminders.pending().count { it.atMs < end } }.getOrDefault(0)
+            deliverProactive(trigger, Moments.morning(base, w, today), next.countToday)
+            Diag.i("proactive", "Утренняя сводка: погода ${if (w != null) "есть" else "нет"}, напоминаний $today")
+        }
+    }
+
+    private fun deliverProactive(trigger: ProactiveTrigger, line: String, countToday: Int) {
+        val s = settings
+        val app = IskraApp.instance
         val emotion = if (trigger == ProactiveTrigger.EVENING) Emotion.SLEEPY else Emotion.HAPPY
         CompanionBus.emit(AvatarCue.Feel(emotion))
         CompanionBus.emit(AvatarCue.Say(line))
         avatar?.brain?.wave()
         val music = (getSystemService(AUDIO_SERVICE) as android.media.AudioManager).isMusicActive
-        val voice = s.proactiveVoice && s.ttsEnabled && !music
+        val voice = s.proactiveVoice && plan?.proactiveVoice != false && s.ttsEnabled && !music
         if (voice) app.speaker.speak(line, emotion)
-        Diag.i("proactive", "Сама заговорила: ${trigger.name}${if (voice) ", голосом" else ", облачком"} (${next.countToday} за день)")
+        Diag.i("proactive", "Сама заговорила: ${trigger.name}${if (voice) ", голосом" else ", облачком"} ($countToday за день)")
+    }
+
+    /** Plugged in: a short line in the bubble, at most once in 3 h, within the proactive limits. */
+    private fun onCharging() {
+        val s = settings
+        val app = IskraApp.instance
+        val prefs = getSharedPreferences("proactive", MODE_PRIVATE)
+        val now = System.currentTimeMillis()
+        val quiet = ProactivePolicy(s.proactive, s.quietFrom, s.quietTo).isQuiet(java.time.LocalTime.now().hour)
+        val busy = avatar == null || app.speaker.speaking.value || app.chat.busy.value || MicArbiter.busy.value
+        if (!Moments.charging(now, prefs.getLong("charging", 0L), s.proactive, quiet, screenOn && !isScreenLocked(), busy)) return
+        prefs.edit().putLong("charging", now).apply()
+        CompanionBus.emit(AvatarCue.Feel(Emotion.HAPPY))
+        CompanionBus.emit(AvatarCue.Say(MomentLines.charging(app.phrases)))
+        Diag.i("proactive", "Реакция на зарядку (облачком)")
     }
 
     override fun onTap() {
@@ -545,6 +653,12 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    override fun onHide() {
+        Diag.i("overlay", "Убрана с экрана через спецвозможности")
+        IskraApp.instance.settings.let { it.save(it.load().copy(overlayEnabled = false)) }
+        stopSelf()
+    }
+
     override fun onDragFinished(flung: Boolean) =
         IskraApp.instance.chat.react(if (flung) MoodEvent.Flung else MoodEvent.Dragged)
 
@@ -552,6 +666,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         super.onConfigurationChanged(newConfig)
         readScreen()
         avatar?.brain?.resize(screenW.toFloat(), (screenH - navBarGuess()).toFloat())
+        bubble?.maxWidth = (screenW * 0.7f).toInt()
+        highMode = highestMode(); applyRefresh()
     }
 
     override fun onDestroy() {
@@ -564,6 +680,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         scope.cancel()
         handler.removeCallbacksAndMessages(null)
         runCatching { unregisterReceiver(screenReceiver) }
+        runCatching { unregisterReceiver(powerReceiver) }
         avatar?.let { it.stop(); runCatching { wm.removeView(it) } }
         bubble?.let { runCatching { wm.removeView(it) } }
         avatar = null; bubble = null

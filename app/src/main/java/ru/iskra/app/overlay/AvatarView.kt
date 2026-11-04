@@ -8,9 +8,12 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
+import androidx.core.view.ViewCompat
+import androidx.core.view.accessibility.AccessibilityNodeInfoCompat.AccessibilityActionCompat
 import ru.iskra.core.avatar.Activity
 import ru.iskra.core.avatar.AvatarBrain
 import ru.iskra.core.avatar.AvatarPose
+import ru.iskra.core.power.MotionVote
 import kotlin.math.abs
 import kotlin.math.hypot
 
@@ -38,12 +41,19 @@ class AvatarView(
         fun onDoubleTap()
         fun onLongPress()
         fun onDragFinished(flung: Boolean)
+        /** She started or stopped moving (debounced): the display refresh vote follows this. */
+        fun onMotionChanged(moving: Boolean) {}
+        /** TalkBack action «Убрать с экрана». */
+        fun onHide() {}
     }
 
     /** Max frames per second while moving; 0 = every vsync (the display's refresh rate). */
     var movingFps = 0
     /** Max frames per second while standing still. */
     var idleFps = 30
+    /** Max frames per second while she sleeps. */
+    var sleepFps = 10
+    private val motion = MotionVote()
 
     var offsetX = 0f
     var offsetY = 0f
@@ -71,7 +81,17 @@ class AvatarView(
     })
 
     init {
-        contentDescription = "Искра — анимированный персонаж. Нажми, чтобы поговорить; удерживай для меню."
+        contentDescription = "Искра, анимированный персонаж"
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+        // TalkBack users cannot drag or double-tap a moving character: the same things as actions.
+        ViewCompat.replaceAccessibilityAction(this, AccessibilityActionCompat.ACTION_CLICK, "поговорить") { _, _ ->
+            host.onTap(); brain.tapped(); true
+        }
+        ViewCompat.replaceAccessibilityAction(this, AccessibilityActionCompat.ACTION_LONG_CLICK, "открыть приложение") { _, _ ->
+            host.onLongPress(); true
+        }
+        ViewCompat.addAccessibilityAction(this, "Погладить") { _, _ -> brain.tapped(); host.onDoubleTap(); true }
+        ViewCompat.addAccessibilityAction(this, "Убрать с экрана") { _, _ -> host.onHide(); true }
     }
 
     fun start() {
@@ -105,9 +125,11 @@ class AvatarView(
         }
         lastVsyncNs = frameTimeNanos
 
+        val full = dragging || renderer.wantsFullRate(pose)
+        if (motion.update(full, frameTimeNanos / 1_000_000L)) host.onMotionChanged(motion.moving)
         val fps = when {
-            dragging || renderer.wantsFullRate(pose) -> movingFps
-            pose.activity == Activity.SLEEPING -> 10
+            full -> movingFps
+            pose.activity == Activity.SLEEPING -> sleepFps
             else -> idleFps
         }
         // 1.5 ms slack so vsync jitter does not make us skip every other frame.
