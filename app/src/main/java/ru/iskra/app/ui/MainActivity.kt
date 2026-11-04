@@ -47,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -142,7 +143,7 @@ private fun CrashBanner() {
     val ctx = LocalContext.current
     val prefs = remember { ctx.getSharedPreferences("crash_seen", android.content.Context.MODE_PRIVATE) }
     val last = remember { Diag.crashTimes().maxOrNull() ?: 0L }
-    var seen by remember { mutableStateOf(prefs.getLong("seen", 0L)) }
+    var seen by remember { mutableLongStateOf(prefs.getLong("seen", 0L)) }
     if (last <= seen) return
     Card(Modifier.fillMaxWidth().padding(8.dp)) {
         Column(Modifier.padding(12.dp)) {

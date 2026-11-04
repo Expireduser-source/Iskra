@@ -115,7 +115,7 @@ class VoiceEar(
         var audio: AudioRecord? = null
         try {
             LibVosk.setLogLevel(LogLevel.WARNINGS)
-            model = Model(SpeechModel.dir(context).absolutePath)
+            model = VoskModels.acquire(context)
             val fullRec = Recognizer(model, RATE.toFloat()).also { full = it }
             val wakeRec: Recognizer? = if (!economical) null else try {
                 Recognizer(model, RATE.toFloat(), wakeGrammar(names))
@@ -227,7 +227,7 @@ class VoiceEar(
             runCatching { audio?.release() }
             runCatching { wake?.close() }
             runCatching { full?.close() }
-            runCatching { model?.close() }
+            if (model != null) VoskModels.release()
         }
     }
 

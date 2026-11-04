@@ -56,7 +56,7 @@ class OfflineDictation(
         var rec: Recognizer? = null
         var audio: AudioRecord? = null
         try {
-            model = Model(SpeechModel.dir(context).absolutePath)
+            model = VoskModels.acquire(context) // shared with the ear: no second copy in memory
             val r = Recognizer(model, RATE.toFloat()).also { rec = it }
             val minBuf = AudioRecord.getMinBufferSize(RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
             val a = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, RATE, AudioFormat.CHANNEL_IN_MONO,
@@ -82,7 +82,7 @@ class OfflineDictation(
             main.post { Diag.e("voice", "Офлайн-диктовка не запустилась", e) }
         } finally {
             runCatching { audio?.stop() }; runCatching { audio?.release() }
-            runCatching { rec?.close() }; runCatching { model?.close() }
+            runCatching { rec?.close() }; if (model != null) VoskModels.release()
         }
         val result = text.trim()
         main.post {
