@@ -37,6 +37,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
@@ -369,10 +370,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             b.liveliness = minOf(settings.liveliness, p.maxLiveliness)
         }
         applyRefresh()
-        // Economical hearing forced on/off: restart the ear with the new mode.
-        if (old != null && old.forceEconomicalEar != p.forceEconomicalEar && ear != null && !settings.economicalEar) {
-            ear?.stop(); ear = null; syncEar()
-        }
+        // A running ear keeps its mode: restarting it at once could race the old thread for the microphone.
+        // The forced economical mode applies the next time the ear starts.
     }
 
     /** Name of the look actually drawn (after a fallback it differs from the setting). */
@@ -607,6 +606,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
                     }
                 }.getOrNull()
             }
+            if (!isActive || avatar == null) return@launch // the service stopped while waiting for the weather
             val end = java.time.LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
             val today = runCatching { app.reminders.pending().count { it.atMs < end } }.getOrDefault(0)
             deliverProactive(trigger, Moments.morning(base, w, today), next.countToday)
