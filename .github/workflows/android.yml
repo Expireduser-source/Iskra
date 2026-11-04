@@ -27,8 +27,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # GitHub's ubuntu runners ship the Android SDK (ANDROID_HOME); missing platforms are auto-installed by AGP.
-      - name: Test core and build debug APK
-        run: ./gradlew --no-daemon :core:test :app:assembleDebug
+      - name: Test core, build debug APK, lint
+        run: ./gradlew --no-daemon :core:test :app:assembleDebug :app:lintDebug
 
       - uses: actions/upload-artifact@v4
         with:
@@ -40,6 +40,13 @@ jobs:
         with:
           name: test-reports
           path: core/build/reports/tests/
+
+      # Lint does not fail the build; the text report is read when reviewing compatibility (old Android, OEMs).
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.*
 
       # Every push to main publishes the APK as a pre-release, so it can be
       # downloaded straight from the phone: Releases -> latest -> app-debug.apk
