@@ -1,15 +1,29 @@
 package ru.iskra.core.power
 
-/** The owner's choice in Settings → «Экономия». [AUTO] picks [BALANCED] or [BATTERY] from the phone's state. */
-enum class EconomyMode(val title: String, val hint: String) {
-    AUTO("Авто (рекомендуется)",
-        "Сбалансированный, а при экономии энергии Android, заряде до 20 % или на слабом телефоне — как «Батарея»."),
-    MAX("Максимум плавности",
-        "Пока Искра на экране, весь экран работает на самой высокой частоте (до 120 Гц). Тратит больше всего."),
-    BALANCED("Сбалансированный",
-        "Высокая частота экрана — только пока она двигается. В покое — 30 кадров/с, а частоту выбирает система."),
-    BATTERY("Батарея",
-        "30 кадров/с в движении, 20 в покое, спокойный характер, экономный слух, сама заговаривает только облачком."),
+import ru.iskra.core.i18n.tr
+
+/** The owner's choice in Settings → «Экономия» / “Economy”. [AUTO] picks [BALANCED] or [BATTERY] from the phone's state. */
+enum class EconomyMode(private val ru: Pair<String, String>, private val en: Pair<String, String>) {
+    AUTO("Авто (рекомендуется)" to
+        "Сбалансированный, а при экономии энергии Android, заряде до 20 % или на слабом телефоне — как «Батарея».",
+        "Auto (recommended)" to
+        "Balanced, and like “Battery” when Android battery saver is on, the battery is at 20 % or less, or the phone is weak."),
+    MAX("Максимум плавности" to
+        "Пока Искра на экране, весь экран работает на самой высокой частоте (до 120 Гц). Тратит больше всего.",
+        "Maximum smoothness" to
+        "While Iskra is on screen, the whole screen runs at its highest refresh rate (up to 120 Hz). Uses the most battery."),
+    BALANCED("Сбалансированный" to
+        "Высокая частота экрана — только пока она двигается. В покое — 30 кадров/с, а частоту выбирает система.",
+        "Balanced" to
+        "High refresh rate only while she moves. When idle — 30 fps, and the system picks the refresh rate."),
+    BATTERY("Батарея" to
+        "30 кадров/с в движении, 20 в покое, спокойный характер, экономный слух, сама заговаривает только облачком.",
+        "Battery" to
+        "30 fps while moving, 20 when idle, calm character, economical hearing, speaks up on her own only in a bubble."),
+    ;
+
+    val title: String get() = tr(ru.first, en.first)
+    val hint: String get() = tr(ru.second, en.second)
 }
 
 /** What the overlay window asks of the display. Its vote applies to the whole screen, not only to her. */
@@ -25,7 +39,11 @@ enum class RefreshPolicy {
 /** Phone state that [EconomyMode.AUTO] reacts to. [batteryPct] null = unknown. */
 data class PowerState(val batteryPct: Int? = null, val charging: Boolean = false, val powerSave: Boolean = false)
 
-enum class DeviceClass(val title: String) { LOW("слабый"), MID("средний"), HIGH("мощный") }
+enum class DeviceClass(private val ru: String, private val en: String) {
+    LOW("слабый", "weak"), MID("средний", "mid-range"), HIGH("мощный", "powerful");
+
+    val title: String get() = tr(ru, en)
+}
 
 object DeviceClassifier {
     /**
@@ -57,13 +75,13 @@ data class EconomyPlan(
     val reason: String,
 ) {
     fun describe(): String {
-        val fps = (if (movingFps == 0) "в движении — как у экрана" else "в движении $movingFps кадров/с") + ", в покое $idleFps"
+        val fps = (if (movingFps == 0) tr("в движении — как у экрана", "while moving — like the screen") else tr("в движении $movingFps кадров/с", "while moving $movingFps fps")) + tr(", в покое $idleFps", ", idle $idleFps")
         val hz = when (refresh) {
-            RefreshPolicy.ALWAYS_HIGH -> "экран всё время на максимуме"
-            RefreshPolicy.HIGH_WHILE_MOVING -> "высокая частота экрана только в движении"
-            RefreshPolicy.SYSTEM -> "частоту экрана выбирает система"
+            RefreshPolicy.ALWAYS_HIGH -> tr("экран всё время на максимуме", "screen always at maximum")
+            RefreshPolicy.HIGH_WHILE_MOVING -> tr("высокая частота экрана только в движении", "high refresh rate only while moving")
+            RefreshPolicy.SYSTEM -> tr("частоту экрана выбирает система", "the system picks the refresh rate")
         }
-        return "${mode.title} ($reason): $fps; $hz" + if (forceEconomicalEar) "; экономный слух" else ""
+        return "${mode.title} ($reason): $fps; $hz" + if (forceEconomicalEar) tr("; экономный слух", "; economical hearing") else ""
     }
 }
 
@@ -74,12 +92,12 @@ object EconomyPolicy {
         val pct = power.batteryPct
         val (mode, reason) = when (choice) {
             EconomyMode.AUTO -> when {
-                power.powerSave -> EconomyMode.BATTERY to "включена экономия энергии Android"
-                !power.charging && pct != null && pct <= LOW_BATTERY_PCT -> EconomyMode.BATTERY to "заряд $pct %"
-                device == DeviceClass.LOW -> EconomyMode.BATTERY to "телефону лучше полегче"
-                else -> EconomyMode.BALANCED to "авто"
+                power.powerSave -> EconomyMode.BATTERY to tr("включена экономия энергии Android", "Android battery saver is on")
+                !power.charging && pct != null && pct <= LOW_BATTERY_PCT -> EconomyMode.BATTERY to tr("заряд $pct %", "battery $pct %")
+                device == DeviceClass.LOW -> EconomyMode.BATTERY to tr("телефону лучше полегче", "the phone needs it lighter")
+                else -> EconomyMode.BALANCED to tr("авто", "auto")
             }
-            else -> choice to "выбрано в настройках"
+            else -> choice to tr("выбрано в настройках", "chosen in settings")
         }
         return when (mode) {
             EconomyMode.MAX -> EconomyPlan(mode, 0, 30, 10, RefreshPolicy.ALWAYS_HIGH, false, 2, true, reason)

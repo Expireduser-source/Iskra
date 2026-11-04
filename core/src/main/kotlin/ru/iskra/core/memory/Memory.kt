@@ -1,5 +1,6 @@
 package ru.iskra.core.memory
 
+import ru.iskra.core.i18n.tr
 import kotlin.math.exp
 import kotlin.math.ln
 
@@ -56,12 +57,17 @@ object TextNorm {
         "иями", "ями", "ами", "ого", "его", "ому", "ему", "ыми", "ими", "ость", "ости",
         "ов", "ев", "ей", "ий", "ый", "ой", "ая", "яя", "ое", "ее", "ые", "ие", "ам", "ям", "ах", "ях",
         "ом", "ем", "ую", "юю", "ть", "ла", "ли", "ло", "ся", "сь",
-        "а", "я", "о", "е", "ы", "и", "у", "ю", "ь", "s",
+        "а", "я", "о", "е", "ы", "и", "у", "ю", "ь",
+        // English (Latin endings never touch Russian words and vice versa)
+        "ing", "ed", "es", "s",
     )
     private val stop = setOf(
         "это", "как", "что", "так", "для", "меня", "мне", "тебя", "тебе", "был", "была", "было", "есть",
         "the", "and", "you", "она", "они", "оно", "его", "еще", "ещё", "уже", "очень", "только", "когда",
         "где", "мой", "моя", "мое", "моё", "мои", "твой", "твоя", "свой", "все", "всё", "или", "если", "чтобы",
+        "that", "this", "with", "have", "has", "was", "were", "are", "for", "not", "but", "what", "when", "where",
+        "how", "your", "about", "from", "will", "would", "can", "could", "just", "very", "also", "they", "she",
+        "her", "him", "his", "its", "our", "all", "any", "mine", "there", "their",
     )
 
     fun tokens(text: String): List<String> =
@@ -122,9 +128,9 @@ class MemoryManager(
 
     fun add(text: String, kind: MemoryKind, source: MemorySource, importance: Int, nowMs: Long): AddResult {
         val clean = text.trim().replace(Regex("\\s+"), " ")
-        if (clean.length < 3) return AddResult.Rejected("слишком коротко")
-        if (clean.length > maxTextLength) return AddResult.Rejected("слишком длинно (до $maxTextLength символов)")
-        if (looksSensitive(clean)) return AddResult.Rejected("похоже на пароль или номер карты — такое я не храню")
+        if (clean.length < 3) return AddResult.Rejected(tr("слишком коротко", "too short"))
+        if (clean.length > maxTextLength) return AddResult.Rejected(tr("слишком длинно (до $maxTextLength символов)", "too long (up to $maxTextLength characters)"))
+        if (looksSensitive(clean)) return AddResult.Rejected(tr("похоже на пароль или номер карты — такое я не храню", "looks like a password or a card number — I don't keep that"))
         val all = store.all()
         val toks = TextNorm.tokens(clean).toSet()
         all.firstOrNull { similar(toks, TextNorm.tokens(it.text).toSet()) }?.let { return AddResult.Duplicate(it) }
@@ -132,7 +138,7 @@ class MemoryManager(
             // Evict the least important, least recently used non-explicit memory.
             val victim = all.filter { it.source != MemorySource.USER_EXPLICIT }
                 .minWithOrNull(compareBy<MemoryItem>({ it.importance }, { it.lastUsedAtMs }))
-                ?: return AddResult.Rejected("память заполнена")
+                ?: return AddResult.Rejected(tr("память заполнена", "memory is full"))
             store.delete(victim.id)
         }
         return AddResult.Added(store.insert(kind, clean, source, importance.coerceIn(1, 5), nowMs))
@@ -170,7 +176,7 @@ class MemoryManager(
 
     companion object {
         private val cardLike = Regex("""\b(?:\d[ -]?){13,19}\b""")
-        private val secretWords = Regex("""(парол|password|пин-?код|pin\b|cvv|cvc|seed|сид-фраз|api[ _-]?key|токен)""", RegexOption.IGNORE_CASE)
+        private val secretWords = Regex("""(парол|password|passcode|пин-?код|pin\b|cvv|cvc|seed|сид-фраз|api[ _-]?key|private[ _-]?key|токен|token\b)""", RegexOption.IGNORE_CASE)
         fun looksSensitive(text: String) = cardLike.containsMatchIn(text) || secretWords.containsMatchIn(text)
     }
 }

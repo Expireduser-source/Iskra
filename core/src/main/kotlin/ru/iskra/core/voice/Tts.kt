@@ -1,5 +1,6 @@
 package ru.iskra.core.voice
 
+import ru.iskra.core.i18n.tr
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Call
@@ -37,7 +38,7 @@ object SpeechText {
         .replace(Regex("\\*[^*]{1,80}\\*"), " ")                       // *мурлычет*
         .replace(Regex("[\\p{So}\\p{Cn}\\p{Cs}\\u200d\\ufe0f]"), " ")  // emoji
         .replace(Regex("[#_`>~]"), " ")
-        .replace(Regex("https?://\\S+"), " ссылка ")
+        .replace(Regex("https?://\\S+"), tr(" ссылка ", " link "))
         .replace(Regex("\\s+"), " ")
         .trim()
         .take(MAX_CHARS)
@@ -156,16 +157,16 @@ internal object TtsHttp {
 
 /** How she should sound for each emotion, in words (for models that accept style instructions). */
 internal fun emotionHint(e: Emotion): String = when (e) {
-    Emotion.HAPPY -> "радостно, с улыбкой"
-    Emotion.EXCITED -> "очень воодушевлённо, быстро и звонко"
-    Emotion.CURIOUS -> "заинтересованно, с вопросительной интонацией"
-    Emotion.SHY -> "смущённо, тихо и мягко"
-    Emotion.POUTY -> "капризно-обиженно, но мило"
-    Emotion.SAD -> "грустно и тихо"
-    Emotion.SURPRISED -> "удивлённо"
-    Emotion.SLEEPY -> "сонно и медленно"
-    Emotion.THINKING -> "задумчиво"
-    Emotion.NEUTRAL -> "спокойно и дружелюбно"
+    Emotion.HAPPY -> tr("радостно, с улыбкой", "cheerfully, with a smile")
+    Emotion.EXCITED -> tr("очень воодушевлённо, быстро и звонко", "very excitedly, fast and bright")
+    Emotion.CURIOUS -> tr("заинтересованно, с вопросительной интонацией", "with interest, in a questioning tone")
+    Emotion.SHY -> tr("смущённо, тихо и мягко", "shyly, softly and gently")
+    Emotion.POUTY -> tr("капризно-обиженно, но мило", "in a sulky-pouty but cute way")
+    Emotion.SAD -> tr("грустно и тихо", "sadly and quietly")
+    Emotion.SURPRISED -> tr("удивлённо", "in surprise")
+    Emotion.SLEEPY -> tr("сонно и медленно", "sleepily and slowly")
+    Emotion.THINKING -> tr("задумчиво", "thoughtfully")
+    Emotion.NEUTRAL -> tr("спокойно и дружелюбно", "calmly and friendly")
 }
 
 /**
@@ -179,7 +180,7 @@ class OpenAiTts(
     private val voice: String = "nova",
     private val client: OkHttpClient = TtsHttp.client,
 ) : TtsClient {
-    override val name = "OpenAI-совместимый"
+    override val name get() = tr("OpenAI-совместимый", "OpenAI-compatible")
 
     override fun newCall(text: String, emotion: Emotion): TtsCall {
         val body = buildJsonObject {
@@ -187,8 +188,8 @@ class OpenAiTts(
             put("voice", voice)
             put("input", text)
             put("response_format", "wav")
-            put("instructions", "Ты — Искра, милая игривая девушка-кошка из аниме. Говори по-русски естественно и живо, " +
-                "молодым тёплым голосом. Сейчас говори ${emotionHint(emotion)}.")
+            put("instructions", tr("Ты — Искра, милая игривая девушка-кошка из аниме. Говори по-русски естественно и живо, " +
+                "молодым тёплым голосом. Сейчас говори ${emotionHint(emotion)}.", "You are Iskra, a sweet playful anime cat girl. Speak the text naturally and lively, with a young warm voice. Now speak ${emotionHint(emotion)}."))
         }
         val req = Request.Builder()
             .url(baseUrl.trimEnd('/') + "/audio/speech")

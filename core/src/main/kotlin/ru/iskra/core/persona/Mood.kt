@@ -1,5 +1,6 @@
 package ru.iskra.core.persona
 
+import ru.iskra.core.i18n.tr
 import kotlin.math.exp
 import kotlin.math.ln
 
@@ -35,24 +36,24 @@ data class MoodState(
 
     fun describeForPrompt(): String {
         val v = when {
-            valence > 0.5 -> "в отличном настроении"
-            valence > 0.15 -> "в хорошем настроении"
-            valence > -0.15 -> "в ровном настроении"
-            valence > -0.5 -> "немного надулась"
-            else -> "расстроена"
+            valence > 0.5 -> tr("в отличном настроении", "in a great mood")
+            valence > 0.15 -> tr("в хорошем настроении", "in a good mood")
+            valence > -0.15 -> tr("в ровном настроении", "in an even mood")
+            valence > -0.5 -> tr("немного надулась", "a little sulky")
+            else -> tr("расстроена", "upset")
         }
         val a = when {
-            arousal > 0.7 -> "очень оживлена"
-            arousal > 0.4 -> "бодра"
-            arousal > 0.15 -> "спокойна"
-            else -> "сонная"
+            arousal > 0.7 -> tr("очень оживлена", "very lively")
+            arousal > 0.4 -> tr("бодра", "cheerful")
+            arousal > 0.15 -> tr("спокойна", "calm")
+            else -> tr("сонная", "sleepy")
         }
         val b = when {
-            bond > 0.7 -> "вы давно и хорошо знакомы"
-            bond > 0.35 -> "вы уже неплохо знакомы"
-            else -> "вы знакомы недавно"
+            bond > 0.7 -> tr("вы давно и хорошо знакомы", "you two have known each other well for a long time")
+            bond > 0.35 -> tr("вы уже неплохо знакомы", "you already know each other fairly well")
+            else -> tr("вы знакомы недавно", "you met recently")
         }
-        return "Сейчас ты $v, $a; $b."
+        return tr("Сейчас ты $v, $a; $b.", "Right now you are $v, $a; $b.")
     }
 }
 
@@ -119,15 +120,19 @@ class MoodEngine(
     }
 }
 
-/** Tiny Russian lexicon-based sentiment estimate. Good enough to drive mood; not an NLU. */
+/** Tiny Russian and English lexicon-based sentiment estimate. Good enough to drive mood; not an NLU. */
 object Sentiment {
     private val positive = listOf(
         "спасиб", "молодец", "умниц", "люблю", "обожаю", "класс", "супер", "отличн", "круто", "хорош",
         "мило", "милая", "прекрасн", "благодар", "ура", "здорово", "лучшая", "❤", "😊", "😍", "👍",
+        "thank", "good job", "well done", "love you", "i love", "awesome", "great", "amazing", "cool", "nice",
+        "cute", "wonderful", "yay", "the best", "brilliant",
     )
     private val negative = listOf(
         "дура", "тупая", "тупица", "бесишь", "заткнись", "ненавиж", "отстань", "бесполезн", "ужасн",
         "плохо", "глупая", "идиот", "надоел", "👎", "😡",
+        "stupid", "dumb", "shut up", "i hate", "hate you", "go away", "useless", "terrible", "awful", "idiot",
+        "annoying", "you suck",
     )
 
     fun estimate(text: String): Double {

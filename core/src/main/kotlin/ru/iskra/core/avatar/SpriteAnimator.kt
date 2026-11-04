@@ -1,5 +1,6 @@
 package ru.iskra.core.avatar
 
+import ru.iskra.core.i18n.tr
 import ru.iskra.core.persona.Emotion
 import kotlin.math.PI
 import kotlin.math.cos
@@ -149,15 +150,15 @@ class SpriteAnimator {
             fun near(s: Sprite, what: String) = s to "$what → ${s.file}"
             return when (p.activity) {
                 Activity.SLEEPING -> Sprite.SLEEP to null
-                Activity.SITTING -> if (emo) near(Sprite.SIT, "сидит + ${p.emotion}") else Sprite.SIT to null
-                Activity.WALKING -> if (emo) near(Sprite.WALK01, "идёт + ${p.emotion}") else Sprite.WALK01 to null
-                Activity.RUNNING -> near(Sprite.WALK01, "бежит (ходьба быстрее)")
-                Activity.JUMPING -> near(Sprite.JOY, "прыжок")
-                Activity.FALLING -> near(Sprite.SURPRISE, "падает")
-                Activity.DRAGGED -> near(Sprite.SURPRISE, "её несут пальцем")
-                Activity.CLIMBING -> near(Sprite.WAVE, "держится за край")
-                Activity.HANGING -> near(Sprite.WAVE, "висит на верхнем крае")
-                Activity.PEEKING -> near(emotionSprite(p.emotion), "выглядывает")
+                Activity.SITTING -> if (emo) near(Sprite.SIT, tr("сидит + ${p.emotion}", "sits + ${p.emotion}")) else Sprite.SIT to null
+                Activity.WALKING -> if (emo) near(Sprite.WALK01, tr("идёт + ${p.emotion}", "walks + ${p.emotion}")) else Sprite.WALK01 to null
+                Activity.RUNNING -> near(Sprite.WALK01, tr("бежит (ходьба быстрее)", "runs (faster walk)"))
+                Activity.JUMPING -> near(Sprite.JOY, tr("прыжок", "jump"))
+                Activity.FALLING -> near(Sprite.SURPRISE, tr("падает", "falls"))
+                Activity.DRAGGED -> near(Sprite.SURPRISE, tr("её несут пальцем", "carried by a finger"))
+                Activity.CLIMBING -> near(Sprite.WAVE, tr("держится за край", "holds the edge"))
+                Activity.HANGING -> near(Sprite.WAVE, tr("висит на верхнем крае", "hangs from the top edge"))
+                Activity.PEEKING -> near(emotionSprite(p.emotion), tr("выглядывает", "peeks out"))
                 Activity.HIDDEN -> Sprite.STAND to null
                 Activity.IDLE -> when {
                     p.waving -> Sprite.WAVE to null

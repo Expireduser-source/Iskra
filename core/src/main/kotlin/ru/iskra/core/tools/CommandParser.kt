@@ -7,7 +7,7 @@ import ru.iskra.core.skills.ReminderParser
 import ru.iskra.core.skills.SkillNames
 
 /**
- * Deterministic on-device understanding of frequent commands. Works without network/LLM, is
+ * Deterministic on-device understanding of frequent commands, in Russian and English ([EnglishCommands]). Works without network/LLM, is
  * instant, and costs nothing. Anything it doesn't recognise goes to the LLM.
  */
 object CommandParser {
@@ -112,7 +112,7 @@ object CommandParser {
                 return Parsed.Tool(ToolNames.OPEN_APP, args { put("name", name) })
             }
         }
-        return null
+        return EnglishCommands.parse(raw, now)
     }
 
     /** Notes, reminders, weather (stage 3). [raw] keeps the owner's casing for the note text. */

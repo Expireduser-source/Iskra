@@ -1,5 +1,7 @@
 package ru.iskra.core.skills
 
+import ru.iskra.core.i18n.tr
+
 /**
  * Small reactions to what happens with the phone (docs/CHARACTER.md: an invitation, never a demand).
  * They share the owner's limits for unprompted lines: off with «Не заговаривать самой», silent in the
@@ -19,13 +21,17 @@ object Moments {
     fun morning(greeting: String, weatherNow: String?, remindersToday: Int): String {
         val parts = ArrayList<String>()
         // A greeting that offers the weather would sound odd right before telling it.
-        parts += if (!weatherNow.isNullOrBlank() && greeting.contains("погод", ignoreCase = true)) "Доброе утро!" else greeting.trim()
-        if (!weatherNow.isNullOrBlank()) parts += "За окном ${weatherNow.trim().trimEnd('.')}."
-        if (remindersToday > 0) parts += "На сегодня ${count(remindersToday, "напоминание", "напоминания", "напоминаний")} — я прослежу."
+        val offersWeather = greeting.contains("погод", ignoreCase = true) || greeting.contains("weather", ignoreCase = true)
+        parts += if (!weatherNow.isNullOrBlank() && offersWeather) tr("Доброе утро!", "Good morning!") else greeting.trim()
+        if (!weatherNow.isNullOrBlank()) parts += tr("За окном ${weatherNow.trim().trimEnd('.')}.", "Outside it's ${weatherNow.trim().trimEnd('.')}.")
+        if (remindersToday > 0) parts += tr(
+            "На сегодня ${count(remindersToday, "напоминание", "напоминания", "напоминаний")} — я прослежу.",
+            "${countEn(remindersToday, "reminder", "reminders").replaceFirstChar { it.uppercase() }} for today — I'll keep track.",
+        )
         return parts.joinToString(" ")
     }
 
-    /** "+3°, пасмурно" from the current conditions, or null when they are unknown. */
+    /** "+3°, пасмурно" / "+3°, overcast" from the current conditions, or null when they are unknown. */
     fun weatherNow(f: Forecast): String? {
         val t = f.tempNow ?: return null
         val code = f.codeNow ?: f.days.firstOrNull()?.code ?: return WeatherText.temp(t)
@@ -48,15 +54,29 @@ object Moments {
         }
         return "$num $word"
     }
+
+    /** English: one reminder, two reminders, 5 reminders. */
+    fun countEn(n: Int, one: String, other: String): String {
+        val num = when (n) { 1 -> "one"; 2 -> "two"; 3 -> "three"; 4 -> "four"; else -> n.toString() }
+        return "$num ${if (n == 1) one else other}"
+    }
 }
 
 /** Lines for [Moments]; kept with the other offline phrases' rules (≤ 90 chars, one thought). */
 object MomentLines {
-    val CHARGING = listOf(
+    val CHARGING: List<String> get() = tr(CHARGING_RU, CHARGING_EN)
+
+    private val CHARGING_RU = listOf(
         "Мрр, подзарядка! Тёплый проводок — лучшее место для котика.",
         "О, кормёжка для батарейки. Я тоже не откажусь.",
         "Заряжаемся? Отличный повод сделать перерыв вместе с телефоном.",
         "Чувствую прилив сил. Это не я, это зарядка. Но приятно.",
+    )
+    private val CHARGING_EN = listOf(
+        "Mrr, charging! A warm cable is the best spot for a kitty.",
+        "Oh, dinner for the battery. I wouldn't say no either.",
+        "Charging? A great excuse to take a break together with the phone.",
+        "I feel a surge of energy. It's not me, it's the charger. But it's nice.",
     )
 
     fun charging(bank: PhraseBank) = bank.pick("CHARGING", CHARGING)

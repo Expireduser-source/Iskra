@@ -2,7 +2,7 @@ package ru.iskra.core.voice
 
 /**
  * Finds the companion's name at the start of a recognised phrase ("Искра, поставь таймер",
- * "эй искорка", "искру позови"...). Recognisers often bend the word, so a match is: same word,
+ * "эй искорка", "искру позови", "Spark, set a timer"...). Recognisers often bend the word, so a match is: same word,
  * a different case ending of it, or one edit away (for names of 4+ letters).
  *
  * The name must be among the first [maxLeadingWords] words, so stories that merely mention a spark
@@ -26,14 +26,15 @@ class WakeWordMatcher(names: List<String>, private val maxLeadingWords: Int = 3)
     }
 
     fun isName(word: String): Boolean = targets.any { t ->
+        val russian = t.any { it in 'а'..'я' }
         word == t ||
-            // case endings: искра → искру/искре/искрой/искры
-            (t.length >= 4 && word.length in t.length - 1..t.length + 2 && word.startsWith(t.dropLast(1))) ||
-            (t.length >= 4 && levenshtein(word, t) <= 1)
+            // case endings: искра → искру/искре/искрой/искры (Russian names only: "spark" must not match "spare")
+            (russian && t.length >= 4 && word.length in t.length - 1..t.length + 2 && word.startsWith(t.dropLast(1))) ||
+            (t.length >= (if (russian) 4 else 5) && levenshtein(word, t) <= 1 && (russian || word.first() == t.first()))
     }
 
     companion object {
-        private val fillersAfterName = setOf("пожалуйста", "слушай", "а", "ну")
+        private val fillersAfterName = setOf("пожалуйста", "слушай", "а", "ну", "please", "hey", "ok", "okay", "listen", "so")
 
         fun norm(s: String) = s.lowercase().replace('ё', 'е').trim()
 
@@ -132,7 +133,8 @@ class VoiceGate(
     }
 
     private companion object {
-        val noise = setOf("а", "и", "э", "м", "ну", "угу", "ага", "эм", "хм", "о", "у")
-        val stopWords = setOf("стоп", "хватит", "замолчи", "тихо", "помолчи", "отмена", "перестань", "остановись")
+        val noise = setOf("а", "и", "э", "м", "ну", "угу", "ага", "эм", "хм", "о", "у", "uh", "um", "hmm", "hm", "oh", "ah", "mm", "huh", "the", "a")
+        val stopWords = setOf("стоп", "хватит", "замолчи", "тихо", "помолчи", "отмена", "перестань", "остановись",
+            "stop", "enough", "quiet", "silence", "cancel", "shush", "hush")
     }
 }

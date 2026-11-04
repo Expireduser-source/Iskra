@@ -52,7 +52,7 @@ object DeviceHelper {
 
     /** The maker's autostart / app-launch screen, if this phone has one. */
     fun openAutostart(ctx: Context): Boolean {
-        val step = guide.firstOrNull { it.button == "Автозапуск" || it.button == "Запуск приложений" } ?: return false
+        val step = guide.firstOrNull { it.autostart } ?: return false
         return open(ctx, step)
     }
 

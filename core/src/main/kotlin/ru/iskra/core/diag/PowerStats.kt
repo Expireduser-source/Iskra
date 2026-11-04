@@ -1,5 +1,7 @@
 package ru.iskra.core.diag
 
+import ru.iskra.core.i18n.tr
+
 /**
  * One reading: phone battery level, whether it charges, the screen, which look is drawn, and the CPU
  * time our process has used so far ([cpuMs], from Process.getElapsedCpuTime()).
@@ -22,11 +24,11 @@ data class PowerSummary(
     val looks: Set<String>,
 ) {
     fun describe(): String = buildString {
-        append("за ${minutes.toInt()} мин без зарядки: ")
-        append(drainPctPerHour?.let { "батарея −%.1f %%/ч".format(it) } ?: "батарея: мало данных")
-        append(", CPU Искры %.1f %%".format(cpuPct))
-        append(", экран выкл ${(screenOffShare * 100).toInt()} %")
-        if (looks.isNotEmpty()) append(", вид ${looks.joinToString("/")}")
+        append(tr("за ${minutes.toInt()} мин без зарядки: ", "over ${minutes.toInt()} min off the charger: "))
+        append(drainPctPerHour?.let { tr("батарея −%.1f %%/ч", "battery −%.1f %%/h").format(it) } ?: tr("батарея: мало данных", "battery: not enough data"))
+        append(tr(", CPU Искры %.1f %%", ", Iskra CPU %.1f %%").format(cpuPct))
+        append(tr(", экран выкл ${(screenOffShare * 100).toInt()} %", ", screen off ${(screenOffShare * 100).toInt()} %"))
+        if (looks.isNotEmpty()) append(tr(", вид ${looks.joinToString("/")}", ", look ${looks.joinToString("/")}"))
     }
 }
 

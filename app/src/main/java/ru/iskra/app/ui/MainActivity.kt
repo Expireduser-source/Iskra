@@ -194,7 +194,7 @@ private fun AccessibilityWarning() {
                     "Без неё не работают «домой», «назад», шторка, скриншот. Открой спецвозможности и включи её снова."
                 else "«Искра · управление» включена в спецвозможностях, но Android её сейчас не запускает. " +
                     "Открой спецвозможности, выключи «Искра · управление» и включи снова." +
-                    if (DeviceHelper.guide.any { it.button == "Автозапуск" }) " Чтобы не повторялось: включи Автозапуск для Искры." else "",
+                    if (DeviceHelper.guide.any { it.autostart }) " Чтобы не повторялось: включи Автозапуск для Искры." else "",
                 fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row {
@@ -204,7 +204,7 @@ private fun AccessibilityWarning() {
                     Diag.i("access", "Владелец: управление телефоном не нужно, не напоминать")
                     problem = null
                 }) { Text("Не нужно") }
-                else if (DeviceHelper.guide.any { it.button == "Автозапуск" }) TextButton(onClick = { DeviceHelper.openAutostart(ctx) }) { Text("Автозапуск") }
+                else if (DeviceHelper.guide.any { it.autostart }) TextButton(onClick = { DeviceHelper.openAutostart(ctx) }) { Text("Автозапуск") }
             }
         }
     }

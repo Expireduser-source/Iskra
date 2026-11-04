@@ -1,5 +1,6 @@
 package ru.iskra.core.avatar
 
+import ru.iskra.core.i18n.tr
 import ru.iskra.core.persona.Emotion
 
 /** What one layer of the frame shows: the live rig or one of the sprites. */
@@ -95,19 +96,19 @@ class RigAnimator(val rig: RigState = RigState()) {
         fun choose(p: AvatarPose): Pair<Visual, String?> {
             val emo = p.emotion != Emotion.NEUTRAL
             fun pic(s: Sprite, what: String?) = Visual.Picture(s) to what
-            fun rig(what: String) = Visual.Rig to "$what → риг без своей позы"
+            fun rig(what: String) = Visual.Rig to tr("$what → риг без своей позы", "$what → rig has no own pose")
             return when (p.activity) {
                 Activity.SLEEPING -> pic(Sprite.SLEEP, null)
-                Activity.SITTING -> pic(Sprite.SIT, if (emo) "сидит + ${p.emotion} → sit" else null)
+                Activity.SITTING -> pic(Sprite.SIT, if (emo) tr("сидит + ${p.emotion} → sit", "sits + ${p.emotion} → sit") else null)
                 Activity.IDLE -> if (p.thinking) pic(Sprite.PHONE, null) else Visual.Rig to null
                 Activity.WALKING, Activity.HIDDEN -> Visual.Rig to null
-                Activity.RUNNING -> rig("бежит")
-                Activity.JUMPING -> rig("прыжок")
-                Activity.FALLING -> rig("падает")
-                Activity.DRAGGED -> rig("её несут пальцем")
-                Activity.CLIMBING -> rig("держится за край")
-                Activity.HANGING -> rig("висит на верхнем крае")
-                Activity.PEEKING -> rig("выглядывает")
+                Activity.RUNNING -> rig(tr("бежит", "runs"))
+                Activity.JUMPING -> rig(tr("прыжок", "jump"))
+                Activity.FALLING -> rig(tr("падает", "falls"))
+                Activity.DRAGGED -> rig(tr("её несут пальцем", "carried by a finger"))
+                Activity.CLIMBING -> rig(tr("держится за край", "holds the edge"))
+                Activity.HANGING -> rig(tr("висит на верхнем крае", "hangs from the top edge"))
+                Activity.PEEKING -> rig(tr("выглядывает", "peeks out"))
             }
         }
     }

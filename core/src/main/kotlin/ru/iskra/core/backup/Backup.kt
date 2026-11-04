@@ -1,5 +1,6 @@
 package ru.iskra.core.backup
 
+import ru.iskra.core.i18n.tr
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -77,7 +78,7 @@ object BackupCodec {
             put("format", FORMAT)
             put("createdAtMs", s.createdAtMs)
             put("appVersion", s.appVersion)
-            put("note", "Резервная копия Искры. Ключей API и переписки здесь нет.")
+            put("note", tr("Резервная копия Искры. Ключей API и переписки здесь нет.", "Iskra backup. No API keys or chat history inside."))
             put("settings", buildJsonObject {
                 s.settings.toSortedMap().forEach { (k, v) ->
                     when (v) {
@@ -116,16 +117,16 @@ object BackupCodec {
 
     /** Parses and validates a backup file. Messages in [BackupException] are for the owner. */
     fun decode(text: String, knownSecrets: Collection<String> = emptyList()): Backup {
-        if (text.length > MAX_BYTES) throw BackupException("Файл слишком большой для резервной копии Искры.")
+        if (text.length > MAX_BYTES) throw BackupException(tr("Файл слишком большой для резервной копии Искры.", "The file is too big for an Iskra backup."))
         val root = try {
             Json.parseToJsonElement(text).jsonObject
         } catch (e: Exception) {
-            throw BackupException("Это не файл резервной копии Искры (не JSON).", e)
+            throw BackupException(tr("Это не файл резервной копии Искры (не JSON).", "This is not an Iskra backup file (not JSON)."), e)
         }
-        if (root["kind"]?.jsonPrimitive?.content != KIND) throw BackupException("Это не файл резервной копии Искры.")
-        val format = root["format"]?.jsonPrimitive?.intOrNull ?: throw BackupException("В файле нет версии формата.")
-        if (format > FORMAT) throw BackupException("Копия сделана более новой версией Искры (формат $format). Обнови приложение.")
-        if (format < 1) throw BackupException("Неизвестная версия формата: $format.")
+        if (root["kind"]?.jsonPrimitive?.content != KIND) throw BackupException(tr("Это не файл резервной копии Искры.", "This is not an Iskra backup file."))
+        val format = root["format"]?.jsonPrimitive?.intOrNull ?: throw BackupException(tr("В файле нет версии формата.", "The file has no format version."))
+        if (format > FORMAT) throw BackupException(tr("Копия сделана более новой версией Искры (формат $format). Обнови приложение.", "The backup was made by a newer Iskra (format $format). Update the app."))
+        if (format < 1) throw BackupException(tr("Неизвестная версия формата: $format.", "Unknown format version: $format."))
         try {
             val settings = LinkedHashMap<String, Any>()
             (root["settings"] as? JsonObject)?.forEach { (k, el) ->
@@ -177,7 +178,7 @@ object BackupCodec {
         } catch (e: BackupException) {
             throw e
         } catch (e: Exception) {
-            throw BackupException("Файл резервной копии повреждён.", e)
+            throw BackupException(tr("Файл резервной копии повреждён.", "The backup file is damaged."), e)
         }
     }
 

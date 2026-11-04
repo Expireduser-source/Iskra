@@ -1,5 +1,6 @@
 package ru.iskra.core.tools
 
+import ru.iskra.core.i18n.tr
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -47,33 +48,33 @@ object ToolSchemas {
     val SETTINGS_SECTIONS = listOf("main", "wifi", "bluetooth", "display", "battery", "sound", "apps", "notifications", "accessibility", "internet")
     val GLOBAL_ACTIONS = listOf("home", "back", "recents", "notifications", "quick_settings", "lock_screen", "screenshot")
 
-    val openApp = ToolSpec(ToolNames.OPEN_APP, "Открыть установленное приложение по названию.",
-        obj(listOf("name"), mapOf("name" to str("Название приложения, как на рабочем столе"))))
-    val setAlarm = ToolSpec(ToolNames.SET_ALARM, "Поставить будильник в системных часах.",
-        obj(listOf("hour", "minute"), mapOf("hour" to int("Час 0-23", 0, 23), "minute" to int("Минуты 0-59", 0, 59), "label" to str("Подпись"))))
-    val setTimer = ToolSpec(ToolNames.SET_TIMER, "Запустить таймер в системных часах.",
-        obj(listOf("seconds"), mapOf("seconds" to int("Длительность в секундах", 1, 86_400), "label" to str("Подпись"))))
-    val openCamera = ToolSpec(ToolNames.OPEN_CAMERA, "Открыть камеру для фото.", obj(emptyList(), emptyMap()))
-    val flashlight = ToolSpec(ToolNames.FLASHLIGHT, "Включить или выключить фонарик.",
-        obj(listOf("on"), mapOf("on" to bool("true — включить, false — выключить"))))
-    val volume = ToolSpec(ToolNames.VOLUME, "Изменить громкость медиа.",
-        obj(listOf("direction"), mapOf("direction" to str("Направление", listOf("up", "down", "mute", "unmute")))))
-    val openSettings = ToolSpec(ToolNames.OPEN_SETTINGS, "Открыть раздел системных настроек.",
-        obj(listOf("section"), mapOf("section" to str("Раздел", SETTINGS_SECTIONS))))
-    val globalAction = ToolSpec(ToolNames.GLOBAL_ACTION,
-        "Системная навигация через службу специальных возможностей (если владелец её включил).",
-        obj(listOf("action"), mapOf("action" to str("Действие", GLOBAL_ACTIONS))))
-    val webSearch = ToolSpec(ToolNames.WEB_SEARCH, "Открыть поиск в браузере по запросу.",
-        obj(listOf("query"), mapOf("query" to str("Поисковый запрос"))))
-    val dial = ToolSpec(ToolNames.DIAL, "Открыть номеронабиратель с номером (звонок совершает сам владелец).",
-        obj(listOf("number"), mapOf("number" to str("Телефонный номер"))))
-    val remember = ToolSpec(ToolNames.REMEMBER,
-        "Сохранить в долговременную память важный устойчивый факт о владельце или его предпочтение. " +
-            "Не сохраняй пароли, номера карт, мимолётные детали и чужие секреты.",
+    val openApp get() = ToolSpec(ToolNames.OPEN_APP, tr("Открыть установленное приложение по названию.", "Open an installed app by name."),
+        obj(listOf("name"), mapOf("name" to str(tr("Название приложения, как на рабочем столе", "App name as shown on the home screen")))))
+    val setAlarm get() = ToolSpec(ToolNames.SET_ALARM, tr("Поставить будильник в системных часах.", "Set an alarm in the system clock."),
+        obj(listOf("hour", "minute"), mapOf("hour" to int(tr("Час 0-23", "Hour 0-23"), 0, 23), "minute" to int(tr("Минуты 0-59", "Minutes 0-59"), 0, 59), "label" to str(tr("Подпись", "Label")))))
+    val setTimer get() = ToolSpec(ToolNames.SET_TIMER, tr("Запустить таймер в системных часах.", "Start a timer in the system clock."),
+        obj(listOf("seconds"), mapOf("seconds" to int(tr("Длительность в секундах", "Duration in seconds"), 1, 86_400), "label" to str(tr("Подпись", "Label")))))
+    val openCamera get() = ToolSpec(ToolNames.OPEN_CAMERA, tr("Открыть камеру для фото.", "Open the camera to take a photo."), obj(emptyList(), emptyMap()))
+    val flashlight get() = ToolSpec(ToolNames.FLASHLIGHT, tr("Включить или выключить фонарик.", "Turn the flashlight on or off."),
+        obj(listOf("on"), mapOf("on" to bool(tr("true — включить, false — выключить", "true — on, false — off")))))
+    val volume get() = ToolSpec(ToolNames.VOLUME, tr("Изменить громкость медиа.", "Change the media volume."),
+        obj(listOf("direction"), mapOf("direction" to str(tr("Направление", "Direction"), listOf("up", "down", "mute", "unmute")))))
+    val openSettings get() = ToolSpec(ToolNames.OPEN_SETTINGS, tr("Открыть раздел системных настроек.", "Open a system settings section."),
+        obj(listOf("section"), mapOf("section" to str(tr("Раздел", "Section"), SETTINGS_SECTIONS))))
+    val globalAction get() = ToolSpec(ToolNames.GLOBAL_ACTION,
+        tr("Системная навигация через службу специальных возможностей (если владелец её включил).", "System navigation through the accessibility service (if the owner turned it on)."),
+        obj(listOf("action"), mapOf("action" to str(tr("Действие", "Action"), GLOBAL_ACTIONS))))
+    val webSearch get() = ToolSpec(ToolNames.WEB_SEARCH, tr("Открыть поиск в браузере по запросу.", "Open a browser search for the query."),
+        obj(listOf("query"), mapOf("query" to str(tr("Поисковый запрос", "Search query")))))
+    val dial get() = ToolSpec(ToolNames.DIAL, tr("Открыть номеронабиратель с номером (звонок совершает сам владелец).", "Open the dialer with the number (the owner places the call)."),
+        obj(listOf("number"), mapOf("number" to str(tr("Телефонный номер", "Phone number")))))
+    val remember get() = ToolSpec(ToolNames.REMEMBER,
+        tr("Сохранить в долговременную память важный устойчивый факт о владельце или его предпочтение. " +
+            "Не сохраняй пароли, номера карт, мимолётные детали и чужие секреты.", "Save an important lasting fact about the owner or their preference to long-term memory. Don't save passwords, card numbers, passing details or other people's secrets."),
         obj(listOf("text", "kind"), mapOf(
-            "text" to str("Короткая формулировка от третьего лица, например «Владельца зовут Аня»"),
-            "kind" to str("Тип", listOf("fact", "preference")),
-            "importance" to int("Важность 1-5", 1, 5),
+            "text" to str(tr("Короткая формулировка от третьего лица, например «Владельца зовут Аня»", "A short third-person statement, e.g. “The owner's name is Anna”")),
+            "kind" to str(tr("Тип", "Type"), listOf("fact", "preference")),
+            "importance" to int(tr("Важность 1-5", "Importance 1-5"), 1, 5),
         )))
 }
 

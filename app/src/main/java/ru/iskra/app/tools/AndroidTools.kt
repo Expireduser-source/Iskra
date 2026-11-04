@@ -42,7 +42,7 @@ private abstract class IntentTool(protected val ctx: Context) : Tool {
 }
 
 private class OpenAppTool(ctx: Context) : IntentTool(ctx) {
-    override val spec: ToolSpec = ToolSchemas.openApp
+    override val spec: ToolSpec get() = ToolSchemas.openApp
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = "открыть приложение «${args.str("name").orEmpty()}»"
     override suspend fun execute(args: JsonObject): ToolOutcome {
@@ -63,7 +63,7 @@ private class OpenAppTool(ctx: Context) : IntentTool(ctx) {
 }
 
 private class AlarmTool(ctx: Context) : IntentTool(ctx) {
-    override val spec = ToolSchemas.setAlarm
+    override val spec get() = ToolSchemas.setAlarm
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = "будильник на %02d:%02d".format(args.int("hour") ?: 0, args.int("minute") ?: 0)
     override suspend fun execute(args: JsonObject): ToolOutcome {
@@ -79,7 +79,7 @@ private class AlarmTool(ctx: Context) : IntentTool(ctx) {
 }
 
 private class TimerTool(ctx: Context) : IntentTool(ctx) {
-    override val spec = ToolSchemas.setTimer
+    override val spec get() = ToolSchemas.setTimer
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = "таймер на ${human(args.int("seconds") ?: 0)}"
     override suspend fun execute(args: JsonObject): ToolOutcome {
@@ -100,14 +100,14 @@ private class TimerTool(ctx: Context) : IntentTool(ctx) {
 }
 
 private class CameraTool(ctx: Context) : IntentTool(ctx) {
-    override val spec = ToolSchemas.openCamera
+    override val spec get() = ToolSchemas.openCamera
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = "открыть камеру"
     override suspend fun execute(args: JsonObject) = launch(Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA), "открыла камеру")
 }
 
 private class FlashlightTool(private val ctx: Context) : Tool {
-    override val spec = ToolSchemas.flashlight
+    override val spec get() = ToolSchemas.flashlight
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = if (args.bool("on") != false) "включить фонарик" else "выключить фонарик"
     override suspend fun execute(args: JsonObject): ToolOutcome = withContext(Dispatchers.Main) {
@@ -127,7 +127,7 @@ private class FlashlightTool(private val ctx: Context) : Tool {
 }
 
 private class VolumeTool(private val ctx: Context) : Tool {
-    override val spec = ToolSchemas.volume
+    override val spec get() = ToolSchemas.volume
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = when (args.str("direction")) {
         "up" -> "сделать громче"; "down" -> "сделать тише"; "mute" -> "выключить звук"; else -> "включить звук"
@@ -152,7 +152,7 @@ private class VolumeTool(private val ctx: Context) : Tool {
 }
 
 private class SettingsTool(ctx: Context) : IntentTool(ctx) {
-    override val spec = ToolSchemas.openSettings
+    override val spec get() = ToolSchemas.openSettings
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = "открыть настройки (${args.str("section") ?: "main"})"
     override suspend fun execute(args: JsonObject): ToolOutcome {
@@ -173,7 +173,7 @@ private class SettingsTool(ctx: Context) : IntentTool(ctx) {
 }
 
 private class GlobalActionTool : Tool {
-    override val spec = ToolSchemas.globalAction
+    override val spec get() = ToolSchemas.globalAction
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = when (args.str("action")) {
         "home" -> "на главный экран"; "back" -> "назад"; "recents" -> "недавние приложения"
@@ -201,7 +201,7 @@ private class GlobalActionTool : Tool {
 }
 
 private class WebSearchTool(ctx: Context) : IntentTool(ctx) {
-    override val spec = ToolSchemas.webSearch
+    override val spec get() = ToolSchemas.webSearch
     override val risk = Risk.SAFE
     override fun describe(args: JsonObject) = "поиск в браузере: «${args.str("query").orEmpty()}»"
     override suspend fun execute(args: JsonObject): ToolOutcome {
@@ -213,7 +213,7 @@ private class WebSearchTool(ctx: Context) : IntentTool(ctx) {
 
 /** Opens the dialer only — the owner presses "call" themselves. Still CONFIRM: wrong numbers are annoying. */
 private class DialTool(ctx: Context) : IntentTool(ctx) {
-    override val spec = ToolSchemas.dial
+    override val spec get() = ToolSchemas.dial
     override val risk = Risk.CONFIRM
     override fun describe(args: JsonObject) = "открыть набор номера ${args.str("number").orEmpty()}"
     override suspend fun execute(args: JsonObject): ToolOutcome {

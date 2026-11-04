@@ -142,6 +142,7 @@ class ReplyStream(
         private val ABBREVIATIONS = setOf(
             "т", "д", "г", "гг", "др", "пр", "см", "им", "ул", "стр", "руб", "коп", "тыс", "млн", "млрд",
             "мин", "сек", "ч", "кв", "пер", "просп", "обл", "р", "св", "напр", "т.е", "т.к", "т.д", "т.п",
+            "mr", "mrs", "ms", "dr", "st", "vs", "etc", "e.g", "i.e", "approx", "no", "jr", "sr", "inc", "ltd", "a.m", "p.m",
         )
 
         /** Splits a finished text the same way (for replies that were not streamed). */

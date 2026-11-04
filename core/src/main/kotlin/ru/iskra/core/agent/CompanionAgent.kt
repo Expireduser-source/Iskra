@@ -1,5 +1,6 @@
 package ru.iskra.core.agent
 
+import ru.iskra.core.i18n.tr
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -170,11 +171,11 @@ class CompanionAgent(
         .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
 
     private fun pausedLine(kind: LlmException.Kind, minutes: Long): String {
-        if (kind == LlmException.Kind.LIMIT) return "Сегодняшний лимит облака исчерпан — до завтра я без модели. " +
-            "Команды работают: будильник, таймер, заметки, напоминания, погода. Лимит меняется в «Настройки → Экономия»."
-        val why = if (kind == LlmException.Kind.BALANCE) "на счёте сервиса закончились деньги" else "ключ API не подошёл"
-        return "Облако пока недоступно: $why. Без него я умею команды — будильник, таймер, фонарик, приложения, " +
-            "заметки, напоминания. Снова попробую через $minutes мин или сразу после нового ключа в настройках."
+        if (kind == LlmException.Kind.LIMIT) return tr("Сегодняшний лимит облака исчерпан — до завтра я без модели. " +
+            "Команды работают: будильник, таймер, заметки, напоминания, погода. Лимит меняется в «Настройки → Экономия».", "Today's cloud limit is used up — until tomorrow I'm without the model. Commands work: alarm, timer, notes, reminders, weather. The limit is in “Settings → Economy”.")
+        val why = if (kind == LlmException.Kind.BALANCE) tr("на счёте сервиса закончились деньги", "the service account is out of money") else tr("ключ API не подошёл", "the API key didn't work")
+        return tr("Облако пока недоступно: $why. Без него я умею команды — будильник, таймер, фонарик, приложения, " +
+            "заметки, напоминания. Снова попробую через $minutes мин или сразу после нового ключа в настройках.", "The cloud is unavailable for now: $why. Without it I can do commands — alarm, timer, flashlight, apps, notes, reminders. I'll try again in $minutes min or right after a new key in Settings.")
     }
 
     private suspend fun handleLocally(text: String, llmAvailable: Boolean): AgentReply? {
@@ -184,14 +185,14 @@ class CompanionAgent(
             is CommandParser.Parsed.Remember -> {
                 when (val r = memory.add(parsed.text, MemoryKind.FACT, MemorySource.USER_EXPLICIT, 4, clock())) {
                     is MemoryManager.AddResult.Added -> AgentReply(Lines.remembered(random, r.item.text), Emotion.HAPPY)
-                    is MemoryManager.AddResult.Duplicate -> AgentReply("Я это уже помню: «${r.existing.text}».", Emotion.CURIOUS)
-                    is MemoryManager.AddResult.Rejected -> AgentReply("Не стану это запоминать: ${r.reason}.", Emotion.POUTY)
+                    is MemoryManager.AddResult.Duplicate -> AgentReply(tr("Я это уже помню: «${r.existing.text}».", "I already remember that: “${r.existing.text}”."), Emotion.CURIOUS)
+                    is MemoryManager.AddResult.Rejected -> AgentReply(tr("Не стану это запоминать: ${r.reason}.", "I won't remember that: ${r.reason}."), Emotion.POUTY)
                 }
             }
             CommandParser.Parsed.ListMemory -> {
                 val items = memory.all().sortedByDescending { it.importance }.take(15)
-                if (items.isEmpty()) AgentReply("Пока ничего не помню. Скажи «запомни: …».", Emotion.NEUTRAL)
-                else AgentReply("Вот что я помню:\n" + items.joinToString("\n") { "• ${it.text}" }, Emotion.HAPPY)
+                if (items.isEmpty()) AgentReply(tr("Пока ничего не помню. Скажи «запомни: …».", "I don't remember anything yet. Say “remember: …”."), Emotion.NEUTRAL)
+                else AgentReply(tr("Вот что я помню:\n", "Here's what I remember:\n") + items.joinToString("\n") { "• ${it.text}" }, Emotion.HAPPY)
             }
             is CommandParser.Parsed.Tool -> {
                 val record = policy.run(tools[parsed.name], parsed.name, parsed.args)
@@ -209,7 +210,7 @@ class CompanionAgent(
         val now = clock()
         val memories = memory.relevant(text, limit = 8, nowMs = now)
         val system = composer.system(
-            persona, state.mood, state.style, memories, now,
+            persona.localized(), state.mood, state.style, memories, now,
             toolsAvailable = tools.specs().isNotEmpty(), deviceContext = deviceContext(),
         )
         val messages = ArrayList<ChatMessage>()
@@ -252,12 +253,12 @@ class CompanionAgent(
                     actions += record
                     messages += ChatMessage.ToolResult(
                         callId = call.id, toolName = call.name,
-                        content = (if (record.outcome.ok) "OK: " else "ОШИБКА: ") + record.outcome.message,
+                        content = (if (record.outcome.ok) "OK: " else tr("ОШИБКА: ", "ERROR: ")) + record.outcome.message,
                         isError = !record.outcome.ok,
                     )
                 }
             }
-            return AgentReply("Я запуталась в действиях и остановилась.", Emotion.SAD, actions, usedLlm = true)
+            return AgentReply(tr("Я запуталась в действиях и остановилась.", "I got tangled in actions and stopped."), Emotion.SAD, actions, usedLlm = true)
         } catch (e: CancellationException) {
             throw e
         } catch (e: LlmException) {
@@ -269,19 +270,19 @@ class CompanionAgent(
     private suspend fun maybeSummarize(provider: LlmProvider) {
         if (conversation.count() < summarizeAfterTurns || clock() < summaryRetryAtMs) return
         val old = conversation.oldest(summarizeAfterTurns / 2)
-        val transcript = old.joinToString("\n") { (if (it.role == Turn.Role.USER) "Владелец: " else "${persona.name}: ") + it.text.take(500) }
+        val transcript = old.joinToString("\n") { (if (it.role == Turn.Role.USER) tr("Владелец: ", "Owner: ") else "${persona.name}: ") + it.text.take(500) }
         try {
             val r = provider.complete(LlmRequest(
-                system = "Сожми диалог в 1–3 предложения от третьего лица: только устойчиво полезное о владельце " +
+                system = tr("Сожми диалог в 1–3 предложения от третьего лица: только устойчиво полезное о владельце " +
                     "(планы, события, договорённости, предпочтения). Без паролей и чувствительных данных. " +
-                    "Если ничего полезного нет — ответь ровно словом НЕТ.",
+                    "Если ничего полезного нет — ответь ровно словом НЕТ.", "Compress the dialogue into 1–3 sentences in the third person: only lastingly useful facts about the owner (plans, events, agreements, preferences). No passwords or sensitive data. If there is nothing useful, answer with exactly the word NONE."),
                 messages = listOf(ChatMessage.User(transcript)),
                 maxTokens = 200, temperature = 0.2,
             ))
             currentCoroutineContext().ensureActive()
             val summary = r.text.trim()
             val saved = when {
-                summary.equals("НЕТ", ignoreCase = true) -> true
+                summary.equals("НЕТ", ignoreCase = true) || summary.equals("NONE", ignoreCase = true) -> true
                 summary.isEmpty() -> false
                 else -> memory.add(summary.take(400), MemoryKind.EPISODE, MemorySource.SUMMARY, 2, clock()) !is MemoryManager.AddResult.Rejected
             }
@@ -304,15 +305,15 @@ class CompanionAgent(
 
 /** Lets the model store long-term facts. SAFE but always surfaced in the UI as an action chip. */
 class RememberTool(private val memory: MemoryManager, private val clock: () -> Long) : Tool {
-    override val spec = ToolSchemas.remember
+    override val spec get() = ToolSchemas.remember
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = "запомнить: «${args.str("text").orEmpty()}»"
+    override fun describe(args: JsonObject) = tr("запомнить: «${args.str("text").orEmpty()}»", "remember: “${args.str("text").orEmpty()}”")
     override suspend fun execute(args: JsonObject): ToolOutcome {
-        val text = args.str("text") ?: return ToolOutcome(false, "нет текста")
+        val text = args.str("text") ?: return ToolOutcome(false, tr("нет текста", "no text"))
         val kind = if (args.str("kind") == "preference") MemoryKind.PREFERENCE else MemoryKind.FACT
         return when (val r = memory.add(text, kind, MemorySource.MODEL_PROPOSED, args.int("importance") ?: 3, clock())) {
-            is MemoryManager.AddResult.Added -> ToolOutcome(true, "запомнила «${r.item.text}»")
-            is MemoryManager.AddResult.Duplicate -> ToolOutcome(true, "уже помню это")
+            is MemoryManager.AddResult.Added -> ToolOutcome(true, tr("запомнила «${r.item.text}»", "remembered “${r.item.text}”"))
+            is MemoryManager.AddResult.Duplicate -> ToolOutcome(true, tr("уже помню это", "I already remember this"))
             is MemoryManager.AddResult.Rejected -> ToolOutcome(false, r.reason)
         }
     }

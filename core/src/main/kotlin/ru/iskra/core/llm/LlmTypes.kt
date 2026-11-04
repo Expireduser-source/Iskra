@@ -1,5 +1,6 @@
 package ru.iskra.core.llm
 
+import ru.iskra.core.i18n.tr
 import kotlinx.serialization.json.JsonObject
 
 /** Provider-neutral chat message. Tool results are messages with role TOOL. */
@@ -55,22 +56,22 @@ class LlmException(
 ) : Exception(message, cause) {
     enum class Kind { AUTH, RATE_LIMIT, NETWORK, SERVER, BAD_RESPONSE, NOT_CONFIGURED, BALANCE, LIMIT }
 
-    /** Message suitable for the user (Russian). Never contains the API key. */
+    /** Message for the user in the current language. Never contains the API key. */
     fun userMessage(): String = when (kind) {
-        Kind.AUTH -> "Ключ API не подошёл. Проверь его в настройках. $OFFLINE"
-        Kind.RATE_LIMIT -> "Сервис модели просит подождать (лимит запросов). Попробуй через минуту."
-        Kind.NETWORK -> "Нет связи с сервисом модели. Проверь интернет. $OFFLINE"
-        Kind.SERVER -> "Сервис модели сейчас отвечает ошибкой. Попробуй позже."
-        Kind.BAD_RESPONSE -> "Модель ответила в непонятном формате."
-        Kind.NOT_CONFIGURED -> "Облачная модель не настроена — я работаю в простом офлайн-режиме."
-        Kind.BALANCE -> "На счёте сервиса модели закончились деньги или лимит. Пополни баланс. $OFFLINE"
-        Kind.LIMIT -> "Сегодняшний лимит облака, который ты задал, исчерпан. До завтра отвечаю без модели. $OFFLINE"
+        Kind.AUTH -> tr("Ключ API не подошёл. Проверь его в настройках. $OFFLINE", "The API key didn't work. Check it in Settings. $OFFLINE")
+        Kind.RATE_LIMIT -> tr("Сервис модели просит подождать (лимит запросов). Попробуй через минуту.", "The model service asks to wait (request limit). Try again in a minute.")
+        Kind.NETWORK -> tr("Нет связи с сервисом модели. Проверь интернет. $OFFLINE", "No connection to the model service. Check the internet. $OFFLINE")
+        Kind.SERVER -> tr("Сервис модели сейчас отвечает ошибкой. Попробуй позже.", "The model service is returning errors right now. Try again later.")
+        Kind.BAD_RESPONSE -> tr("Модель ответила в непонятном формате.", "The model answered in a format I don't understand.")
+        Kind.NOT_CONFIGURED -> tr("Облачная модель не настроена — я работаю в простом офлайн-режиме.", "The cloud model isn't set up — I'm working in simple offline mode.")
+        Kind.BALANCE -> tr("На счёте сервиса модели закончились деньги или лимит. Пополни баланс. $OFFLINE", "The model service account is out of money or credits. Top it up. $OFFLINE")
+        Kind.LIMIT -> tr("Сегодняшний лимит облака, который ты задал, исчерпан. До завтра отвечаю без модели. $OFFLINE", "The daily cloud limit you set is used up. Until tomorrow I answer without the model. $OFFLINE")
     }
 
     /** Errors that will repeat on the next try: no point in asking again right away. */
     val persistent get() = kind == Kind.AUTH || kind == Kind.BALANCE || kind == Kind.NOT_CONFIGURED || kind == Kind.LIMIT
 
     private companion object {
-        const val OFFLINE = "Пока работаю без облака: будильники, таймеры, фонарик, приложения, заметки и напоминания — как обычно."
+        val OFFLINE get() = tr("Пока работаю без облака: будильники, таймеры, фонарик, приложения, заметки и напоминания — как обычно.", "For now I work without the cloud: alarms, timers, the flashlight, apps, notes and reminders work as usual.")
     }
 }

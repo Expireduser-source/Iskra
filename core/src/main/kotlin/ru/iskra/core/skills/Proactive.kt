@@ -1,14 +1,18 @@
 package ru.iskra.core.skills
 
+import ru.iskra.core.i18n.tr
 import java.time.LocalDateTime
 import kotlin.random.Random
 
 /** How often she may start talking on her own. */
-enum class ProactiveFrequency(val title: String, val minGapMin: Int, val perDay: Int) {
-    OFF("Не заговаривать самой", 0, 0),
-    RARE("Редко (до 3 раз в день)", 150, 3),
-    NORMAL("Обычно (до 6 раз в день)", 75, 6),
-    OFTEN("Часто (до 10 раз в день)", 40, 10),
+enum class ProactiveFrequency(private val ru: String, private val en: String, val minGapMin: Int, val perDay: Int) {
+    OFF("Не заговаривать самой", "Never speak up on her own", 0, 0),
+    RARE("Редко (до 3 раз в день)", "Rarely (up to 3 times a day)", 150, 3),
+    NORMAL("Обычно (до 6 раз в день)", "Normal (up to 6 times a day)", 75, 6),
+    OFTEN("Часто (до 10 раз в день)", "Often (up to 10 times a day)", 40, 10),
+    ;
+
+    val title: String get() = tr(ru, en)
 }
 
 enum class ProactiveTrigger { MORNING, RETURN, IDLE, EVENING }
@@ -104,32 +108,64 @@ class PhraseBank(private val random: Random = Random.Default) {
         ProactiveTrigger.EVENING -> EVENING
     })
 
-    fun reminder(text: String): String = pick("REMINDER", listOf(
-        "Напоминаю: $text.", "Эй, ты просил напомнить: $text.", "Мрр, время: $text.", "Не забудь: $text.",
+    fun reminder(text: String): String = pick("REMINDER", tr(
+        listOf("Напоминаю: $text.", "Эй, ты просил напомнить: $text.", "Мрр, время: $text.", "Не забудь: $text."),
+        listOf("Reminder: $text.", "Hey, you asked me to remind you: $text.", "Mrr, it's time: $text.", "Don't forget: $text."),
     ))
 
     companion object {
-        val MORNING = listOf(
+        val MORNING: List<String> get() = tr(MORNING_RU, MORNING_EN)
+        val RETURN: List<String> get() = tr(RETURN_RU, RETURN_EN)
+        val IDLE: List<String> get() = tr(IDLE_RU, IDLE_EN)
+        val EVENING: List<String> get() = tr(EVENING_RU, EVENING_EN)
+
+        private val MORNING_EN = listOf(
+            "Good morning! I'm already awake. Well, almost.",
+            "Morning! If you need me — I'm here, just call “Iskra”.",
+            "Good morning. Alarms, timers, weather — all in my paws.",
+            "Mrr… morning. Shall I check today's weather?",
+            "Good morning! Don't forget breakfast.",
+        )
+        private val RETURN_EN = listOf(
+            "Oh, you're back! I didn't miss you. Well, almost.",
+            "Welcome back. If you need something — say “Iskra”.",
+            "Meow, hi! Glad you stopped by.",
+            "I'm right here. Any tasks for me?",
+        )
+        private val IDLE_EN = listOf(
+            "Mrr… I'm here if you need me.",
+            "Maybe a break? I can set a five-minute timer.",
+            "If you need to remember something — say “note: …”.",
+            "It's quiet. Just checking you're still here.",
+            "Drink some water. Not an order, just care. Almost an order.",
+        )
+        private val EVENING_EN = listOf(
+            "It's evening already. Maybe time to rest?",
+            "Evening! Shall I set an alarm for the morning?",
+            "Mrr, it's getting late. Don't stay up too long, okay?",
+        )
+
+        private val MORNING_RU = listOf(
             "Доброе утро! Я уже проснулась. Ну, почти.",
             "Утро! Если что — я тут, зови: «Искра».",
             "Доброе утро. Будильники, таймеры, погода — всё в лапках.",
             "Мрр… утро. Спросить погоду на сегодня?",
             "С добрым утром! Не забудь позавтракать.",
         )
-        val RETURN = listOf(
+        private val RETURN_RU = listOf(
             "О, ты вернулся! Я тут не скучала. Ну, почти.",
             "С возвращением. Если что-то нужно — скажи «Искра».",
             "Мяу, привет! Хорошо, что заглянул.",
             "Я тут, на месте. Есть дела для меня?",
         )
-        val IDLE = listOf(
+        private val IDLE_RU = listOf(
             "Мрр… я тут, если что.",
             "Может, перерыв? Могу поставить таймер на пять минут.",
             "Если надо что-то запомнить — скажи «запиши заметку».",
             "Тихо как-то. Я просто проверяю, что ты на месте.",
             "Попей воды. Это не приказ, это забота. Почти приказ.",
         )
-        val EVENING = listOf(
+        private val EVENING_RU = listOf(
             "Уже вечер. Может, пора отдохнуть?",
             "Вечер! Поставить будильник на утро?",
             "Мрр, поздновато. Не засиживайся, ладно?",

@@ -1,5 +1,6 @@
 package ru.iskra.core.tools
 
+import ru.iskra.core.i18n.tr
 import kotlinx.serialization.json.JsonObject
 import ru.iskra.core.llm.ToolSpec
 
@@ -58,23 +59,23 @@ class SafetyPolicy(
     private val recent = ArrayDeque<Long>()
 
     suspend fun run(tool: Tool?, name: String, args: JsonObject): ActionRecord {
-        if (tool == null) return ActionRecord(name, name, ToolOutcome(false, "Неизвестный инструмент: $name"))
+        if (tool == null) return ActionRecord(name, name, ToolOutcome(false, tr("Неизвестный инструмент: $name", "Unknown tool: $name")))
         val description = runCatching { tool.describe(args) }.getOrElse { name }
-        if (name in disabled()) return ActionRecord(name, description, ToolOutcome(false, "Владелец отключил это действие в настройках."))
-        if (tool.risk == Risk.FORBIDDEN) return ActionRecord(name, description, ToolOutcome(false, "Это действие запрещено."))
-        if (!takeRateSlot()) return ActionRecord(name, description, ToolOutcome(false, "Слишком много действий подряд — остановилась для безопасности."))
+        if (name in disabled()) return ActionRecord(name, description, ToolOutcome(false, tr("Владелец отключил это действие в настройках.", "The owner turned this action off in settings.")))
+        if (tool.risk == Risk.FORBIDDEN) return ActionRecord(name, description, ToolOutcome(false, tr("Это действие запрещено.", "This action is not allowed.")))
+        if (!takeRateSlot()) return ActionRecord(name, description, ToolOutcome(false, tr("Слишком много действий подряд — остановилась для безопасности.", "Too many actions in a row — I stopped to be safe.")))
         // CONFIRM tools need approval on every call, even when the owner typed the command:
         // speech recognition and fuzzy parsing can misfire.
         if (tool.risk == Risk.CONFIRM) {
-            val ok = gate.confirm("Разрешить действие?", description)
-            if (!ok) return ActionRecord(name, description, ToolOutcome(false, "Владелец отклонил действие."))
+            val ok = gate.confirm(tr("Разрешить действие?", "Allow this action?"), description)
+            if (!ok) return ActionRecord(name, description, ToolOutcome(false, tr("Владелец отклонил действие.", "The owner declined the action.")))
         }
         val outcome = try {
             tool.execute(args)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            ToolOutcome(false, "Ошибка при выполнении: ${e.message ?: e.javaClass.simpleName}")
+            ToolOutcome(false, tr("Ошибка при выполнении: ${e.message ?: e.javaClass.simpleName}", "Failed to do it: ${e.message ?: e.javaClass.simpleName}"))
         }
         return ActionRecord(name, description, outcome)
     }

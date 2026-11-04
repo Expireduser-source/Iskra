@@ -1,5 +1,6 @@
 package ru.iskra.core.usage
 
+import ru.iskra.core.i18n.tr
 import ru.iskra.core.llm.ChatMessage
 import ru.iskra.core.llm.LlmException
 import ru.iskra.core.llm.LlmProvider
@@ -105,8 +106,8 @@ class UsageMeter(
         val f = fraction(d)
         if (d.warned || f < 0.8) return null
         store.save(d.copy(warned = true))
-        return if (f >= 1.0) "Сегодняшний лимит облака исчерпан — до завтра отвечаю попроще и говорю системным голосом. Лимиты — в «Настройки → Экономия»."
-        else "Мы потратили ${(f * 100).toInt()} % дневного лимита облака. Ближе к 100 % перейду на офлайн до завтра."
+        return if (f >= 1.0) tr("Сегодняшний лимит облака исчерпан — до завтра отвечаю попроще и говорю системным голосом. Лимиты — в «Настройки → Экономия».", "Today's cloud limit is used up — until tomorrow I keep answers simple and speak with the system voice. Limits are in “Settings → Economy”.")
+        else tr("Мы потратили ${(f * 100).toInt()} % дневного лимита облака. Ближе к 100 % перейду на офлайн до завтра.", "We've used ${(f * 100).toInt()} % of the daily cloud limit. Close to 100 % I'll go offline until tomorrow.")
     }
 
     /** Estimated cost today, or null if the owner entered no prices. */
@@ -117,9 +118,9 @@ class UsageMeter(
 
     fun describe(d: UsageDay = current(), l: UsageLimits = limits()): String {
         val tokens = (if (d.estimated) "≈" else "") + d.tokens
-        val base = "сегодня ${d.llmRequests} запросов к модели, $tokens токенов, ${d.ttsChars} символов облачного голоса"
+        val base = tr("сегодня ${d.llmRequests} запросов к модели, $tokens токенов, ${d.ttsChars} символов облачного голоса", "today ${d.llmRequests} model requests, $tokens tokens, ${d.ttsChars} characters of cloud voice")
         val money = cost(d, l)?.let { ", ≈ ${String.format(Locale.ROOT, "%.2f", it)} ${l.currency}" }.orEmpty()
-        val lim = if (l.any) "; лимит использован на ${(fraction(d, l) * 100).toInt()} %" else ""
+        val lim = if (l.any) tr("; лимит использован на ${(fraction(d, l) * 100).toInt()} %", "; limit ${(fraction(d, l) * 100).toInt()} % used") else ""
         return base + money + lim
     }
 }

@@ -1,5 +1,6 @@
 package ru.iskra.core.skills
 
+import ru.iskra.core.i18n.tr
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -35,7 +36,7 @@ class WeatherClient(
     suspend fun geocode(name: String): Place? {
         val url = geoUrl.toHttpUrl().newBuilder()
             .addQueryParameter("name", name.trim().take(80)).addQueryParameter("count", "1")
-            .addQueryParameter("language", "ru").addQueryParameter("format", "json").build()
+            .addQueryParameter("language", tr("ru", "en")).addQueryParameter("format", "json").build()
         val (code, body) = Http.execute(client, Request.Builder().url(url).get().build())
         Http.checkStatus(code, body)
         val first = (Json.parseToJsonElement(body).jsonObject["results"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return null
@@ -82,27 +83,27 @@ class WeatherClient(
 object WeatherText {
     /** WMO weather interpretation codes. */
     fun describe(code: Int): String = when (code) {
-        0 -> "ясно"
-        1 -> "в основном ясно"
-        2 -> "переменная облачность"
-        3 -> "пасмурно"
-        45, 48 -> "туман"
-        51, 53, 55 -> "морось"
-        56, 57 -> "ледяная морось"
-        61 -> "небольшой дождь"
-        63 -> "дождь"
-        65 -> "сильный дождь"
-        66, 67 -> "ледяной дождь"
-        71 -> "небольшой снег"
-        73 -> "снег"
-        75 -> "сильный снег"
-        77 -> "снежная крупа"
-        80, 81 -> "ливни"
-        82 -> "сильные ливни"
-        85, 86 -> "снегопад"
-        95 -> "гроза"
-        96, 99 -> "гроза с градом"
-        else -> "без подробностей"
+        0 -> tr("ясно", "clear")
+        1 -> tr("в основном ясно", "mostly clear")
+        2 -> tr("переменная облачность", "partly cloudy")
+        3 -> tr("пасмурно", "overcast")
+        45, 48 -> tr("туман", "fog")
+        51, 53, 55 -> tr("морось", "drizzle")
+        56, 57 -> tr("ледяная морось", "freezing drizzle")
+        61 -> tr("небольшой дождь", "light rain")
+        63 -> tr("дождь", "rain")
+        65 -> tr("сильный дождь", "heavy rain")
+        66, 67 -> tr("ледяной дождь", "freezing rain")
+        71 -> tr("небольшой снег", "light snow")
+        73 -> tr("снег", "snow")
+        75 -> tr("сильный снег", "heavy snow")
+        77 -> tr("снежная крупа", "snow grains")
+        80, 81 -> tr("ливни", "showers")
+        82 -> tr("сильные ливни", "heavy showers")
+        85, 86 -> tr("снегопад", "snowfall")
+        95 -> tr("гроза", "thunderstorm")
+        96, 99 -> tr("гроза с градом", "thunderstorm with hail")
+        else -> tr("без подробностей", "no details")
     }
 
     fun temp(t: Double): String {
@@ -113,20 +114,20 @@ object WeatherText {
     private fun wet(code: Int) = code in 51..67 || code in 80..82 || code in 95..99
 
     fun say(f: Forecast, day: Int): String {
-        val d = f.days.getOrNull(day) ?: return "Прогноза на этот день нет."
+        val d = f.days.getOrNull(day) ?: return tr("Прогноза на этот день нет.", "No forecast for that day.")
         val rain = d.rainChance
         val umbrella = when {
-            wet(d.code) || (rain != null && rain >= 60) -> " Зонт пригодится."
-            rain != null && rain in 30..59 -> " Возможен дождь — зонт на всякий случай."
+            wet(d.code) || (rain != null && rain >= 60) -> tr(" Зонт пригодится.", " Take an umbrella.")
+            rain != null && rain in 30..59 -> tr(" Возможен дождь — зонт на всякий случай.", " Rain is possible — an umbrella just in case.")
             else -> ""
         }
-        val chance = if (rain != null && rain >= 20) ", вероятность осадков $rain %" else ""
+        val chance = if (rain != null && rain >= 20) tr(", вероятность осадков $rain %", ", chance of precipitation $rain %") else ""
         return if (day == 0) {
-            val now = if (f.tempNow != null) "сейчас ${temp(f.tempNow)}, ${describe(f.codeNow ?: d.code)}" +
-                (f.windNow?.let { ", ветер ${it.roundToInt()} м/с" } ?: "") + ". " else ""
-            "${f.place.name}: $now" + "Сегодня от ${temp(d.tMin)} до ${temp(d.tMax)}$chance.$umbrella"
+            val now = if (f.tempNow != null) tr("сейчас ${temp(f.tempNow)}, ${describe(f.codeNow ?: d.code)}", "now ${temp(f.tempNow)}, ${describe(f.codeNow ?: d.code)}") +
+                (f.windNow?.let { tr(", ветер ${it.roundToInt()} м/с", ", wind ${it.roundToInt()} m/s") } ?: "") + ". " else ""
+            tr("${f.place.name}: $now" + "Сегодня от ${temp(d.tMin)} до ${temp(d.tMax)}$chance.$umbrella", "${f.place.name}: $now" + "Today from ${temp(d.tMin)} to ${temp(d.tMax)}$chance.$umbrella")
         } else {
-            "${f.place.name}, завтра: от ${temp(d.tMin)} до ${temp(d.tMax)}, ${describe(d.code)}$chance.$umbrella"
+            tr("${f.place.name}, завтра: от ${temp(d.tMin)} до ${temp(d.tMax)}, ${describe(d.code)}$chance.$umbrella", "${f.place.name}, tomorrow: from ${temp(d.tMin)} to ${temp(d.tMax)}, ${describe(d.code)}$chance.$umbrella")
         }
     }
 }
@@ -137,12 +138,12 @@ class WeatherTool(
     private val homePlace: () -> Place?,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : Tool {
-    override val spec = SkillSchemas.weather
+    override val spec get() = SkillSchemas.weather
     override val risk = Risk.SAFE
     override val informational = true
     private val cache = HashMap<String, Pair<Long, Forecast>>()
 
-    override fun describe(args: JsonObject) = "погода" + (args.str("city")?.let { " — $it" } ?: "")
+    override fun describe(args: JsonObject) = tr("погода", "weather") + (args.str("city")?.let { " — $it" } ?: "")
 
     companion object {
         /** «в Москве» → Москве, Москва; «в Казани» → Казани, Казань; «в Омске» → Омске, Омск. At most 3 tries. */
@@ -162,10 +163,10 @@ class WeatherTool(
         val day = if (args.str("day") == "tomorrow") 1 else 0
         val city = args.str("city")?.trim()?.takeIf { it.length >= 2 }
         val place = try {
-            if (city != null) cityCandidates(city).firstNotNullOfOrNull { weather.geocode(it) } ?: return ToolOutcome(false, "не нашла город «$city»")
-            else homePlace() ?: return ToolOutcome(false, "не знаю твой город — укажи его в Настройки → Погода")
+            if (city != null) cityCandidates(city).firstNotNullOfOrNull { weather.geocode(it) } ?: return ToolOutcome(false, tr("не нашла город «$city»", "couldn't find the city “$city”"))
+            else homePlace() ?: return ToolOutcome(false, tr("не знаю твой город — укажи его в Настройки → Погода", "I don't know your city — set it in Settings → Weather"))
         } catch (e: LlmException) {
-            return ToolOutcome(false, "сервис погоды недоступен: нет связи")
+            return ToolOutcome(false, tr("сервис погоды недоступен: нет связи", "the weather service is unavailable: no connection"))
         }
         val key = "%.2f,%.2f".format(java.util.Locale.ROOT, place.lat, place.lon)
         val now = clock()
@@ -173,7 +174,7 @@ class WeatherTool(
         val f = cached ?: try {
             weather.forecast(place).also { synchronized(cache) { cache[key] = now to it } }
         } catch (e: LlmException) {
-            return ToolOutcome(false, if (e.kind == LlmException.Kind.NETWORK) "нет интернета — погоду не узнать" else "сервис погоды ответил ошибкой")
+            return ToolOutcome(false, if (e.kind == LlmException.Kind.NETWORK) tr("нет интернета — погоду не узнать", "no internet — can't get the weather") else tr("сервис погоды ответил ошибкой", "the weather service returned an error"))
         }
         return ToolOutcome(true, WeatherText.say(f, day))
     }

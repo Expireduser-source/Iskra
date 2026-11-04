@@ -1,5 +1,7 @@
 package ru.iskra.core.diag
 
+import ru.iskra.core.i18n.tr
+
 /**
  * Masks secrets in any text that may end up in the diagnostics log or the copied report.
  *
@@ -135,8 +137,8 @@ object CrashHistory {
     fun summary(times: List<Long>, nowMs: Long, trackingSinceMs: Long): String {
         val week = countSince(times, nowMs - 7 * DAY)
         val days = daysWithout(times, nowMs, trackingSinceMs)
-        val goal = if (days >= 7) " ✅ цель 1.0 достигнута" else " (цель 1.0 — 7)"
-        return "за 7 дней: $week · без падений $days дн.$goal" + if (times.isNotEmpty()) " · всего ${times.size}" else ""
+        val goal = if (days >= 7) tr(" ✅ цель 1.0 достигнута", " ✅ 1.0 goal reached") else tr(" (цель 1.0 — 7)", " (1.0 goal — 7)")
+        return tr("за 7 дней: $week · без падений $days дн.$goal", "7 days: $week · crash-free $days d.$goal") + if (times.isNotEmpty()) tr(" · всего ${times.size}", " · total ${times.size}") else ""
     }
 }
 
@@ -153,28 +155,28 @@ object DiagReport {
         time: (Long) -> String = { it.toString() },
     ): String {
         val sb = StringBuilder()
-        sb.appendLine("=== Искра: отчёт диагностики ===")
-        sb.appendLine("Версия: ${info.appVersion} (сборка ${info.build})")
-        if (info.signing.isNotEmpty()) sb.appendLine("Сборка и подпись: ${info.signing}")
-        sb.appendLine("Телефон: ${info.device}")
+        sb.appendLine(tr("=== Искра: отчёт диагностики ===", "=== Iskra: diagnostics report ==="))
+        sb.appendLine(tr("Версия: ${info.appVersion} (сборка ${info.build})", "Version: ${info.appVersion} (build ${info.build})"))
+        if (info.signing.isNotEmpty()) sb.appendLine(tr("Сборка и подпись: ${info.signing}", "Build and signature: ${info.signing}"))
+        sb.appendLine(tr("Телефон: ${info.device}", "Phone: ${info.device}"))
         sb.appendLine("Android: ${info.android}")
-        sb.appendLine("Оболочка: ${info.vendorOs}")
+        sb.appendLine(tr("Оболочка: ${info.vendorOs}", "Skin: ${info.vendorOs}"))
         sb.appendLine()
-        sb.appendLine("-- Разрешения")
+        sb.appendLine(tr("-- Разрешения", "-- Permissions"))
         info.permissions.forEach { (n, ok) -> sb.appendLine("${if (ok) "[x]" else "[ ]"} $n") }
         sb.appendLine()
-        sb.appendLine("-- Сервисы")
+        sb.appendLine(tr("-- Сервисы", "-- Services"))
         info.services.forEach { (n, v) -> sb.appendLine("$n: $v") }
         sb.appendLine()
-        sb.appendLine("-- Настройки (ключи замаскированы)")
+        sb.appendLine(tr("-- Настройки (ключи замаскированы)", "-- Settings (keys masked)"))
         info.settings.forEach { (n, v) -> sb.appendLine("$n: $v") }
         sb.appendLine()
         val errors = log.count { it.level == DiagEntry.Level.ERROR }
         val warns = log.count { it.level == DiagEntry.Level.WARN }
-        sb.appendLine("-- Журнал: ${log.size} записей, ошибок $errors, предупреждений $warns; последние ${minOf(maxLog, log.size)}")
+        sb.appendLine(tr("-- Журнал: ${log.size} записей, ошибок $errors, предупреждений $warns; последние ${minOf(maxLog, log.size)}", "-- Journal: ${log.size} entries, $errors errors, $warns warnings; last ${minOf(maxLog, log.size)}"))
         log.takeLast(maxLog).forEach { sb.appendLine("${time(it.timeMs)} ${it.level.mark} ${it.tag}: ${it.message}") }
         sb.appendLine()
-        sb.appendLine("В отчёте нет ключей API и текста переписки.")
+        sb.appendLine(tr("В отчёте нет ключей API и текста переписки.", "The report contains no API keys and no chat text."))
         return Redactor.redact(sb.toString(), knownSecrets)
     }
 }

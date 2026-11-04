@@ -1,8 +1,10 @@
 package ru.iskra.core.skills
 
+import ru.iskra.core.i18n.tr
 import kotlinx.serialization.json.JsonObject
 import ru.iskra.core.memory.MemoryManager
 import ru.iskra.core.tools.CommandParser
+import ru.iskra.core.tools.EnglishReminders
 import ru.iskra.core.tools.Risk
 import ru.iskra.core.tools.Tool
 import ru.iskra.core.tools.ToolOutcome
@@ -63,7 +65,7 @@ object ReminderParser {
     fun parse(input: String, now: LocalDateTime): Result? {
         val raw = input.trim().trimEnd('.', '!')
         val t = raw.lowercase().replace('ё', 'е')
-        val p = prefix.find(t) ?: return null
+        val p = prefix.find(t) ?: return EnglishReminders.parse(input, now)
         var body = t.substring(p.range.last + 1)
         var original = raw.substring(p.range.last + 1)
         fun cut(range: IntRange) {
@@ -114,7 +116,7 @@ object ReminderParser {
         }
         val result = at ?: return null
         if (!result.isAfter(now) || result.isAfter(now.plusDays(366))) return null
-        val text = original.replace(leadingJunk, "").trim().trimEnd(',', ' ').ifBlank { "напоминание" }
+        val text = original.replace(leadingJunk, "").trim().trimEnd(',', ' ').ifBlank { tr("напоминание", "reminder") }
         return Result(text, result, inMinutes)
     }
 
@@ -143,10 +145,10 @@ internal fun whenText(atMs: Long, nowMs: Long, zone: ZoneId): String {
     val hm = at.format(DateTimeFormatter.ofPattern("HH:mm"))
     val minutes = (atMs - nowMs + 30_000) / 60_000
     return when {
-        minutes < 60 -> "через $minutes мин (в $hm)"
-        at.toLocalDate() == now.toLocalDate() -> "сегодня в $hm"
-        at.toLocalDate() == now.toLocalDate().plusDays(1) -> "завтра в $hm"
-        else -> at.format(DateTimeFormatter.ofPattern("d.MM в HH:mm"))
+        minutes < 60 -> tr("через $minutes мин (в $hm)", "in $minutes min (at $hm)")
+        at.toLocalDate() == now.toLocalDate() -> tr("сегодня в $hm", "today at $hm")
+        at.toLocalDate() == now.toLocalDate().plusDays(1) -> tr("завтра в $hm", "tomorrow at $hm")
+        else -> at.format(tr(DateTimeFormatter.ofPattern("d.MM в HH:mm"), DateTimeFormatter.ofPattern("MMM d 'at' HH:mm", java.util.Locale.ENGLISH)))
     }
 }
 
@@ -156,55 +158,55 @@ class SetReminderTool(
     private val clock: () -> Long,
     private val zone: () -> ZoneId = { ZoneId.systemDefault() },
 ) : Tool {
-    override val spec = SkillSchemas.setReminder
+    override val spec get() = SkillSchemas.setReminder
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = "напоминание: «${args.str("text").orEmpty().take(60)}»"
+    override fun describe(args: JsonObject) = tr("напоминание: «${args.str("text").orEmpty().take(60)}»", "reminder: “${args.str("text").orEmpty().take(60)}”")
 
     override suspend fun execute(args: JsonObject): ToolOutcome {
-        val text = args.str("text")?.trim()?.take(300).orEmpty().ifBlank { "напоминание" }
-        if (MemoryManager.looksSensitive(text)) return ToolOutcome(false, "похоже на пароль или номер карты — такое не сохраняю")
+        val text = args.str("text")?.trim()?.take(300).orEmpty().ifBlank { tr("напоминание", "reminder") }
+        if (MemoryManager.looksSensitive(text)) return ToolOutcome(false, tr("похоже на пароль или номер карты — такое не сохраняю", "looks like a password or a card number — I don't save that"))
         val now = clock()
         val atMs = args.int("in_minutes")?.let { now + it * 60_000L }
             ?: args.str("at")?.let { s ->
                 runCatching { LocalDateTime.parse(s.take(16)) }.recoverCatching { LocalDate.parse(s.take(10)).atTime(9, 0) }
                     .getOrNull()?.atZone(zone())?.toInstant()?.toEpochMilli()
             }
-            ?: return ToolOutcome(false, "не поняла, когда напомнить")
-        if (atMs <= now) return ToolOutcome(false, "это время уже прошло")
-        if (atMs > now + 366L * 86_400_000) return ToolOutcome(false, "слишком далеко — не дальше года")
+            ?: return ToolOutcome(false, tr("не поняла, когда напомнить", "I didn't get when to remind you"))
+        if (atMs <= now) return ToolOutcome(false, tr("это время уже прошло", "that time has already passed"))
+        if (atMs > now + 366L * 86_400_000) return ToolOutcome(false, tr("слишком далеко — не дальше года", "too far ahead — no more than a year"))
         val r = store.add(text, atMs, now)
         scheduler.schedule(r)
-        val late = if (scheduler.exact) "" else " (Android может прислать его на несколько минут позже — для точности разреши «Будильники и напоминания» в настройках Искры)"
-        return ToolOutcome(true, "напомню «$text» ${whenText(atMs, now, zone())}$late")
+        val late = if (scheduler.exact) "" else tr(" (Android может прислать его на несколько минут позже — для точности разреши «Будильники и напоминания» в настройках Искры)", " (Android may deliver it a few minutes late — for the exact time allow “Alarms & reminders” in Iskra's settings)")
+        return ToolOutcome(true, tr("напомню «$text» ${whenText(atMs, now, zone())}$late", "I'll remind you “$text” ${whenText(atMs, now, zone())}$late"))
     }
 }
 
 class ListRemindersTool(private val store: ReminderStore, private val clock: () -> Long, private val zone: () -> ZoneId = { ZoneId.systemDefault() }) : Tool {
-    override val spec = SkillSchemas.listReminders
+    override val spec get() = SkillSchemas.listReminders
     override val risk = Risk.SAFE
     override val informational = true
-    override fun describe(args: JsonObject) = "список напоминаний"
+    override fun describe(args: JsonObject) = tr("список напоминаний", "list of reminders")
     override suspend fun execute(args: JsonObject): ToolOutcome {
         val list = store.pending()
-        if (list.isEmpty()) return ToolOutcome(true, "Напоминаний нет. Скажи: «напомни через 10 минут …».")
+        if (list.isEmpty()) return ToolOutcome(true, tr("Напоминаний нет. Скажи: «напомни через 10 минут …».", "No reminders. Say: “remind me in 10 minutes …”."))
         val now = clock()
-        return ToolOutcome(true, "Напоминания (${list.size}):\n" + list.take(10).joinToString("\n") { "• ${whenText(it.atMs, now, zone())} — ${it.text}" })
+        return ToolOutcome(true, tr("Напоминания (${list.size}):\n", "Reminders (${list.size}):\n") + list.take(10).joinToString("\n") { "• ${whenText(it.atMs, now, zone())} — ${it.text}" })
     }
 }
 
 class CancelRemindersTool(private val store: ReminderStore, private val scheduler: ReminderScheduler) : Tool {
-    override val spec = SkillSchemas.cancelReminders
+    override val spec get() = SkillSchemas.cancelReminders
     override val risk = Risk.CONFIRM
     override fun describe(args: JsonObject): String {
         val list = store.pending()
-        return if (args.str("which") == "all") "отменить все напоминания (${list.size})"
-        else "отменить ближайшее напоминание: «${list.firstOrNull()?.text?.take(60).orEmpty()}»"
+        return if (args.str("which") == "all") tr("отменить все напоминания (${list.size})", "cancel all reminders (${list.size})")
+        else tr("отменить ближайшее напоминание: «${list.firstOrNull()?.text?.take(60).orEmpty()}»", "cancel the nearest reminder: “${list.firstOrNull()?.text?.take(60).orEmpty()}”")
     }
     override suspend fun execute(args: JsonObject): ToolOutcome {
         val list = store.pending()
-        if (list.isEmpty()) return ToolOutcome(false, "напоминаний нет")
+        if (list.isEmpty()) return ToolOutcome(false, tr("напоминаний нет", "there are no reminders"))
         val chosen = if (args.str("which") == "all") list else list.take(1)
         chosen.forEach { scheduler.cancel(it.id); store.delete(it.id) }
-        return ToolOutcome(true, if (chosen.size == 1) "отменила «${chosen[0].text.take(60)}»" else "отменила напоминания: ${chosen.size}")
+        return ToolOutcome(true, if (chosen.size == 1) tr("отменила «${chosen[0].text.take(60)}»", "cancelled “${chosen[0].text.take(60)}”") else tr("отменила напоминания: ${chosen.size}", "cancelled reminders: ${chosen.size}"))
     }
 }
