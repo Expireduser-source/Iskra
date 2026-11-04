@@ -231,16 +231,28 @@ jobs:
           cp "$apk" Iskra.apk
           sha256sum Iskra.apk > Iskra.apk.sha256
 
+      - name: Release notes from the changelogs
+        run: |
+          code=$(grep -Po 'versionCode = \K\d+' app/build.gradle.kts)
+          {
+            echo "### 📥 [Iskra.apk](https://github.com/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}/Iskra.apk)"
+            echo
+            echo "**English**"; cat "fastlane/metadata/android/en-US/changelogs/$code.txt" 2>/dev/null || true
+            echo; echo "**Русский**"; cat "fastlane/metadata/android/ru-RU/changelogs/$code.txt" 2>/dev/null || true
+            echo; echo "Package ru.iskra.app, signed with the project key; installs over the previous release keeping memory and settings."
+            echo "Пакет ru.iskra.app, подпись проекта; ставится поверх прошлой версии, память и настройки сохраняются."
+            echo; echo "SHA-256: \`$(cut -d' ' -f1 Iskra.apk.sha256)\` · commit ${{ github.sha }}"
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           target_commitish: ${{ github.sha }}
-          name: Искра ${{ env.RELEASE_TAG }}
+          name: Iskra · Искра ${{ env.RELEASE_TAG }}
           prerelease: false
-          body: |
-            Release-сборка из коммита ${{ github.sha }} (пакет ru.iskra.app, подпись владельца).
-            Ставится рядом с debug-версией (ru.iskra.app.debug). Данные переносятся через «Память → Сохранить копию / Восстановить». Ключи API нужно ввести заново.
+          body_path: release-notes.md
           files: |
             Iskra.apk
             Iskra.apk.sha256

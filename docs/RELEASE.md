@@ -26,10 +26,14 @@ Settings → Secrets and variables → Actions → New repository secret:
 | `ISKRA_KEY_PASSWORD` | пароль ключа (в PKCS12 тот же, что у хранилища) |
 
 ## Выпуск версии
-1. Сначала в `app/build.gradle.kts` поднять `versionName` (и `versionCode`).
-2. Поставить тег: `git tag v0.4.0 && git push origin v0.4.0`. Тег должен совпадать с `versionName`, иначе CI остановится.
+1. Сначала в `app/build.gradle.kts` поднять `versionName` (и `versionCode`), добавить
+   `fastlane/metadata/android/{en-US,ru-RU}/changelogs/<versionCode>.txt`.
+2. Запустить: **Actions → Build APK → Run workflow**, ветка `main`, галочка `release`. CI сам ставит тег `v<versionName>`.
+   (Можно и тегом: `git tag v0.10.0 && git push origin v0.10.0` — тег должен совпадать с `versionName`.)
 3. CI запускает тесты и собирает `assembleRelease` с ключом. Затем `apksigner` проверяет, что подпись не debug.
-4. Публикуется релиз `v0.4.0` с `Iskra-v0.4.0-release.apk` и `.sha256`.
+4. Публикуется релиз `v0.10.0` с файлами **`Iskra.apk`** и `Iskra.apk.sha256`. Имя файла всегда одно и то же, поэтому ссылка
+   `https://github.com/Expireduser-source/Iskra/releases/latest/download/Iskra.apk` всегда ведёт на новую версию
+   (README, сайт, QR-код, проверка обновлений в приложении). Описание релиза берётся из changelog обоих языков.
 
 ## Свой ключ на своём компьютере (если нужен новый)
 ```bash

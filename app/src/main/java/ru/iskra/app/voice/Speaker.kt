@@ -351,7 +351,7 @@ class Speaker(
                     t = buildTrack(fmt).also { track = it; it.play() }
                     trackFormat = fmt; framesWritten = 0
                 }
-                val tr = t!!
+                val out = t!!
                 if (clip.fromCache) { ss.hits++; cacheHits++ }
                 var leftover: Byte? = null
                 try {
@@ -362,8 +362,8 @@ class Speaker(
                         if (len % 2 == 1) { leftover = data[len - 1]; len -= 1 }
                         if (len == 0) continue
                         if (!ss.firstSoundLogged) { ss.firstSoundLogged = true; logFirstSound(ss, client = ss.client!!.name, cached = clip.fromCache) }
-                        scheduleMouth(data, len, fmt.sampleRate, framesWritten - tr.playbackHeadPosition.toLong())
-                        tr.write(data, 0, len)
+                        scheduleMouth(data, len, fmt.sampleRate, framesWritten - out.playbackHeadPosition.toLong())
+                        out.write(data, 0, len)
                         framesWritten += len / (2 * fmt.channels)
                     }
                 } catch (e: Exception) {
@@ -378,9 +378,9 @@ class Speaker(
         }
     }
 
-    private fun drain(ss: Session, tr: AudioTrack, framesWritten: Long, rate: Int) {
+    private fun drain(ss: Session, audio: AudioTrack, framesWritten: Long, rate: Int) {
         val deadline = SystemClock.elapsedRealtime() + 3000 + framesWritten * 1000 / rate
-        while (session === ss && tr.playbackHeadPosition < framesWritten && SystemClock.elapsedRealtime() < deadline) Thread.sleep(30)
+        while (session === ss && audio.playbackHeadPosition < framesWritten && SystemClock.elapsedRealtime() < deadline) Thread.sleep(30)
     }
 
     private fun cloudFailed(ss: Session, e: Exception) {
