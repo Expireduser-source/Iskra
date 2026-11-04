@@ -4,4 +4,13 @@
     <string name="accessibility_label">Искра · управление</string>
     <string name="accessibility_description">Искра выполняет только системные действия, о которых вы попросили: «Домой», «Назад», «Недавние», «Уведомления», «Быстрые настройки», «Заблокировать экран», «Скриншот». Служба не читает содержимое экрана и не нажимает кнопки в других приложениях. Её можно отключить в любой момент.</string>
     <string name="overlay_channel">Искра на экране</string>
+    <string name="ask_iskra">Спросить Искру</string>
+    <string name="shortcut_ask_short">Спросить</string>
+    <string name="shortcut_voice_long">Сказать голосом</string>
+    <string name="shortcut_voice_short">Голосом</string>
+    <string name="shortcut_remind_long">Новое напоминание</string>
+    <string name="shortcut_remind_short">Напомнить</string>
+    <string name="shortcut_toggle_long">Показать или убрать Искру</string>
+    <string name="shortcut_toggle_short">На экране</string>
+    <string name="tile_label">Искра</string>
 </resources>

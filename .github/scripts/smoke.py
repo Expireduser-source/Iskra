@@ -188,6 +188,22 @@ def main():
     time.sleep(5)
     s.shot("home-with-iskra")
 
+    # "Share → Iskra": shared text comes with actions; "To notes" works offline.
+    sh(f"am start -a android.intent.action.SEND -t text/plain --es android.intent.extra.TEXT 'Buy oat milk and bread for Sunday' -n {PKG}/ru.iskra.app.ui.QuickChatActivity")
+    time.sleep(4)
+    s.shot("share-sheet")
+    if s.tap_id("share_note"):
+        time.sleep(3)
+        s.shot("share-note-saved")
+    sh("input keyevent KEYCODE_BACK")
+    time.sleep(1)
+    # Launcher shortcut "Reminder": the quick chat opens with the text ready to edit.
+    sh(f"am start -a ru.iskra.app.action.REMIND -n {PKG}/ru.iskra.app.ui.QuickChatActivity")
+    time.sleep(3)
+    s.shot("shortcut-reminder")
+    sh("input keyevent KEYCODE_BACK")
+    time.sleep(1)
+
     # Back to the app: landscape, dark theme, large font.
     sh(f"am start -n {MAIN}")
     time.sleep(3)

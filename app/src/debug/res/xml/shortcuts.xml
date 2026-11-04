@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the launcher icon. The package differs for the debug build (src/debug/res/xml/shortcuts.xml). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="ask" android:enabled="true" android:icon="@drawable/ic_sc_ask"
+        android:shortcutShortLabel="@string/shortcut_ask_short" android:shortcutLongLabel="@string/ask_iskra">
+        <intent android:action="ru.iskra.app.action.ASK" android:targetPackage="ru.iskra.app.debug" android:targetClass="ru.iskra.app.ui.QuickChatActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="voice" android:enabled="true" android:icon="@drawable/ic_sc_voice"
+        android:shortcutShortLabel="@string/shortcut_voice_short" android:shortcutLongLabel="@string/shortcut_voice_long">
+        <intent android:action="ru.iskra.app.action.VOICE" android:targetPackage="ru.iskra.app.debug" android:targetClass="ru.iskra.app.ui.QuickChatActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="remind" android:enabled="true" android:icon="@drawable/ic_sc_remind"
+        android:shortcutShortLabel="@string/shortcut_remind_short" android:shortcutLongLabel="@string/shortcut_remind_long">
+        <intent android:action="ru.iskra.app.action.REMIND" android:targetPackage="ru.iskra.app.debug" android:targetClass="ru.iskra.app.ui.QuickChatActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="toggle" android:enabled="true" android:icon="@drawable/ic_sc_toggle"
+        android:shortcutShortLabel="@string/shortcut_toggle_short" android:shortcutLongLabel="@string/shortcut_toggle_long">
+        <intent android:action="ru.iskra.app.action.TOGGLE" android:targetPackage="ru.iskra.app.debug" android:targetClass="ru.iskra.app.system.ToggleActivity" />
+    </shortcut>
+</shortcuts>

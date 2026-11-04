@@ -76,13 +76,20 @@ private fun emotionEmoji(e: Emotion?) = when (e) {
 
 /** Shared chat UI used by the main screen and the floating quick chat. */
 @Composable
-fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
+fun ChatScreen(
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    /** Text put into the input on open (a shortcut or a shared text the owner wants to edit). */
+    initialInput: String = "",
+    /** Start voice input right away (the "Voice" shortcut). */
+    autoVoice: Boolean = false,
+) {
     val app = IskraApp.instance
     val ctx = LocalContext.current
     val messages by app.chat.messages.collectAsState()
     val busy by app.chat.busy.collectAsState()
     val pending by app.confirm.pending.collectAsState()
-    var input by rememberSaveable { mutableStateOf("") }
+    var input by rememberSaveable { mutableStateOf(initialInput) }
     var listening by remember { mutableStateOf(false) }
     var voiceError by remember { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
@@ -123,6 +130,22 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startListening() else voiceError = tr("Без доступа к микрофону голосовой ввод не работает.", "Voice input doesn't work without microphone access.")
     }
+
+    fun micTapped() {
+                voiceError = null
+                if (listening) { if (offlineActive) offline.stop() else listener.stop(); return }
+                val system = listener.available()
+                offlineActive = app.settings.load().voiceInputOffline || !system
+                if (offlineActive && !offline.available()) {
+                    voiceError = if (!system) tr("На телефоне нет системного распознавания речи. Скачай модель в «Настройки» → «Слух» — " +
+                        "и микрофон заработает прямо на телефоне, без интернета.", "This phone has no system speech recognition. Download the model in “Settings” → “Hearing” — and the microphone will work right on the phone, offline.")
+                    else tr("Для ввода только на телефоне скачай модель в «Настройки» → «Слух».", "For on-phone-only input, download the model in “Settings” → “Hearing”.")
+                    return
+                }
+                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
+                else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+    if (autoVoice) LaunchedEffect(Unit) { delay(400); micTapped() }
 
     // Following the tail is the owner's choice. A drag pauses it; reaching the end resumes it.
     // Read scroll state in a snapshot flow, not in composition: scrolling must not recompose the chat.
@@ -183,19 +206,7 @@ fun ChatScreen(modifier: Modifier = Modifier, compact: Boolean = false) {
             Spacer(Modifier.size(6.dp))
             IconButton(enabled = !busy || listening, modifier = Modifier.testTag("chat_mic").semantics {
                 contentDescription = if (listening) tr("Остановить запись", "Stop recording") else tr("Голосовое сообщение", "Voice message")
-            }, onClick = {
-                voiceError = null
-                if (listening) { if (offlineActive) offline.stop() else listener.stop(); return@IconButton }
-                val system = listener.available()
-                offlineActive = app.settings.load().voiceInputOffline || !system
-                if (offlineActive && !offline.available()) {
-                    voiceError = if (!system) tr("На телефоне нет системного распознавания речи. Скачай модель в «Настройки» → «Слух» — " +
-                        "и микрофон заработает прямо на телефоне, без интернета.", "This phone has no system speech recognition. Download the model in “Settings” → “Hearing” — and the microphone will work right on the phone, offline.")
-                    else tr("Для ввода только на телефоне скачай модель в «Настройки» → «Слух».", "For on-phone-only input, download the model in “Settings” → “Hearing”.")
-                    return@IconButton
-                }
-                if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startListening()
-                else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            }, onClick = { micTapped() 
             }) { Text(if (listening) "■" else "🎤", Modifier.clearAndSetSemantics {}) }
             Spacer(Modifier.size(6.dp))
             IconButton(enabled = !busy && input.isNotBlank(),

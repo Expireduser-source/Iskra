@@ -84,8 +84,24 @@ import ru.iskra.core.memory.MemoryKind
 import ru.iskra.core.memory.MemorySource
 
 class MainActivity : ComponentActivity() {
+    /** A tab asked for by an intent (the tile or a notification opens «Разрешения»); counts new requests. */
+    private var requestedTab = 0
+    private var tabRequests by mutableIntStateOf(0)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.hasExtra(EXTRA_TAB)) { requestedTab = intent.getIntExtra(EXTRA_TAB, 0); tabRequests++ }
+    }
+
+    companion object {
+        const val EXTRA_TAB = "tab"
+        const val TAB_PERMISSIONS = 3
+    }
+
     @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
+        requestedTab = intent.getIntExtra(EXTRA_TAB, 0)
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
@@ -93,7 +109,8 @@ class MainActivity : ComponentActivity() {
                 // Test tags become resource ids, so the CI emulator check can find buttons in any language.
                 Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                     var intro by remember { mutableStateOf(OnboardingState.needed(this@MainActivity)) }
-                    if (intro) Onboarding { OnboardingState.done(this@MainActivity); intro = false } else MainScreen()
+                    if (intro) Onboarding { OnboardingState.done(this@MainActivity); intro = false }
+                    else MainScreen(requestedTab, tabRequests)
                 }
             }
         }
@@ -108,8 +125,9 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun MainScreen() {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+private fun MainScreen(requestedTab: Int, tabRequests: Int) {
+    var tab by rememberSaveable { mutableIntStateOf(requestedTab) }
+    LaunchedEffect(tabRequests) { if (tabRequests > 0) tab = requestedTab }
     val tabs = listOf("💬" to tr("Чат", "Chat"), "🧠" to tr("Память", "Memory"), "⚙️" to tr("Настройки", "Settings"), "🔐" to tr("Разрешения", "Permissions"))
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,

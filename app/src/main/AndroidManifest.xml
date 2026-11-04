@@ -71,17 +71,54 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Long-press the icon: Ask, Voice, Reminder, On screen. -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
 
-        <!-- Compact chat that pops up over the current app when the character is tapped. -->
+        <!-- Compact chat over the current app: tap on the character, launcher shortcuts, "Share → Iskra" and
+             "Ask Iskra" in the text-selection menu. Other apps can only hand it text: nothing is sent or done
+             until the owner taps an action. -->
         <activity
             android:name=".ui.QuickChatActivity"
-            android:exported="false"
+            android:exported="true"
+            android:label="@string/ask_iskra"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
             android:taskAffinity="${applicationId}.quick"
             android:theme="@style/Theme.Iskra.Floating"
-            android:windowSoftInputMode="adjustResize" />
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- Shows/hides Iskra (Quick Settings tile, launcher shortcut) and closes at once. -->
+        <activity
+            android:name=".system.ToggleActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".system.IskraTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE" android:value="true" />
+        </service>
 
         <receiver android:name=".skills.ReminderReceiver" android:exported="false" />
         <service

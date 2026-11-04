@@ -5,4 +5,13 @@
     <string name="accessibility_label">Iskra · control</string>
     <string name="accessibility_description">Iskra performs only the system actions you asked for: Home, Back, Recents, Notifications, Quick settings, Lock screen, Screenshot. The service does not read the screen and does not tap buttons in other apps. You can turn it off at any time.</string>
     <string name="overlay_channel">Iskra on screen</string>
+    <string name="ask_iskra">Ask Iskra</string>
+    <string name="shortcut_ask_short">Ask</string>
+    <string name="shortcut_voice_long">Talk to Iskra</string>
+    <string name="shortcut_voice_short">Voice</string>
+    <string name="shortcut_remind_long">New reminder</string>
+    <string name="shortcut_remind_short">Reminder</string>
+    <string name="shortcut_toggle_long">Show or hide Iskra</string>
+    <string name="shortcut_toggle_short">On screen</string>
+    <string name="tile_label">Iskra</string>
 </resources>

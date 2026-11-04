@@ -162,4 +162,24 @@ class EnglishTest {
         assertTrue(ru.iskra.core.persona.StyleFeedback.detect("stop meowing", p)!!.catSpeech < 0)
         assertNull(ru.iskra.core.persona.StyleFeedback.detect("what a lovely day", p))
     }
+
+    @Test fun sharedTextBecomesOrdinaryCommands() {
+        val t = "Buy oat milk\nand bread"
+        assertEquals(listOf(ru.iskra.core.skills.ShareAction.REMEMBER, ru.iskra.core.skills.ShareAction.NOTE, ru.iskra.core.skills.ShareAction.REMIND),
+            ru.iskra.core.skills.SharedText.actions(t, brain = false))
+        assertEquals(6, ru.iskra.core.skills.SharedText.actions(t, brain = true).size)
+        assertEquals(listOf(ru.iskra.core.skills.ShareAction.EXPLAIN, ru.iskra.core.skills.ShareAction.SUMMARIZE, ru.iskra.core.skills.ShareAction.TRANSLATE),
+            ru.iskra.core.skills.SharedText.actions("x".repeat(1200), brain = true))
+        assertNull(ru.iskra.core.skills.SharedText.clean("   "))
+        assertEquals(ru.iskra.core.skills.SharedText.MAX_CHARS, ru.iskra.core.skills.SharedText.clean("y".repeat(9000))!!.length)
+        // Offline round trip in both languages: the messages are commands the parser understands.
+        for (lang in listOf(Lang.RU, Lang.EN)) withLang(lang) {
+            val note = CommandParser.parse(ru.iskra.core.skills.SharedText.message(ru.iskra.core.skills.ShareAction.NOTE, t), now)
+            assertEquals("Buy oat milk and bread", assertIs<CommandParser.Parsed.Tool>(note, "$lang").args["text"]!!.jsonPrimitive.content)
+            val mem = CommandParser.parse(ru.iskra.core.skills.SharedText.message(ru.iskra.core.skills.ShareAction.REMEMBER, t), now)
+            assertEquals("Buy oat milk and bread", assertIs<CommandParser.Parsed.Remember>(mem, "$lang").text)
+            val rem = CommandParser.parse(ru.iskra.core.skills.SharedText.message(ru.iskra.core.skills.ShareAction.REMIND, t), now)
+            assertIs<CommandParser.Parsed.Tool>(rem, "$lang").let { assertEquals(SkillNames.SET_REMINDER, it.name); assertEquals(60, it.int("in_minutes")) }
+        }
+    }
 }
