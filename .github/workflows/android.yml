@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Build the signed release from main (creates the tag v<versionName>)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # needed to publish the APK as a GitHub Release
@@ -13,7 +18,7 @@ permissions:
 jobs:
   # Debug APK on every push (as before). Package ru.iskra.app.debug, fixed debug key from the repo.
   build:
-    if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && !inputs.release }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -72,8 +77,9 @@ jobs:
 
   # Release APK only for a version tag (v0.4.0, ...). Package ru.iskra.app, signed with the owner's key
   # from GitHub Secrets. The key file exists only on the runner during this job.
+  # Also from "Run workflow" with release = true on main: the tag is then created by this job.
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (inputs.release && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -89,9 +95,12 @@ jobs:
       - name: Tag must match versionName
         run: |
           v=$(sed -nE 's/^ *versionName = "([^"]+)".*/\1/p' app/build.gradle.kts)
-          if [ "v$v" != "${{ github.ref_name }}" ]; then
-            echo "::error::Tag ${{ github.ref_name }} does not match versionName $v in app/build.gradle.kts"; exit 1
+          tag="${{ github.ref_type == 'tag' && github.ref_name || '' }}"
+          if [ -z "$tag" ]; then tag="v$v"; fi
+          if [ "v$v" != "$tag" ]; then
+            echo "::error::Tag $tag does not match versionName $v in app/build.gradle.kts"; exit 1
           fi
+          echo "RELEASE_TAG=$tag" >> "$GITHUB_ENV"
 
       - name: Unit tests (core)
         run: ./gradlew --no-daemon :core:test
@@ -104,10 +113,17 @@ jobs:
           STORE_PASS: ${{ secrets.ISKRA_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ISKRA_KEY_ALIAS }}
           KEY_PASS: ${{ secrets.ISKRA_KEY_PASSWORD }}
+          ALL_SECRETS: ${{ toJSON(secrets) }}
         run: |
+          missing=""
           for n in KEYSTORE_B64:ISKRA_KEYSTORE_BASE64 STORE_PASS:ISKRA_KEYSTORE_PASSWORD KEY_ALIAS:ISKRA_KEY_ALIAS KEY_PASS:ISKRA_KEY_PASSWORD; do
-            v="${n%%:*}"; if [ -z "${!v}" ]; then echo "::error::Secret ${n#*:} is not set (Settings → Secrets and variables → Actions → Repository secrets)"; exit 1; fi
+            v="${n%%:*}"; if [ -z "${!v}" ]; then missing="$missing ${n#*:}"; fi
           done
+          if [ -n "$missing" ]; then
+            # Names only (they are not secret) so a typo in a name is visible; values are never printed.
+            seen=$(printf '%s' "$ALL_SECRETS" | jq -r 'keys | map(select(. != "github_token")) | join(", ")')
+            echo "::error::Missing secrets:$missing. Repository secrets this run can see: ${seen:-none}"; exit 1
+          fi
           b64=$(printf '%s' "$KEYSTORE_B64" | sed -E 's/^[[:space:]]*ISKRA_KEYSTORE_BASE64[[:space:]]*=//' | tr -d ' \t\r\n')
           if ! printf '%s' "$b64" | base64 -d > "$RUNNER_TEMP/iskra-release.jks" 2>/dev/null; then
             echo "::error::ISKRA_KEYSTORE_BASE64 is not valid base64 (${#b64} characters, expected about 5664). Paste the whole text of ISKRA_KEYSTORE_BASE64.txt"; exit 1
@@ -149,19 +165,20 @@ jobs:
           if grep -qi "debug" certs.txt || grep -qi "15ad001f995aa0a5" certs.txt; then
             echo "::error::APK is signed with a debug key"; exit 1
           fi
-          cp "$apk" "Iskra-${{ github.ref_name }}-release.apk"
-          sha256sum "Iskra-${{ github.ref_name }}-release.apk" > "Iskra-${{ github.ref_name }}-release.apk.sha256"
+          cp "$apk" "Iskra-${{ env.RELEASE_TAG }}-release.apk"
+          sha256sum "Iskra-${{ env.RELEASE_TAG }}-release.apk" > "Iskra-${{ env.RELEASE_TAG }}-release.apk.sha256"
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Искра ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Искра ${{ env.RELEASE_TAG }}
           prerelease: false
           body: |
             Release-сборка из коммита ${{ github.sha }} (пакет ru.iskra.app, подпись владельца).
             Ставится рядом с debug-версией (ru.iskra.app.debug). Данные переносятся через «Память → Сохранить копию / Восстановить». Ключи API нужно ввести заново.
           files: |
-            Iskra-${{ github.ref_name }}-release.apk
-            Iskra-${{ github.ref_name }}-release.apk.sha256
+            Iskra-${{ env.RELEASE_TAG }}-release.apk
+            Iskra-${{ env.RELEASE_TAG }}-release.apk.sha256
 
