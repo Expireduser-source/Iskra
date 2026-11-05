@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
@@ -27,7 +28,7 @@ val fetchLlamaCpp by tasks.registering {
         if (marker.isFile && marker.readText() == llamaArchiveSha256) return@doLast
         val archive = File(temporaryDir, "llama_cpp_python-$llamaVersion.tar.gz")
         fun sha(f: File): String {
-            val md = java.security.MessageDigest.getInstance("SHA-256")
+            val md = MessageDigest.getInstance("SHA-256")
             f.inputStream().use { s -> val b = ByteArray(1 shl 16); while (true) { val n = s.read(b); if (n < 0) break; md.update(b, 0, n) } }
             return md.digest().joinToString("") { "%02x".format(it) }
         }

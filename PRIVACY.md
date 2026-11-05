@@ -1,6 +1,6 @@
 # Iskra — Privacy Policy · Политика конфиденциальности
 
-*Effective / Действует с: 4 November 2026 · 4 ноября 2026*
+*Effective / Действует с: 5 November 2026 · 5 ноября 2026*
 
 [English](#english) · [Русский](#русский)
 
@@ -12,8 +12,8 @@ no account and no analytics. This policy describes exactly what the app does wit
 
 ### What stays on your phone
 Everything Iskra knows is stored only in the app's private storage on your phone:
-memory entries, notes, reminders, the chat history, her mood, your settings, the voice cache and the diagnostics
-journal (the journal contains events and timings, never API keys or chat text). API keys are encrypted with the
+memory entries, notes, reminders, the chat history, her mood, your settings, the voice cache, the model of the
+«brain on the phone» if you downloaded one, and the diagnostics journal (the journal contains events and timings, never API keys or chat text). API keys are encrypted with the
 Android Keystore. Android backup of the app is turned off, so this data is not uploaded to cloud backups.
 
 You can delete any entry in «Memory», or everything at once with «Erase everything». Uninstalling the app deletes
@@ -23,7 +23,10 @@ all of it. Backup files are created only when you ask (a file you choose) and ne
 | Feature | Goes to | What is sent |
 |---|---|---|
 | Conversation with a cloud model («brain») | the service you choose: OpenRouter, DeepSeek, OpenAI, Anthropic or your own server | your message, recent turns of the chat, memory notes relevant to it, her mood and the time; the API key you entered |
-| Free brain through OpenRouter | openrouter.ai | sign-in happens on their site in your browser; the app receives your personal key. **Free models may store conversations and use them for training** — don't share passwords or private details with them |
+| Free brain through OpenRouter | openrouter.ai | sign-in happens on their site in your browser; the app receives your personal key. When the chosen free model is busy, the same message may go to another free model there. **Free models may store conversations and use them for training** — don't share passwords or private details with them |
+| Brain on the phone | huggingface.co (download only) | a file download (0.4–2.5 GB). After that the model runs on the phone itself: **nothing you say to it leaves the phone** |
+| Fact lookups by the cloud model | wikipedia.org | the few search words the model chose (e.g. “Eiffel Tower height”); never the chat or memory |
+| Exchange rates | open.er-api.com (ExchangeRate-API) | the currency code (e.g. USD); nothing about you |
 | Cloud voice | Yandex SpeechKit, ElevenLabs, OpenAI or your server | only the text of Iskra's reply |
 | Weather | open-meteo.com | the city name you typed (to find it) and the city's coordinates; never your device location |
 | Speech model download | alphacephei.com | a file download (≈ 40–45 MB) |
@@ -58,7 +61,7 @@ Changes to this policy are published in this file in the repository. Questions: 
 
 ### Что остаётся на телефоне
 Всё, что знает Искра, хранится только в закрытом хранилище приложения на телефоне: память, заметки, напоминания,
-переписка, её настроение, настройки, кэш голоса и журнал диагностики (в журнале события и время, но никогда — ключи API
+переписка, её настроение, настройки, кэш голоса, модель «мозга на телефоне», если ты её скачал, и журнал диагностики (в журнале события и время, но никогда — ключи API
 и текст переписки). Ключи API зашифрованы Android Keystore. Резервное копирование приложения в облако Android выключено.
 
 Любую запись можно удалить в «Памяти», всё сразу — кнопкой «Стереть всё». При удалении приложения удаляется всё.
@@ -68,7 +71,10 @@ Changes to this policy are published in this file in the repository. Questions: 
 | Функция | Куда | Что отправляется |
 |---|---|---|
 | Разговор с облачной моделью («мозг») | выбранный тобой сервис: OpenRouter, DeepSeek, OpenAI, Anthropic или свой сервер | твоё сообщение, последние реплики переписки, подходящие заметки памяти, её настроение и время; введённый тобой ключ API |
-| Бесплатный «мозг» через OpenRouter | openrouter.ai | вход происходит на их сайте в браузере; приложение получает твой личный ключ. **Бесплатные модели могут сохранять переписку и учиться на ней** — не пиши им пароли и личное |
+| Бесплатный «мозг» через OpenRouter | openrouter.ai | вход происходит на их сайте в браузере; приложение получает твой личный ключ. Если выбранная бесплатная модель занята, то же сообщение может уйти другой бесплатной модели там же. **Бесплатные модели могут сохранять переписку и учиться на ней** — не пиши им пароли и личное |
+| «Мозг на телефоне» | huggingface.co (только скачивание) | скачивание файла (0,4–2,5 ГБ). Дальше модель работает на самом телефоне: **ничего из сказанного ей не уходит с телефона** |
+| Поиск фактов облачной моделью | wikipedia.org | несколько слов запроса, которые выбрала модель (например, «высота Эйфелевой башни»); переписка и память — никогда |
+| Курсы валют | open.er-api.com (ExchangeRate-API) | код валюты (например, USD); ничего о тебе |
 | Облачный голос | Yandex SpeechKit, ElevenLabs, OpenAI или твой сервер | только текст ответа Искры |
 | Погода | open-meteo.com | название города, которое ты ввёл (чтобы его найти), и координаты города; местоположение телефона — никогда |
 | Скачивание модели распознавания | alphacephei.com | скачивание файла (≈ 40–45 МБ) |

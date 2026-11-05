@@ -60,9 +60,11 @@ fun AboutSection() {
     ), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text(tr(
         "Внутри: Kotlin, kotlinx, OkHttp, AndroidX и Jetpack Compose, Material Icons (Apache-2.0); Vosk и его модели (Apache-2.0); " +
-            "JNA (Apache-2.0 / LGPL-2.1). Погода: Open-Meteo.com (данные по лицензии CC BY 4.0).",
+            "JNA (Apache-2.0 / LGPL-2.1); llama.cpp и ggml (MIT). Модели Qwen скачиваются отдельно (Apache-2.0). " +
+            "Погода: Open-Meteo.com (данные по лицензии CC BY 4.0). Факты: Википедия (CC BY-SA). Курсы: Rates By Exchange Rate API.",
         "Inside: Kotlin, kotlinx, OkHttp, AndroidX and Jetpack Compose, Material Icons (Apache-2.0); Vosk and its models (Apache-2.0); " +
-            "JNA (Apache-2.0 / LGPL-2.1). Weather: Open-Meteo.com (data under CC BY 4.0).",
+            "JNA (Apache-2.0 / LGPL-2.1); llama.cpp and ggml (MIT). Qwen models are downloaded separately (Apache-2.0). " +
+            "Weather: Open-Meteo.com (data under CC BY 4.0). Facts: Wikipedia (CC BY-SA). Rates By Exchange Rate API.",
     ), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     FlowRow {
         TextButton(onClick = { open(UpdateCheck.PROJECT) }) { Text(tr("Исходный код", "Source code")) }

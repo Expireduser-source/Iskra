@@ -25,10 +25,15 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
 
 ## What she can do
 - **Right away, offline:** alarms and timers (“set a timer for 10 minutes”), reminders that survive a restart
-  (“remind me tomorrow at 9 to call mom”), notes (“note: buy milk”), weather (“do I need an umbrella?”), the
-  flashlight, volume, apps, settings, web search, and “Surprise me” — tiny games with the world around you.
+  (“remind me tomorrow at 9 to call mom”), notes (“note: buy milk”), exact sums (“what's 15% of 2300”), units (“5 miles
+  to km”), dates (“how many days until New Year”), coins and dice, small talk, the flashlight, volume, apps, settings,
+  and “Surprise me” — tiny games with the world around you. Online without any account: weather and exchange rates.
+- **A brain on the phone:** download a small model once (Qwen, 0.4–2.5 GB, chosen for your phone's memory) and talk
+  **with no internet at all** — nothing you say leaves the phone. It also steps in when the cloud is unreachable.
 - **A real conversation:** connect a **free brain with one tap** (OpenRouter — sign in with Google or e-mail, nothing to
-  copy) or use your own key from DeepSeek, OpenAI, Anthropic Claude or any OpenAI-compatible server.
+  copy; a busy free model quietly hands over to another) or use your own key from DeepSeek, OpenAI, Anthropic Claude or
+  any OpenAI-compatible server. The cloud brain checks facts on Wikipedia, counts with a real calculator, remembers what
+  matters about you (and forgets what you ask her to), prepares calendar events, routes, music and messages.
 - **Voice:** natural cloud voices (Yandex SpeechKit, ElevenLabs, OpenAI) or the free system voice; say “Iskra” or
   “Spark” and she listens — recognized fully on the phone.
 - **From any app:** share text to Iskra or select it and tap **“Ask Iskra”** — explain, summarize, translate, save as a
@@ -52,7 +57,8 @@ over the previous version without losing memory or settings.
 ## Privacy
 Memory, notes, the chat and settings are stored only on your phone; keys are encrypted with the Android Keystore.
 Something leaves the phone only when you use a feature that needs it — the cloud model you chose, the cloud voice (reply
-text only), the weather (the city only) — see the full table in **[PRIVACY.md](PRIVACY.md)**. Listening for her name
+text only), the weather (the city only), Wikipedia (the search words only), exchange rates (the currency code) — see the
+full table in **[PRIVACY.md](PRIVACY.md)**. The brain on the phone sends nothing anywhere. Listening for her name
 works offline; audio never leaves the phone. No ads, no analytics, no trackers.
 
 ## Questions
@@ -75,11 +81,14 @@ works offline; audio never leaves the phone. No ads, no analytics, no trackers.
 iskra/
 ├── core/   pure Kotlin/JVM, no Android: persona and mood, memory, offline commands (ru + en), tools and safety policy,
 │           LLM clients (OpenAI-compatible, Anthropic, OpenRouter sign-in), voice logic, avatar brain — tested on any PC
-├── app/    Android app: overlay, Compose UI, Android tools, voice, storage, tile, shortcuts, sharing
+├── app/    Android app: overlay, Compose UI, Android tools, voice, storage, tile, shortcuts, sharing;
+│           app/src/main/cpp — the JNI bridge to llama.cpp for the brain on the phone
 ├── tools/  translation helper, store graphics, QR code, sprite converter
 └── fastlane/metadata/android/   store listing (en-US, ru-RU)
 ```
-- Core tests without the Android SDK: `ISKRA_CORE_ONLY=1 ./gradlew :core:test`
+- Core tests without the Android SDK: `ISKRA_CORE_ONLY=1 ./gradlew :core:test`. The real llama.cpp bridge test runs
+  when `ISKRA_LLAMA_LIB` points to a host build of `app/src/main/cpp` and `ISKRA_LLAMA_MODEL` to a GGUF file.
+- llama.cpp itself is downloaded by the Gradle task `fetchLlamaCpp` (llama-cpp-python sdist from PyPI, pinned SHA-256).
 - Full build: JDK 17 + Android SDK 36, `./gradlew :core:test :app:assembleDebug`
 - CI builds the debug app on every push (pre-release `build-N`, package `ru.iskra.app.debug`, “Iskra β”) and runs it on
   Android 8, 11 and 16 emulators with screenshots; the signed release (`ru.iskra.app`) comes from “Run workflow” with
@@ -92,4 +101,5 @@ iskra/
 The code is free software under the [GNU General Public License v3](LICENSE). The character artwork (sprites and rig
 layers in `app/src/main/res/drawable-nodpi` and `app/src/main/assets/rig`) © the project owner, all rights reserved.
 Dependencies: Kotlin, kotlinx, OkHttp, AndroidX/Compose, Material Icons (Apache-2.0), Vosk and its models (Apache-2.0),
-JNA (Apache-2.0/LGPL-2.1). Weather data: [Open-Meteo](https://open-meteo.com) (CC BY 4.0).
+JNA (Apache-2.0/LGPL-2.1), llama.cpp and ggml (MIT); Qwen models are downloaded separately (Apache-2.0). Weather data:
+[Open-Meteo](https://open-meteo.com) (CC BY 4.0). Facts: Wikipedia (CC BY-SA). Rates By [Exchange Rate API](https://www.exchangerate-api.com).
