@@ -1,0 +1,52 @@
+name: Phone CPU check
+
+# The on-phone models on an ARM processor, with the bridge built exactly like the phone library
+# (armv8.2-a + dotprod + fp16) and 2 threads, like the two fast cores of a mid-range phone (Redmi Note 14):
+# runs the ARM code the APK ships and gives speeds much closer to a phone's than the x86 computers.
+# The summary is an annotation; transcripts go to the "model-eval" pre-release as eval-arm64-<commit>.zip.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/src/main/cpp/**"
+      - "core/src/main/kotlin/ru/iskra/core/llm/**"
+      - "core/src/main/kotlin/ru/iskra/core/agent/**"
+      - "core/src/test/kotlin/ru/iskra/core/LocalModelEval.kt"
+      - ".github/scripts/smoke.py"
+      - ".github/workflows/phone-cpu.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # the transcripts are attached to a pre-release
+
+jobs:
+  arm:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: On-phone models on ARM, 2 threads
+        run: |
+          command -v cmake >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq cmake; }
+          python3 .github/scripts/smoke.py --eval-only --out eval-arm --threads 2 --arch armv8.2-a+dotprod+fp16
+
+      - name: Attach transcripts to the model-eval pre-release
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -d eval-arm || exit 0
+          zipname="eval-arm64-${GITHUB_SHA::7}.zip"
+          (cd eval-arm && zip -qr "../$zipname" .)
+          gh release view model-eval >/dev/null 2>&1 || gh release create model-eval --prerelease --target "$GITHUB_SHA" \
+            --title "Оценка моделей на ARM · Model evaluation on ARM" \
+            --notes "Стенограммы разговоров с моделями на ARM-процессоре, как на телефоне. Не для установки. · Transcripts of the on-phone models on an ARM processor. Not for installing."
+          gh release upload model-eval "$zipname" --clobber
