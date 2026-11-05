@@ -75,8 +75,10 @@ class AgentTest {
     }
 
     @Test fun offlineChitChatExplainsMode() = runTest {
-        val r = agent(null).handle("как дела?")
-        assertTrue(r.text.contains("модел"), r.text)
+        // Small talk works without a model; a real question gets an honest hint about the brain.
+        assertTrue(agent(null).handle("как дела?").text.contains("?"))
+        val r = agent(null).handle("почему небо голубое?")
+        assertTrue(r.text.contains("мозг"), r.text)
     }
 
     @Test fun rememberCommandStoresMemory() = runTest {

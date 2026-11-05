@@ -1,6 +1,9 @@
 package ru.iskra.core.agent
 
 import ru.iskra.core.i18n.tr
+import ru.iskra.core.brain.MemoryTalk
+import ru.iskra.core.brain.NumberWords
+import ru.iskra.core.brain.OfflineBrain
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -72,6 +75,7 @@ class CompanionAgent(
     private val moodEngine = MoodEngine(persona.traits)
     private val mutex = Mutex()
     private val pocketSpark = PocketSpark(random)
+    private val brain = OfflineBrain(random)
 
     /**
      * After a key or balance error the cloud is skipped for [cloudPauseMs]: replies come at once from
@@ -142,7 +146,7 @@ class CompanionAgent(
         val local = handleLocally(text, provider != null)
         val reply = local ?: when {
             pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
-            provider == null -> AgentReply(Lines.offline(random), Emotion.NEUTRAL)
+            provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
             else -> askModel(provider, text, state, sink).also { r ->
                 if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE ||
                     r.errorKind == LlmException.Kind.POLICY || r.errorKind == LlmException.Kind.MODEL)
@@ -188,10 +192,61 @@ class CompanionAgent(
             "заметки, напоминания. Снова попробую через $minutes мин или сразу после нового ключа в настройках.", "The cloud is unavailable for now: $why. Without it I can do commands — alarm, timer, flashlight, apps, notes, reminders. I'll try again in $minutes min or right after a new key in Settings.")
     }
 
+    /**
+     * Everything that needs no model: safety, memory commands, phone commands, exact answers (sums, units, dates),
+     * and — only when there is no model — small talk. null: ask the model.
+     */
     private suspend fun handleLocally(text: String, llmAvailable: Boolean): AgentReply? {
+        brain.crisis(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
+        MemoryTalk.forgetQuery(text)?.let { return forget(it) }
+        MemoryTalk.fact(text)?.let { f ->
+            // Kept even if the model is weak at tools; with a model the reply is the model's (it now sees the fact).
+            val r = memory.add(f.text, MemoryKind.FACT, MemorySource.USER_EXPLICIT, f.importance, clock())
+            if (!llmAvailable) return AgentReply(if (r is MemoryManager.AddResult.Rejected) tr("Не стану это запоминать: ${r.reason}.", "I won't remember that: ${r.reason}.") else f.reply, Emotion.HAPPY)
+        }
+        if (!llmAvailable && MemoryTalk.asksName(text)) {
+            val name = MemoryTalk.ownerName(memory.all())
+            return if (name != null) AgentReply(tr("Тебя зовут $name. Мрр, как такое забыть!", "Your name is $name. Mrr, how could I forget!"), Emotion.HAPPY)
+            else AgentReply(tr("Ты мне ещё не говорил. Скажи «меня зовут …» — запомню.", "You haven't told me yet. Say “my name is …” and I'll remember."), Emotion.CURIOUS)
+        }
         val now = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault())
-        return when (val parsed = CommandParser.parse(text, now) ?: return null) {
+        // Speech recognisers write "двадцать пять": try the words as digits if the plain text isn't a command.
+        val parsed = CommandParser.parse(text, now) ?: NumberWords.digitize(text).takeIf { it != text }?.let { CommandParser.parse(it, now) }
+        if (parsed != null) return command(parsed, llmAvailable)
+        brain.utility(withBirthday(text), now)?.let { return AgentReply(it.text, it.emotion) }
+        if (!llmAvailable) {
+            brain.chat(text, now, currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))
+                ?.let { return AgentReply(it.text, it.emotion) }
+        }
+        return null
+    }
+
+    /** "сколько дней до моего дня рождения" → the date memory holds. */
+    private fun withBirthday(text: String): String {
+        val mine = Regex("""(?iu)моего\s+дня\s+рождения|мой\s+день\s+рождения|my\s+birthday""")
+        if (!mine.containsMatchIn(text)) return text
+        val re = Regex("""(?iu)(?:день\s+рождения\s+владельца|the\s+owner's\s+birthday):?\s+(.+)""")
+        val date = memory.all().firstNotNullOfOrNull { re.find(it.text)?.groupValues?.get(1) }
+            ?.replace(Regex("""\s+\d{4}(?:\s+(?:года|г\.?))?\s*$"""), "")?.trim() ?: return text
+        return mine.replace(text, date)
+    }
+
+    private fun forget(query: String): AgentReply {
+        if (query.isEmpty()) return AgentReply(tr("Всю память голосом стирать не буду — это слишком важно. На вкладке «Память» можно удалить любую запись или стереть всё.",
+            "I won't erase all memory by voice — it's too important. In the “Memory” tab you can delete any entry or erase everything."), Emotion.POUTY)
+        val found = memory.match(query)
+        val best = found.firstOrNull()?.takeIf { it.second >= 0.5 }
+            ?: return AgentReply(tr("Не нашла в памяти ничего про «$query».", "I found nothing about “$query” in my memory."), Emotion.CURIOUS)
+        val ties = found.filter { it.second == best.second }
+        if (ties.size > 1 && best.second < 1.0) return AgentReply(tr("Нашла несколько похожих записей:\n", "I found several similar entries:\n") +
+            ties.take(3).joinToString("\n") { "• ${it.first.text}" } + tr("\nСкажи точнее, какую забыть.", "\nTell me which one to forget."), Emotion.THINKING)
+        memory.delete(best.first.id)
+        return AgentReply(tr("Забыла: «${best.first.text}».", "Forgotten: “${best.first.text}”."), Emotion.NEUTRAL)
+    }
+
+    private suspend fun command(parsed: CommandParser.Parsed, llmAvailable: Boolean): AgentReply? {
+        return when (parsed) {
             is CommandParser.Parsed.Remember -> {
                 when (val r = memory.add(parsed.text, MemoryKind.FACT, MemorySource.USER_EXPLICIT, 4, clock())) {
                     is MemoryManager.AddResult.Added -> AgentReply(Lines.remembered(random, r.item.text), Emotion.HAPPY)

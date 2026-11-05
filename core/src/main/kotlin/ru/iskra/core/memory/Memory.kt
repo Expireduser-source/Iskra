@@ -150,6 +150,21 @@ class MemoryManager(
         return found
     }
 
+    /**
+     * Memories that contain the words of [query], best first, with the share of the query's words found (0..1).
+     * Used by "забудь …" and the model's forget/search tools.
+     */
+    fun match(query: String, limit: Int = 5): List<Pair<MemoryItem, Double>> {
+        val q = TextNorm.tokens(query).toSet()
+        if (q.isEmpty()) return emptyList()
+        return store.all().map { item ->
+            val toks = TextNorm.tokens(item.text).toSet()
+            item to q.count { it in toks }.toDouble() / q.size
+        }.filter { it.second > 0 }
+            .sortedWith(compareByDescending<Pair<MemoryItem, Double>> { it.second }.thenByDescending { it.first.createdAtMs })
+            .take(limit)
+    }
+
     fun all() = store.all()
     fun delete(id: Long) = store.delete(id)
     fun deleteAll() = store.deleteAll()
