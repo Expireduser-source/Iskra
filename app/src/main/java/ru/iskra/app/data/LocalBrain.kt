@@ -268,8 +268,7 @@ object LocalBrain {
     private suspend fun loaded(st: State.Ready): LlamaEngine? {
         if (engine == null || engineFor != st.model.id) {
             engine?.close()
-            val cores = Runtime.getRuntime().availableProcessors()
-            val threads = (cores / 2).coerceIn(2, 4)
+            val threads = threads()
             val ctx = if (totalRamGb() >= 7.5) 4096 else 2048
             val t0 = System.currentTimeMillis()
             engine = withContext(Dispatchers.IO) { NativeLlamaEngine.open(fileOf(st.model).path, ctx, threads) }
@@ -279,6 +278,18 @@ object LocalBrain {
         }
         scheduleUnload()
         return engine
+    }
+
+    /**
+     * One thread per performance core (2–4). Phones mix fast and slow cores (Redmi Note 14: 2 fast + 6 slow); threads on
+     * slow cores make the fast ones wait. The kernel tells each core's capacity (1024 = the fastest) in /sys.
+     */
+    private fun threads(): Int {
+        val caps = (0 until Runtime.getRuntime().availableProcessors()).mapNotNull { i ->
+            runCatching { File("/sys/devices/system/cpu/cpu$i/cpu_capacity").readText().trim().toInt() }.getOrNull()
+        }
+        val fast = if (caps.isNotEmpty()) caps.count { it >= caps.max() / 2 } else Runtime.getRuntime().availableProcessors() / 2
+        return fast.coerceIn(2, 4)
     }
 
     /** Ten quiet minutes: give the memory back to the phone. The next message loads it again in a few seconds. */
