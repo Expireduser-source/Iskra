@@ -237,12 +237,14 @@ def local_brain_check(s, api):
 
 # Models to compare in the evaluation: the catalog's and candidates for it (a missing repo or file is skipped).
 EVAL_CANDIDATES = [
-    ("qwen2.5-0.5b", "Qwen/Qwen2.5-0.5B-Instruct-GGUF", r"qwen2\.5-0\.5b-instruct-q4_k_m\.gguf$", "CHATML"),
-    ("qwen2.5-1.5b", "Qwen/Qwen2.5-1.5B-Instruct-GGUF", r"qwen2\.5-1\.5b-instruct-q4_k_m\.gguf$", "CHATML"),
-    ("qwen3-1.7b", "unsloth/Qwen3-1.7B-GGUF", r"(?i)qwen3-1\.7b-q4_k_m\.gguf$", "CHATML_NO_THINK"),
-    ("gemma-3-1b", "ggml-org/gemma-3-1b-it-GGUF", r"(?i)gemma-3-1b-it-q4_k_m\.gguf$", "GEMMA"),
-    ("gemma-3-1b", "unsloth/gemma-3-1b-it-GGUF", r"(?i)gemma-3-1b-it-q4_k_m\.gguf$", "GEMMA"),
-    ("qwen3-4b", "Qwen/Qwen3-4B-GGUF", r"(?i)qwen3-4b-q4_k_m\.gguf$", "CHATML_NO_THINK"),
+    # (name, repo, file patterns in order of preference, chat format)
+    ("qwen2.5-0.5b", "Qwen/Qwen2.5-0.5B-Instruct-GGUF", [r"qwen2\.5-0\.5b-instruct-q4_k_m\.gguf$"], "CHATML"),
+    ("qwen3.5-0.8b", "ggml-org/Qwen3.5-0.8B-GGUF", [r"(?i)q4_k_m\.gguf$", r"(?i)q8_0\.gguf$"], "CHATML_NO_THINK"),
+    ("gemma-3-1b", "ggml-org/gemma-3-1b-it-GGUF", [r"(?i)q4_k_m\.gguf$"], "GEMMA"),
+    ("qwen2.5-1.5b", "Qwen/Qwen2.5-1.5B-Instruct-GGUF", [r"qwen2\.5-1\.5b-instruct-q4_k_m\.gguf$"], "CHATML"),
+    ("qwen3-1.7b", "ggml-org/Qwen3-1.7B-GGUF", [r"(?i)q4_k_m\.gguf$", r"(?i)q8_0\.gguf$"], "CHATML_NO_THINK"),
+    ("gemma-4-e2b", "ggml-org/gemma-4-E2B-it-GGUF", [r"(?i)q4_k_m\.gguf$", r"(?i)q8_0\.gguf$"], "GEMMA4"),
+    ("qwen3-4b", "Qwen/Qwen3-4B-GGUF", [r"(?i)qwen3-4b-q4_k_m\.gguf$"], "CHATML_NO_THINK"),
 ]
 SMALL_FAMILIES = re.compile(r"(?i)(gemma-?[34]|qwen3|qwen-?3\.5|qwen4|lfm2|phi-?4-?mini|smollm|ministral|llama-?3\.2|granite)")
 
@@ -266,7 +268,7 @@ def model_eval(out):
     import urllib.request
 
     t_start = time.time()
-    ev = os.path.join(out, "eval")
+    ev = os.path.abspath(os.path.join(out, "eval"))   # absolute: Gradle runs the test from core/
     os.makedirs(ev, exist_ok=True)
     # 1. What small GGUF models exist now (for choosing the catalog; just a list).
     found = []
@@ -329,10 +331,10 @@ def model_eval(out):
             break
     summary = []
     done = set()
-    for name, repo, pattern, fmt in EVAL_CANDIDATES:
+    for name, repo, patterns, fmt in EVAL_CANDIDATES:
         if name in done:
             continue
-        if time.time() - t_start > 16 * 60:
+        if time.time() - t_start > 20 * 60:
             summary.append(f"| {name} | — | skipped: out of time | | |")
             continue
         try:
@@ -340,9 +342,9 @@ def model_eval(out):
         except Exception as e:  # noqa: BLE001
             print(f"{repo}: {e}", flush=True)
             continue
-        file = next((f for f in files if re.search(pattern, f)), None)
+        file = next((f for p_ in patterns for f in files if re.search(p_, f) and "mmproj" not in f), None)
         if not file:
-            print(f"{repo}: no file like {pattern}", flush=True)
+            print(f"{repo}: no file like {patterns}; files: {files[:12]}", flush=True)
             continue
         path = os.path.join(work, "model.gguf")
         t = time.time()
@@ -359,7 +361,8 @@ def model_eval(out):
             annotate("warning", f"Model evaluation {name}", (r.stdout + r.stderr)[-2000:])
         sp = os.path.join(ev, "summary.md")
         if os.path.exists(sp):
-            summary += [l for l in open(sp).read().splitlines() if l.startswith(f"| {name} ")]
+            mb = os.path.getsize(path) // 1_000_000
+            summary += [l.replace(f"| {name} |", f"| {name} ({mb} MB) |", 1) for l in open(sp).read().splitlines() if l.startswith(f"| {name} ")]
             os.remove(sp)
         done.add(name)
         os.remove(path)

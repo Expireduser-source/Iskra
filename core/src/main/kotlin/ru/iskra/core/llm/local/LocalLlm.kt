@@ -69,8 +69,10 @@ enum class ChatFormat {
     CHATML,
     /** Qwen3: ChatML with thinking switched off (an empty <think></think> before the answer). */
     CHATML_NO_THINK,
-    /** Gemma: <start_of_turn>user/model, no system role. */
-    GEMMA;
+    /** Gemma 2/3: <start_of_turn>user/model, no system role. */
+    GEMMA,
+    /** Gemma 4: <|turn>system/user/model … <turn|>, and an empty thought channel so it answers straight away. */
+    GEMMA4;
 
     /** Renders the dialogue; the per-message situation goes right before the last message, so the rest stays cached. */
     fun render(request: LlmRequest): String {
@@ -104,6 +106,16 @@ enum class ChatFormat {
                 }
                 sb.append("<start_of_turn>model\n")
             }
+            GEMMA4 -> {
+                sb.append("<|turn>system\n").append(request.system.trim()).append("<turn|>\n")
+                turns.forEachIndexed { i, (role, text) ->
+                    // A system turn is only expected first, so the per-message situation leads the last message.
+                    val head = if (i == turns.lastIndex && request.situation.isNotBlank()) request.situation.trim() + "\n\n" else ""
+                    sb.append("<|turn>").append(if (role == "assistant") "model" else "user").append('\n')
+                        .append(head).append(text.trim()).append("<turn|>\n")
+                }
+                sb.append("<|turn>model\n<|channel>thought\n<channel|>")
+            }
         }
         return sb.toString()
     }
@@ -112,6 +124,7 @@ enum class ChatFormat {
     val stops: List<String> get() = when (this) {
         CHATML, CHATML_NO_THINK -> listOf("<|im_end|>", "<|im_start|>", "<|endoftext|>")
         GEMMA -> listOf("<end_of_turn>", "<start_of_turn>")
+        GEMMA4 -> listOf("<turn|>", "<|turn>", "<|channel>")
     }
 }
 
@@ -141,6 +154,9 @@ class LocalLlmProvider(
         val e = engine() ?: throw LlmException("on-device model unavailable", LlmException.Kind.NOT_CONFIGURED)
         val budget = minOf(maxTokens, request.maxTokens)
         val prompt = format.render(fit(request, e.contextSize - budget))
+        // Small Qwen models sometimes slip Chinese characters into Russian or English; unless the person wrote them, drop them.
+        val lastUser = (request.messages.lastOrNull { it is ChatMessage.User } as? ChatMessage.User)?.text.orEmpty()
+        val guard = !lastUser.any(::isCjk)
         val think = ThinkFilter()
         val raw = StringBuilder()
         val t0 = System.nanoTime()
@@ -157,7 +173,7 @@ class LocalLlmProvider(
                         raw.append(piece)
                         val stop = format.stops.firstOrNull { raw.contains(it) }
                         if (stop != null) return@generate false
-                        val visible = think.feed(piece)
+                        val visible = think.feed(piece).let { if (guard) stripCjk(it) else it }
                         if (visible.isNotEmpty()) onText(visible)
                         scope.isActive
                     }
@@ -170,10 +186,39 @@ class LocalLlmProvider(
         }
         val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
         onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000))
-        LlmResponse(ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text), emptyList())
+        val reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
+        LlmResponse(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, emptyList())
     }
 
     companion object {
+        /** Chinese, Japanese and Korean letters. */
+        fun isCjk(c: Char): Boolean {
+            if (c.code < 0x2E80) return false
+            return when (Character.UnicodeScript.of(c.code)) {
+                Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA,
+                Character.UnicodeScript.HANGUL, Character.UnicodeScript.BOPOMOFO -> true
+                else -> false
+            }
+        }
+
+        /** Drops CJK letters; full-width punctuation (，。！) becomes ordinary, with a space before the next word. */
+        fun stripCjk(s: String): String {
+            val out = StringBuilder(s.length)
+            for (c in s) {
+                val ch = when {
+                    c in '\uFF01'..'\uFF5E' -> (c.code - 0xFEE0).toChar()
+                    c == '\u3002' -> '.'
+                    c == '\u3001' -> ','
+                    c == '\u3000' -> ' '
+                    else -> c
+                }
+                if (isCjk(ch) || ch in '\u3003'..'\u303F') continue
+                if (out.isNotEmpty() && out.last() in ",.!?:;" && ch.isLetter()) out.append(' ')
+                out.append(ch)
+            }
+            return out.toString()
+        }
+
         /** A cautious guess: Russian is about 2.5 characters per token in these vocabularies, English about 4. */
         fun estimateTokens(text: String): Int = text.length * 2 / 5 + 8
 

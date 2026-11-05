@@ -55,6 +55,8 @@ class LocalLlmTest {
         assertTrue(ChatFormat.CHATML_NO_THINK.render(request).endsWith("<|im_start|>assistant\n<think>\n\n</think>\n\n"))
         assertEquals("<start_of_turn>user\nТы — Искра.\n\nПривет<end_of_turn>\n<start_of_turn>model\nМрр, привет!<end_of_turn>\n" +
             "<start_of_turn>user\nСейчас четверг.\n\nКак дела?<end_of_turn>\n<start_of_turn>model\n", ChatFormat.GEMMA.render(request))
+        assertEquals("<|turn>system\nТы — Искра.<turn|>\n<|turn>user\nПривет<turn|>\n<|turn>model\nМрр, привет!<turn|>\n" +
+            "<|turn>user\nСейчас четверг.\n\nКак дела?<turn|>\n<|turn>model\n<|channel>thought\n<channel|>", ChatFormat.GEMMA4.render(request))
         // The part before the situation is the same as in the previous turn's prompt: the model's cache stays useful.
         val before = ChatFormat.CHATML.render(request.copy(messages = request.messages.take(1)))
         assertTrue(ChatFormat.CHATML.render(request).startsWith(before.substringBefore("<|im_start|>system\nСейчас")))
@@ -70,6 +72,17 @@ class LocalLlmTest {
         assertEquals("Хорошо, мрр!", heard.toString())
         assertTrue(r.toolCalls.isEmpty())
         assertTrue(p.onDevice)
+    }
+
+    @Test
+    fun strayChineseIsDroppedUnlessThePersonWroteIt() = runTest {
+        val p = LocalLlmProvider({ FakeEngine("[happy] Это очень 很好 хорошая идея", "，мрр!") }, ChatFormat.CHATML, "local:test")
+        val heard = StringBuilder()
+        assertEquals("[happy] Это очень хорошая идея, мрр!", p.stream(request) { heard.append(it) }.text)
+        assertFalse(heard.any { LocalLlmProvider.isCjk(it) })
+        val asked = request.copy(messages = listOf(ChatMessage.User("Как сказать «кошка» по-китайски? 猫?")))
+        val cn = LocalLlmProvider({ FakeEngine("Это 猫 (māo).") }, ChatFormat.CHATML, "local:test")
+        assertEquals("Это 猫 (māo).", cn.complete(asked).text)
     }
 
     @Test
