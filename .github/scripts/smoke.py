@@ -218,7 +218,8 @@ def local_brain_check(s, api):
         return
     t = time.time()
     reply = loaded = None
-    while time.time() - t < 240:
+    # x86 emulators have no AVX2 for llama.cpp: the first reply (reading the whole prompt on 2 threads) can take minutes.
+    while time.time() - t < 360:
         journal = sh(f"run-as {PKG} cat files/diag.log", timeout=60)
         m = re.search(r"(?:Model loaded in|Модель загружена за) [^\n]+", journal)
         loaded = m.group(0) if m else loaded
@@ -232,7 +233,7 @@ def local_brain_check(s, api):
     if reply:
         annotate("notice", f"On-phone model, API {api}", f"{reply}; {loaded or 'load time not logged'}; {got // 1_000_000} MB model")
     else:
-        annotate("error", f"On-phone model, API {api}", f"no reply in 4 minutes; {loaded or 'the model was not loaded'}")
+        annotate("error", f"On-phone model, API {api}", f"no reply in 6 minutes; {loaded or 'the model was not loaded'}")
 
 
 # Models to compare in the evaluation: the catalog's and candidates for it (a missing repo or file is skipped).
