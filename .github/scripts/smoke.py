@@ -433,6 +433,52 @@ def model_eval(out, threads=4, arch="", minutes=24):
     annotate("notice", f"On-phone model evaluation ({where})", table)
 
 
+ARM_PLAN = ".github/scripts/arm-plan.txt"
+
+
+def arm_probe(out):
+    """What the ARM computer offers: hardware virtualization (an Android emulator for the phone's own ABI), CPU, memory,
+    and whether the Android SDK has an emulator and an arm64 system image for this host."""
+    import platform
+    import shutil
+    import urllib.request
+    import zipfile
+    lines = [f"machine: {platform.machine()}, cpus: {os.cpu_count()}"]
+    kvm = "/dev/kvm"
+    lines.append(f"/dev/kvm exists: {os.path.exists(kvm)}, readable+writable: {os.access(kvm, os.R_OK | os.W_OK) if os.path.exists(kvm) else False}")
+    for cmd in (["lscpu"], ["free", "-g"], ["df", "-h", "/"], ["uname", "-a"]):
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        lines.append("$ " + " ".join(cmd) + "\n" + r.stdout.strip()[:1500])
+    lines.append(f"ANDROID_HOME={os.environ.get('ANDROID_HOME')} ANDROID_SDK_ROOT={os.environ.get('ANDROID_SDK_ROOT')}")
+    sdk = os.path.abspath(os.path.join(out, "sdk"))
+    try:
+        os.makedirs(sdk, exist_ok=True)
+        z = os.path.join(sdk, "tools.zip")
+        urllib.request.urlretrieve("https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip", z)
+        zipfile.ZipFile(z).extractall(os.path.join(sdk, "cmdline-tools"))
+        os.rename(os.path.join(sdk, "cmdline-tools", "cmdline-tools"), os.path.join(sdk, "cmdline-tools", "latest"))
+        sm = os.path.join(sdk, "cmdline-tools", "latest", "bin", "sdkmanager")
+        os.chmod(sm, 0o755)
+        r = subprocess.run([sm, f"--sdk_root={sdk}", "--list"], capture_output=True, text=True, timeout=300, input="y\n" * 20)
+        wanted = [l.strip() for l in r.stdout.splitlines() if re.search(r"^\s*(emulator|system-images;android-3[3-6];(google_apis|default|aosp_atd|google_atd);arm64-v8a)\s", l)]
+        lines.append("sdkmanager packages: " + ("; ".join(wanted[:12]) or "(none) " + r.stderr[-400:]))
+        r = subprocess.run([sm, f"--sdk_root={sdk}", "emulator"], capture_output=True, text=True, timeout=600, input="y\n" * 20)
+        emu = os.path.join(sdk, "emulator", "emulator")
+        lines.append(f"emulator installed: {os.path.exists(emu)} " + (r.stdout[-300:] + r.stderr[-300:]).replace("\n", " ")[-400:])
+        if os.path.exists(emu):
+            r = subprocess.run([emu, "-version"], capture_output=True, text=True, timeout=60)
+            lines.append("emulator -version: " + (r.stdout + r.stderr).strip()[:300])
+            r = subprocess.run([emu, "-accel-check"], capture_output=True, text=True, timeout=60)
+            lines.append("emulator -accel-check: " + (r.stdout + r.stderr).strip()[:400])
+    except Exception as e:  # noqa: BLE001
+        lines.append(f"SDK probe failed: {type(e).__name__}: {e}")
+    finally:
+        shutil.rmtree(sdk, ignore_errors=True)
+    text = "\n".join(lines)
+    print(text, flush=True)
+    annotate("notice", "ARM runner probe", text[:3800])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apk")
@@ -444,8 +490,12 @@ def main():
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--arch", default="")
     a = ap.parse_args()
-    if a.eval_only:  # its own job (50 minutes): more time for more models than next to the emulator
-        model_eval(a.out, a.threads, a.arch, minutes=38)
+    if a.eval_only:  # its own job (50 minutes): what to do is listed in arm-plan.txt, so it changes without the workflow
+        plan = open(ARM_PLAN).read().split() if os.path.exists(ARM_PLAN) else ["eval"]
+        if "probe" in plan:
+            arm_probe(a.out)
+        if "eval" in plan:
+            model_eval(a.out, a.threads, a.arch, minutes=38)
         return
     if not a.apk or not a.api:
         ap.error("--apk and --api are needed for the emulator check")
