@@ -136,8 +136,15 @@ object LocalBrain {
         return ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }.totalMem / 1e9
     }
 
-    /** The model for this phone: the strongest one its memory comfortably holds. */
-    fun suggested(): Model { val ram = totalRamGb(); return models.lastOrNull { ram + 0.5 >= it.minRamGb } ?: models.first() }
+    /**
+     * The model for this phone: the strongest one its memory comfortably holds — but with only two fast cores (Redmi
+     * Note 14 and most mid-range phones) the light one, which answers in a second or two instead of ten.
+     */
+    fun suggested(): Model {
+        val ram = totalRamGb()
+        if (performanceCores() <= 2) return models.first()
+        return models.lastOrNull { ram + 0.5 >= it.minRamGb } ?: models.first()
+    }
 
     private fun unsupportedReason(): String? {
         val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
@@ -350,12 +357,14 @@ object LocalBrain {
      * One thread per performance core (2–4). Phones mix fast and slow cores (Redmi Note 14: 2 fast + 6 slow); threads on
      * slow cores make the fast ones wait. The kernel tells each core's capacity (1024 = the fastest) in /sys.
      */
-    private fun threads(): Int {
+    private fun threads(): Int = performanceCores().coerceIn(2, 4)
+
+    /** Cores with at least half the capacity of the fastest one (the kernel reports 1024 for it). */
+    private fun performanceCores(): Int {
         val caps = (0 until Runtime.getRuntime().availableProcessors()).mapNotNull { i ->
             runCatching { File("/sys/devices/system/cpu/cpu$i/cpu_capacity").readText().trim().toInt() }.getOrNull()
         }
-        val fast = if (caps.isNotEmpty()) caps.count { it >= caps.max() / 2 } else Runtime.getRuntime().availableProcessors() / 2
-        return fast.coerceIn(2, 4)
+        return if (caps.isNotEmpty()) caps.count { it >= caps.max() / 2 } else Runtime.getRuntime().availableProcessors() / 2
     }
 
     /** Ten quiet minutes: give the memory back to the phone. The next message loads it again in a few seconds. */
