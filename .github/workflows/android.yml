@@ -140,39 +140,6 @@ jobs:
           (cd shots && zip -qr "../smoke-api${{ matrix.api }}-${{ matrix.lang }}.zip" .)
           gh release upload "build-${{ github.run_number }}" "smoke-api${{ matrix.api }}-${{ matrix.lang }}.zip" --clobber
 
-  # The on-phone models on an ARM processor, with the bridge built exactly like the phone library
-  # (armv8.2-a + dotprod + fp16) and 2 threads, like the two fast cores of a mid-range phone (Redmi Note 14):
-  # runs the ARM code the APK ships and gives speeds much closer to a phone's than the x86 computers.
-  # Transcripts go to the build-N release as eval-arm64.zip.
-  phone_cpu:
-    needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      - name: On-phone models on ARM, 2 threads
-        run: |
-          command -v cmake >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq cmake; }
-          python3 .github/scripts/smoke.py --eval-only --out eval-arm --threads 2 --arch armv8.2-a+dotprod+fp16
-
-      - name: Attach transcripts to the build release
-        if: always()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          test -d eval-arm || exit 0
-          (cd eval-arm && zip -qr ../eval-arm64.zip .)
-          gh release upload "build-${{ github.run_number }}" eval-arm64.zip --clobber
-
   # Release APK only for a version tag (v0.4.0, ...). Package ru.iskra.app, signed with the owner's key
   # from GitHub Secrets. The key file exists only on the runner during this job.
   # Also from "Run workflow" with release = true on main: the tag is then created by this job.
