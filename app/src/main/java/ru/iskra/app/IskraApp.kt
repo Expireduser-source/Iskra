@@ -30,6 +30,10 @@ import ru.iskra.core.skills.PhraseBank
 import ru.iskra.core.skills.SetReminderTool
 import ru.iskra.core.skills.WeatherClient
 import ru.iskra.core.skills.WeatherTool
+import ru.iskra.core.brain.CurrencyClient
+import ru.iskra.core.brain.CurrencyTool
+import ru.iskra.core.brain.WikipediaClient
+import ru.iskra.core.brain.WikipediaTool
 import ru.iskra.app.system.CompanionAccessibilityService
 import ru.iskra.app.tools.AndroidTools
 import ru.iskra.app.ui.ChatController
@@ -126,6 +130,7 @@ class IskraApp : Application() {
             ListRemindersTool(reminders, { System.currentTimeMillis() }),
             CancelRemindersTool(reminders, reminderScheduler),
             WeatherTool(weather, homePlace = { settings.weatherPlace() }),
+            WikipediaTool(WikipediaClient()), CurrencyTool(CurrencyClient()),
         )
         val disabledTools = emptySet<String>()
         agent = CompanionAgent(

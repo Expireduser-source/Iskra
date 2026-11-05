@@ -1,7 +1,11 @@
 package ru.iskra.core.agent
 
 import ru.iskra.core.i18n.tr
+import ru.iskra.core.brain.CalculateTool
+import ru.iskra.core.brain.DateInfoTool
+import ru.iskra.core.brain.ForgetTool
 import ru.iskra.core.brain.MemoryTalk
+import ru.iskra.core.brain.SearchMemoryTool
 import ru.iskra.core.brain.NumberWords
 import ru.iskra.core.brain.OfflineBrain
 import kotlinx.coroutines.CancellationException
@@ -89,7 +93,9 @@ class CompanionAgent(
     fun resumeCloud() { cloudPause = null; summaryRetryAtMs = 0L }
 
     init {
-        if (tools[ToolNames.REMEMBER] == null) tools.register(RememberTool(memory, clock))
+        // Memory and exact-answer tools every agent has; network tools (Wikipedia, rates, weather) come from the app.
+        listOf(RememberTool(memory, clock), SearchMemoryTool(memory), ForgetTool(memory), CalculateTool(), DateInfoTool(clock))
+            .forEach { if (tools[it.spec.name] == null) tools.register(it) }
     }
 
     fun currentState(): CompanionState {

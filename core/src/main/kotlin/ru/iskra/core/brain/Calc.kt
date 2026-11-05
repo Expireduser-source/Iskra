@@ -111,13 +111,13 @@ object Calc {
     private val hasOperator = Regex("""[+\-*/^%!]|sqrt|cbrt|sin|cos|tan|ln|log|mod""")
 
     /** An expression for the calculator, or null if [text] isn't a request to calculate. */
-    fun fromSpeech(text: String): String? {
+    fun fromSpeech(text: String, assumeAsked: Boolean = false): String? {
         var t = NumberWords.digitize(text.lowercase().replace('ё', 'е')).trim()
             .removePrefix("искра,").removePrefix("iskra,").trim()
             .trimEnd('?', '.', '!', ' ', '=')
         if (t.isEmpty()) return null
         val m = prefix.find(t)
-        var asked = m != null
+        var asked = m != null || assumeAsked
         if (m != null) t = t.substring(m.range.last + 1).trim()
         for ((re, rep) in verbFirst) {
             val vm = re.find(t) ?: continue

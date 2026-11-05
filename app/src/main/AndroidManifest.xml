@@ -3,6 +3,8 @@
 
     <!-- Cloud model access (only to the endpoint the owner configures). -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- "Am I on Wi-Fi?": reading the network type only; a normal permission granted at install. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Character over other apps. Granted manually by the owner in system settings. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

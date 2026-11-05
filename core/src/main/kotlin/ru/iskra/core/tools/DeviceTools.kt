@@ -27,6 +27,13 @@ object ToolNames {
     const val WEB_SEARCH = "web_search"
     const val DIAL = "dial"
     const val REMEMBER = "remember"
+    const val DEVICE_STATUS = "device_status"
+    const val CALENDAR_EVENT = "add_calendar_event"
+    const val NAVIGATE = "navigate"
+    const val MEDIA = "media_control"
+    const val PLAY_MUSIC = "play_music"
+    const val MESSAGE = "compose_message"
+    const val OPEN_URL = "open_url"
 }
 
 object ToolSchemas {
@@ -44,6 +51,7 @@ object ToolSchemas {
         put("type", "integer"); put("description", desc); put("minimum", min); put("maximum", max)
     }
     internal fun bool(desc: String) = buildJsonObject { put("type", "boolean"); put("description", desc) }
+    internal fun num(desc: String) = buildJsonObject { put("type", "number"); put("description", desc) }
 
     val SETTINGS_SECTIONS = listOf("main", "wifi", "bluetooth", "display", "battery", "sound", "apps", "notifications", "accessibility", "internet")
     val GLOBAL_ACTIONS = listOf("home", "back", "recents", "notifications", "quick_settings", "lock_screen", "screenshot")
@@ -68,6 +76,32 @@ object ToolSchemas {
         obj(listOf("query"), mapOf("query" to str(tr("Поисковый запрос", "Search query")))))
     val dial get() = ToolSpec(ToolNames.DIAL, tr("Открыть номеронабиратель с номером (звонок совершает сам владелец).", "Open the dialer with the number (the owner places the call)."),
         obj(listOf("number"), mapOf("number" to str(tr("Телефонный номер", "Phone number")))))
+    val deviceStatus get() = ToolSpec(ToolNames.DEVICE_STATUS,
+        tr("Состояние телефона: заряд и зарядка, сеть (Wi-Fi/мобильная), свободная память, режим звука.", "Phone status: battery and charging, network (Wi-Fi/mobile), free storage, sound mode."),
+        obj(emptyList(), emptyMap()))
+    val calendarEvent get() = ToolSpec(ToolNames.CALENDAR_EVENT,
+        tr("Создать событие в календаре: откроется календарь с заполненными полями, владелец сохранит его сам.", "Create a calendar event: the calendar opens with the fields filled in, the owner saves it."),
+        obj(listOf("title", "start"), mapOf(
+            "title" to str(tr("Название", "Title")),
+            "start" to str(tr("Начало, местное время ISO: 2026-11-07T15:00 (или дата 2026-11-07 для события на весь день)", "Start, local ISO time: 2026-11-07T15:00 (or a date 2026-11-07 for an all-day event)")),
+            "end" to str(tr("Конец, местное время ISO (по умолчанию через час)", "End, local ISO time (default: an hour later)")),
+            "location" to str(tr("Место", "Location")),
+        )))
+    val navigate get() = ToolSpec(ToolNames.NAVIGATE,
+        tr("Открыть карты с поиском места или маршрутом до него.", "Open maps searching for a place or with a route to it."),
+        obj(listOf("destination"), mapOf("destination" to str(tr("Адрес или название места", "Address or place name")))))
+    val media get() = ToolSpec(ToolNames.MEDIA,
+        tr("Управлять музыкой или видео, которые уже играют: пауза, продолжить, следующий, предыдущий трек.", "Control music or video that is already playing: pause, resume, next, previous track."),
+        obj(listOf("action"), mapOf("action" to str(tr("Действие", "Action"), listOf("play_pause", "play", "pause", "next", "previous")))))
+    val playMusic get() = ToolSpec(ToolNames.PLAY_MUSIC,
+        tr("Включить музыку по запросу (исполнитель, песня, жанр) в музыкальном приложении телефона.", "Play music by a query (artist, song, genre) in the phone's music app."),
+        obj(listOf("query"), mapOf("query" to str(tr("Что включить", "What to play")))))
+    val message get() = ToolSpec(ToolNames.MESSAGE,
+        tr("Подготовить сообщение: откроется SMS с текстом (если дан номер) или выбор приложения. Отправляет владелец сам.", "Prepare a message: opens an SMS with the text (if a number is given) or an app picker. The owner sends it."),
+        obj(listOf("text"), mapOf("text" to str(tr("Текст сообщения", "Message text")), "phone" to str(tr("Номер телефона, если известен", "Phone number, if known")))))
+    val openUrl get() = ToolSpec(ToolNames.OPEN_URL,
+        tr("Открыть веб-страницу в браузере (только https).", "Open a web page in the browser (https only)."),
+        obj(listOf("url"), mapOf("url" to str("https://…"))))
     val remember get() = ToolSpec(ToolNames.REMEMBER,
         tr("Сохранить в долговременную память важный устойчивый факт о владельце или его предпочтение. " +
             "Не сохраняй пароли, номера карт, мимолётные детали и чужие секреты.", "Save an important lasting fact about the owner or their preference to long-term memory. Don't save passwords, card numbers, passing details or other people's secrets."),

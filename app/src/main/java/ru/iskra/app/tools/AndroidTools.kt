@@ -11,7 +11,15 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.app.SearchManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.BatteryManager
+import android.os.Environment
+import android.os.StatFs
 import android.provider.AlarmClock
+import android.provider.CalendarContract
+import android.view.KeyEvent
 import android.provider.MediaStore
 import android.provider.Settings
 import kotlinx.coroutines.Dispatchers
@@ -224,12 +232,154 @@ private class DialTool(ctx: Context) : IntentTool(ctx) {
     }
 }
 
+/** Battery, network, storage and sound mode — so "сколько заряда?" or "я на Wi-Fi?" get a real answer. */
+private class DeviceStatusTool(private val ctx: Context) : Tool {
+    override val spec get() = ToolSchemas.deviceStatus
+    override val risk = Risk.SAFE
+    override val informational = true
+    override fun describe(args: JsonObject) = tr("состояние телефона", "phone status")
+    override suspend fun execute(args: JsonObject): ToolOutcome = withContext(Dispatchers.IO) {
+        val loc = java.util.Locale.getDefault()
+        val parts = ArrayList<String>()
+        val bm = ctx.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val level = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        if (level in 0..100) parts += tr("заряд $level%", "battery $level%") + if (bm.isCharging) tr(", заряжается", ", charging") else ""
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val caps = runCatching { cm.getNetworkCapabilities(cm.activeNetwork) }.getOrNull()
+        parts += when {
+            caps == null -> tr("нет сети", "no network")
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> tr("сеть: Wi-Fi", "network: Wi-Fi")
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> tr("сеть: мобильный интернет", "network: mobile data")
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> tr("сеть: Ethernet", "network: Ethernet")
+            else -> tr("сеть подключена", "network connected")
+        }
+        runCatching {
+            val st = StatFs(Environment.getDataDirectory().path)
+            parts += String.format(loc, tr("память: свободно %.1f из %.0f ГБ", "storage: %.1f of %.0f GB free"), st.availableBytes / 1e9, st.totalBytes / 1e9)
+        }
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        parts += when (am.ringerMode) {
+            AudioManager.RINGER_MODE_SILENT -> tr("звонок: без звука", "ringer: silent")
+            AudioManager.RINGER_MODE_VIBRATE -> tr("звонок: вибрация", "ringer: vibrate")
+            else -> tr("звонок: со звуком", "ringer: sound on")
+        }
+        parts += "Android ${Build.VERSION.RELEASE}, ${Build.MANUFACTURER} ${Build.MODEL}"
+        ToolOutcome(true, parts.joinToString("; "))
+    }
+}
+
+/** Opens the calendar with the event filled in; the owner saves it (no calendar permission needed). */
+private class CalendarEventTool(ctx: Context) : IntentTool(ctx) {
+    override val spec get() = ToolSchemas.calendarEvent
+    override val risk = Risk.SAFE
+    override fun describe(args: JsonObject) = tr("событие: «${args.str("title").orEmpty().take(50)}» ${args.str("start").orEmpty()}", "event: “${args.str("title").orEmpty().take(50)}” ${args.str("start").orEmpty()}")
+    override suspend fun execute(args: JsonObject): ToolOutcome {
+        val title = args.str("title")?.trim()?.take(100)?.takeIf { it.isNotEmpty() } ?: return ToolOutcome(false, tr("нет названия", "no title"))
+        val raw = args.str("start")?.trim().orEmpty()
+        val allDay = raw.length == 10
+        val start = runCatching { if (allDay) java.time.LocalDate.parse(raw).atStartOfDay() else java.time.LocalDateTime.parse(raw.take(16)) }.getOrNull()
+            ?: return ToolOutcome(false, tr("непонятное время начала", "unclear start time"))
+        val end = args.str("end")?.let { runCatching { java.time.LocalDateTime.parse(it.trim().take(16)) }.getOrNull() }
+            ?.takeIf { it.isAfter(start) } ?: if (allDay) start.plusDays(1) else start.plusHours(1)
+        val zone = java.time.ZoneId.systemDefault()
+        val intent = Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI)
+            .putExtra(CalendarContract.Events.TITLE, title)
+            .putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, start.atZone(zone).toInstant().toEpochMilli())
+            .putExtra(CalendarContract.EXTRA_EVENT_END_TIME, end.atZone(zone).toInstant().toEpochMilli())
+            .putExtra(CalendarContract.EXTRA_EVENT_ALL_DAY, allDay)
+        args.str("location")?.trim()?.takeIf { it.isNotEmpty() }?.let { intent.putExtra(CalendarContract.Events.EVENT_LOCATION, it.take(100)) }
+        return launch(intent, tr("открыла календарь с событием «$title» — проверь и сохрани", "opened the calendar with “$title” — check and save it"))
+    }
+}
+
+/** Any maps app via geo:, or the map website if none is installed. */
+private class NavigateTool(ctx: Context) : IntentTool(ctx) {
+    override val spec get() = ToolSchemas.navigate
+    override val risk = Risk.SAFE
+    override fun describe(args: JsonObject) = tr("карты: ${args.str("destination").orEmpty().take(60)}", "maps: ${args.str("destination").orEmpty().take(60)}")
+    override suspend fun execute(args: JsonObject): ToolOutcome {
+        val dest = args.str("destination")?.trim()?.take(150)?.takeIf { it.length >= 2 } ?: return ToolOutcome(false, tr("куда — не сказано", "no destination"))
+        val r = launch(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=" + Uri.encode(dest))), tr("открыла карты: $dest", "opened maps: $dest"))
+        if (r.ok) return r
+        val web = tr("https://yandex.ru/maps/?text=", "https://www.google.com/maps/search/?api=1&query=") + Uri.encode(dest)
+        return launch(Intent(Intent.ACTION_VIEW, Uri.parse(web)), tr("открыла карту в браузере: $dest", "opened the map in the browser: $dest"))
+    }
+}
+
+/** Media keys for whatever is playing (no permission needed). */
+private class MediaTool(private val ctx: Context) : Tool {
+    override val spec get() = ToolSchemas.media
+    override val risk = Risk.SAFE
+    override fun describe(args: JsonObject) = when (args.str("action")) {
+        "pause" -> tr("пауза", "pause"); "play" -> tr("продолжить", "play"); "next" -> tr("следующий трек", "next track")
+        "previous" -> tr("предыдущий трек", "previous track"); else -> tr("пауза/продолжить", "play/pause")
+    }
+    override suspend fun execute(args: JsonObject): ToolOutcome = withContext(Dispatchers.Main) {
+        val code = when (args.str("action")) {
+            "play" -> KeyEvent.KEYCODE_MEDIA_PLAY
+            "pause" -> KeyEvent.KEYCODE_MEDIA_PAUSE
+            "next" -> KeyEvent.KEYCODE_MEDIA_NEXT
+            "previous" -> KeyEvent.KEYCODE_MEDIA_PREVIOUS
+            else -> KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+        }
+        val am = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        am.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+        ToolOutcome(true, describe(args))
+    }
+}
+
+/** "Включи Queen": the system's play-from-search, or the music service's website. */
+private class PlayMusicTool(ctx: Context) : IntentTool(ctx) {
+    override val spec get() = ToolSchemas.playMusic
+    override val risk = Risk.SAFE
+    override fun describe(args: JsonObject) = tr("музыка: ${args.str("query").orEmpty().take(60)}", "music: ${args.str("query").orEmpty().take(60)}")
+    override suspend fun execute(args: JsonObject): ToolOutcome {
+        val q = args.str("query")?.trim()?.take(100)?.takeIf { it.isNotEmpty() } ?: return ToolOutcome(false, tr("что включить — не сказано", "nothing to play"))
+        val search = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH)
+            .putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+            .putExtra(SearchManager.QUERY, q)
+        val r = launch(search, tr("включаю «$q»", "playing “$q”"))
+        if (r.ok) return r
+        val web = tr("https://music.yandex.ru/search?text=", "https://music.youtube.com/search?q=") + Uri.encode(q)
+        return launch(Intent(Intent.ACTION_VIEW, Uri.parse(web)), tr("открыла поиск музыки: $q", "opened a music search: $q"))
+    }
+}
+
+/** A prepared SMS (with a number) or the share sheet; the owner presses "send" themselves. */
+private class MessageTool(ctx: Context) : IntentTool(ctx) {
+    override val spec get() = ToolSchemas.message
+    override val risk = Risk.SAFE
+    override fun describe(args: JsonObject) = tr("сообщение: «${args.str("text").orEmpty().take(50)}»", "message: “${args.str("text").orEmpty().take(50)}”")
+    override suspend fun execute(args: JsonObject): ToolOutcome {
+        val text = args.str("text")?.take(1000)?.takeIf { it.isNotBlank() } ?: return ToolOutcome(false, tr("пустое сообщение", "empty message"))
+        val phone = args.str("phone")?.filter { it.isDigit() || it == '+' }?.take(20)?.takeIf { it.length >= 3 }
+        val intent = if (phone != null) Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:$phone")).putExtra("sms_body", text)
+        else Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), tr("Отправить через", "Send with"))
+        return launch(intent, tr("подготовила сообщение — осталось нажать «Отправить»", "prepared the message — just press “Send”"))
+    }
+}
+
+private class OpenUrlTool(ctx: Context) : IntentTool(ctx) {
+    override val spec get() = ToolSchemas.openUrl
+    override val risk = Risk.SAFE
+    override fun describe(args: JsonObject) = tr("открыть ${args.str("url").orEmpty().take(80)}", "open ${args.str("url").orEmpty().take(80)}")
+    override suspend fun execute(args: JsonObject): ToolOutcome {
+        val url = args.str("url")?.trim()?.take(500).orEmpty()
+        val uri = Uri.parse(url)
+        if (uri.scheme != "https" || uri.host.isNullOrBlank()) return ToolOutcome(false, tr("открываю только https-ссылки", "I only open https links"))
+        return launch(Intent(Intent.ACTION_VIEW, uri), tr("открыла ${uri.host}", "opened ${uri.host}"))
+    }
+}
+
 object AndroidTools {
     fun all(ctx: Context): List<Tool> {
         val app = ctx.applicationContext
         return listOf(
             OpenAppTool(app), AlarmTool(app), TimerTool(app), CameraTool(app), FlashlightTool(app),
             VolumeTool(app), SettingsTool(app), GlobalActionTool(), WebSearchTool(app), DialTool(app),
+            DeviceStatusTool(app), CalendarEventTool(app), NavigateTool(app), MediaTool(app), PlayMusicTool(app),
+            MessageTool(app), OpenUrlTool(app),
         )
     }
 }

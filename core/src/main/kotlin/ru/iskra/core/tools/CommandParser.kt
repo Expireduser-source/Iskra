@@ -3,6 +3,8 @@ package ru.iskra.core.tools
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import ru.iskra.core.brain.BrainNames
+import ru.iskra.core.brain.CurrencyWords
 import ru.iskra.core.skills.ReminderParser
 import ru.iskra.core.skills.SkillNames
 
@@ -41,6 +43,7 @@ object CommandParser {
         if (t in setOf("что ты помнишь", "что ты обо мне помнишь", "твоя память", "покажи память")) return Parsed.ListMemory
 
         skills(raw, t, now)?.let { return it }
+        CurrencyWords.parse(raw)?.let { return Parsed.Tool(BrainNames.CURRENCY, it) }
 
         // Alarm: "поставь будильник на 7:30", "разбуди меня в 6", "будильник на 07 15"
         Regex("""^(?:поставь |заведи |установи )?(?:будильник|разбуди меня)(?: на| в)? (\d{1,2})(?:[:. ](\d{2}))?(?: утра| вечера| часов| час| часа)?$""")
