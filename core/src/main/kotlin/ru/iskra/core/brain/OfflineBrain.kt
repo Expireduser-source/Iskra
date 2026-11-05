@@ -74,6 +74,10 @@ class OfflineBrain(private val random: Random = Random.Default) {
         return if (greeted && !matches(t, GREET)) Answer(hi + a.text, a.emotion) else a
     }
 
+    /** "Ты человек?" gets the honest answer even when a small model on the phone could answer it (they don't, reliably). */
+    fun honesty(text: String): Answer? =
+        if (matches(normalize(text), HUMAN)) Answer(pick("HUMAN", tr(HUMAN_RU, HUMAN_EN)), Emotion.NEUTRAL) else null
+
     fun fallback(text: String): Answer {
         val question = text.trim().endsWith("?") || QUESTION.containsMatchIn(normalize(text))
         return if (question) Answer(pick("NO_BRAIN_Q", tr(NO_BRAIN_Q_RU, NO_BRAIN_Q_EN)), Emotion.THINKING)
@@ -293,6 +297,12 @@ object MemoryTalk {
     private val name = Regex("""^(?:(?:привет|hi|hello|hey)[,!\s]+)?(?:меня\s+зовут|зови\s+меня|мое\s+имя|my\s+name\s+is|call\s+me|i'm\s+called)\s+(\p{L}[\p{L}-]{1,20})(?:\s+(\p{L}[\p{L}-]{1,20}))?[.!]?$""", RegexOption.IGNORE_CASE)
     private val city = Regex("""^(?:я\s+живу\s+в|i\s+live\s+in)\s+(?:городе\s+|the\s+city\s+of\s+)?(\p{L}[\p{L} -]{1,30})[.!]?$""", RegexOption.IGNORE_CASE)
     private val birthday = Regex("""^(?:мой\s+день\s+рождения|у\s+меня\s+день\s+рождения|я\s+родил(?:ся|ась)|my\s+birthday\s+is|i\s+was\s+born\s+on)\s+(.{3,30}?)[.!]?$""", RegexOption.IGNORE_CASE)
+    private val study = Regex("""^(?:а\s+)?я\s+(?:сейчас\s+)?учусь\s+((?:на|в|во)\s+[^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
+    private val work = Regex("""^(?:а\s+)?я\s+работаю\s+((?:в|во|на)\s+[^,.;!?]{2,40}|[\p{L}-]{3,30}(?:ом|ем|ой|ей|ёй)(?:\s+[\p{L}-]{2,30})?)""", RegexOption.IGNORE_CASE)
+    private val pet = Regex("""^у\s+меня\s+(?:есть\s+)?(кот|кошка|собака|пёс|пес|попугай|хомяк|кролик|черепаха)(?:\s*,)?\s+(?:по\s+имени|по\s+кличке|(?:его|её|ее)\s+зовут|зовут)\s+(\p{L}[\p{L}-]{1,20})""", RegexOption.IGNORE_CASE)
+    private val studyEn = Regex("""^i(?:'m| am)?\s+(?:study(?:ing)?|a student of)\s+([^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
+    private val workEn = Regex("""^i\s+work\s+((?:as|at|in)\s+[^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
+    private val petEn = Regex("""^i\s+have\s+an?\s+(cat|dog|parrot|hamster|rabbit|turtle)\s+(?:named|called)\s+(\p{L}[\p{L}-]{1,20})""", RegexOption.IGNORE_CASE)
     private val askName = Regex("""^(?:а\s+)?(?:как\s+меня\s+зовут|ты\s+помнишь\s+как\s+меня\s+зовут|знаешь\s+как\s+меня\s+зовут|what's\s+my\s+name|what\s+is\s+my\s+name|do\s+you\s+know\s+my\s+name)\??$""", RegexOption.IGNORE_CASE)
     private val forget = Regex("""^(?:искра[,\s]+)?(?:забудь|удали\s+из\s+памяти|сотри\s+из\s+памяти|forget|delete\s+from\s+memory)(?:\s*[,:]?\s*(?:что|про|о|об|about|that))?\s+(.{2,200})$""", RegexOption.IGNORE_CASE)
     private val forgetAll = Regex("""^(?:забудь|сотри|очисти)\s+(?:все|всё|всю\s+память|память)(?:\s+(?:обо\s+мне|что\s+знаешь))?$|^(?:forget|erase)\s+(?:everything|all)(?:\s+about\s+me)?$""", RegexOption.IGNORE_CASE)
@@ -312,6 +322,22 @@ object MemoryTalk {
             val c = m.groupValues[1].trim().split(' ').joinToString(" ") { cap(it) }
             return Fact(tr("Владелец живёт в $c", "The owner lives in $c"), 4, tr("Запомнила: ты живёшь в $c.", "Got it: you live in $c."))
         }
+        study.find(t)?.let { m ->
+            val what = m.groupValues[1].trim()
+            return Fact("Владелец учится ${what}", 4, "Запомнила: ты учишься $what.")
+        }
+        work.find(t)?.let { m ->
+            val what = m.groupValues[1].trim()
+            return Fact("Владелец работает ${what}", 4, "Запомнила: ты работаешь $what.")
+        }
+        pet.find(t)?.let { m ->
+            val name = cap(m.groupValues[2])
+            return Fact("У владельца есть ${m.groupValues[1].lowercase()} по имени $name", 4, "Запомнила: ${m.groupValues[1].lowercase()} $name. Передавай от меня «мрр»!")
+        }
+        studyEn.find(t)?.let { m -> return Fact("The owner studies ${m.groupValues[1].trim()}", 4, "Got it: you study ${m.groupValues[1].trim()}.") }
+        workEn.find(t)?.let { m -> return Fact("The owner works ${m.groupValues[1].trim()}", 4, "Got it: you work ${m.groupValues[1].trim()}.") }
+        petEn.find(t)?.let { m -> return Fact("The owner has a ${m.groupValues[1].lowercase()} named ${cap(m.groupValues[2])}", 4,
+            "Got it: your ${m.groupValues[1].lowercase()} ${cap(m.groupValues[2])}. Say mrr from me!") }
         birthday.find(t)?.let { m ->
             val d = m.groupValues[1].trim()
             return Fact(tr("День рождения владельца: $d", "The owner's birthday: $d"), 5, tr("Запомнила: день рождения — $d. Мрр, обязательно поздравлю!", "Got it: your birthday is $d. Mrr, I'll be sure to celebrate!"))

@@ -35,6 +35,7 @@ interface TtsClient {
 object SpeechText {
     fun clean(text: String): String = text
         .replace(Regex("^\\s*\\[[a-zA-Z_]{2,20}]\\s*"), "")         // leading [emotion] tag, if any survived
+        .replace(Regex("\\[[^\\]\\n]{1,24}]"), " ")                    // short bracketed tags small models invent: [mrр]
         .replace(Regex("\\*[^*]{1,80}\\*"), " ")                       // *мурлычет*
         .replace(Regex("[\\p{So}\\p{Cn}\\p{Cs}\\u200d\\ufe0f]"), " ")  // emoji
         .replace(Regex("[#_`>~]"), " ")

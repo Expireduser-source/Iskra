@@ -124,7 +124,7 @@ enum class ChatFormat {
     val stops: List<String> get() = when (this) {
         CHATML, CHATML_NO_THINK -> listOf("<|im_end|>", "<|im_start|>", "<|endoftext|>")
         GEMMA -> listOf("<end_of_turn>", "<start_of_turn>")
-        GEMMA4 -> listOf("<turn|>", "<|turn>", "<|channel>")
+        GEMMA4 -> listOf("<turn|>", "<|turn>")
     }
 }
 
@@ -157,6 +157,8 @@ class LocalLlmProvider(
         // Small Qwen models sometimes slip Chinese characters into Russian or English; unless the person wrote them, drop them.
         val lastUser = (request.messages.lastOrNull { it is ChatMessage.User } as? ChatMessage.User)?.text.orEmpty()
         val guard = !lastUser.any(::isCjk)
+        // Gemma 4 may think in its "thought" channel before answering: hold the text until the channel closes.
+        val hold = format == ChatFormat.GEMMA4
         val think = ThinkFilter()
         val raw = StringBuilder()
         val t0 = System.nanoTime()
@@ -174,7 +176,7 @@ class LocalLlmProvider(
                         val stop = format.stops.firstOrNull { raw.contains(it) }
                         if (stop != null) return@generate false
                         val visible = think.feed(piece).let { if (guard) stripCjk(it) else it }
-                        if (visible.isNotEmpty()) onText(visible)
+                        if (visible.isNotEmpty() && !hold) onText(visible)
                         scope.isActive
                     }
                 } catch (t: Throwable) {
@@ -186,7 +188,11 @@ class LocalLlmProvider(
         }
         val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
         onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000))
-        val reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
+        var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
+        if (hold) {
+            reply = reply.substringAfterLast("<channel|>").trim()
+            if (reply.isNotEmpty()) onText(if (guard) stripCjk(reply) else reply)
+        }
         LlmResponse(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, emptyList())
     }
 

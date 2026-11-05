@@ -157,7 +157,7 @@ class CompanionAgent(
         val cloud = if (pause != null) null else providerFactory()
         val onPhone = if (cloud == null) localFactory() else null
         val provider = cloud ?: onPhone
-        val local = handleLocally(text, provider != null)
+        val local = handleLocally(text, provider != null, provider?.onDevice == true)
         val reply = local ?: when {
             provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
@@ -262,8 +262,9 @@ class CompanionAgent(
      * Everything that needs no model: safety, memory commands, phone commands, exact answers (sums, units, dates),
      * and — only when there is no model — small talk. null: ask the model.
      */
-    private suspend fun handleLocally(text: String, llmAvailable: Boolean): AgentReply? {
+    private suspend fun handleLocally(text: String, llmAvailable: Boolean, smallModel: Boolean = false): AgentReply? {
         brain.crisis(text)?.let { return AgentReply(it.text, it.emotion) }
+        if (smallModel) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         MemoryTalk.forgetQuery(text)?.let { return forget(it) }
         MemoryTalk.fact(text)?.let { f ->

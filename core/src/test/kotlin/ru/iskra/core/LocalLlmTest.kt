@@ -75,6 +75,17 @@ class LocalLlmTest {
     }
 
     @Test
+    fun inventedTagsAndGemma4ThoughtsAreRemoved() = runTest {
+        assertEquals("Мрр, всё хорошо.", ru.iskra.core.agent.ReplyParser.parse("[neutral] [mrр] Мрр, всё хорошо.").text)
+        assertEquals("I love winter evenings.", ru.iskra.core.agent.ReplyParser.parse("[excited] [I love winter evenings.]").text)
+        assertEquals("Hi Tom!", ru.iskra.core.agent.ReplyParser.parse("[neutral] [Mood: Curious] Hi Tom!").text)
+        val g = LocalLlmProvider({ FakeEngine("Пользователь грустит, надо утешить.", "<channel|>", "[sad] Ох, обнимаю тебя.") }, ChatFormat.GEMMA4, "local:g")
+        val heard = StringBuilder()
+        assertEquals("[sad] Ох, обнимаю тебя.", g.stream(request) { heard.append(it) }.text)
+        assertEquals("[sad] Ох, обнимаю тебя.", heard.toString())
+    }
+
+    @Test
     fun strayChineseIsDroppedUnlessThePersonWroteIt() = runTest {
         val p = LocalLlmProvider({ FakeEngine("[happy] Это очень 很好 хорошая идея", "，мрр!") }, ChatFormat.CHATML, "local:test")
         val heard = StringBuilder()
@@ -134,9 +145,13 @@ class LocalLlmTest {
             val prompt = engine.prompts.last()
             assertTrue(prompt.contains("Человека зовут Аня"), prompt)
             assertTrue(prompt.contains("коротко (1–3 предложения)"), prompt)  // the compact prompt
+            assertTrue(prompt.contains("женском роде"))
+            assertFalse(prompt.contains("Пример"))                              // small models copy examples
             assertFalse(prompt.contains("владел"))                              // plain words for a small model
             assertFalse(prompt.contains("Инструменты"))                       // no tools for a small model
             assertTrue(a.handle("сколько будет 2+2").text.endsWith("= 4"))    // exact answers stay local
+            assertTrue(a.handle("ты человек?").text.contains("программа"))     // honesty is not left to a small model
+            assertEquals(2, engine.prompts.size)                                // only the two real questions reached the model
         }
     }
 

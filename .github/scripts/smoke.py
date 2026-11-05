@@ -237,15 +237,63 @@ def local_brain_check(s, api):
 
 # Models to compare in the evaluation: the catalog's and candidates for it (a missing repo or file is skipped).
 EVAL_CANDIDATES = [
-    # (name, repo, file patterns in order of preference, chat format)
-    ("qwen2.5-0.5b", "Qwen/Qwen2.5-0.5B-Instruct-GGUF", [r"qwen2\.5-0\.5b-instruct-q4_k_m\.gguf$"], "CHATML"),
-    ("qwen3.5-0.8b", "ggml-org/Qwen3.5-0.8B-GGUF", [r"(?i)q4_k_m\.gguf$", r"(?i)q8_0\.gguf$"], "CHATML_NO_THINK"),
+    # (name, repo, file patterns in order of preference, chat format if the file's own template can't tell)
     ("gemma-3-1b", "ggml-org/gemma-3-1b-it-GGUF", [r"(?i)q4_k_m\.gguf$"], "GEMMA"),
-    ("qwen2.5-1.5b", "Qwen/Qwen2.5-1.5B-Instruct-GGUF", [r"qwen2\.5-1\.5b-instruct-q4_k_m\.gguf$"], "CHATML"),
     ("qwen3-1.7b", "ggml-org/Qwen3-1.7B-GGUF", [r"(?i)q4_k_m\.gguf$", r"(?i)q8_0\.gguf$"], "CHATML_NO_THINK"),
-    ("gemma-4-e2b", "ggml-org/gemma-4-E2B-it-GGUF", [r"(?i)q4_k_m\.gguf$", r"(?i)q8_0\.gguf$"], "GEMMA4"),
-    ("qwen3-4b", "Qwen/Qwen3-4B-GGUF", [r"(?i)qwen3-4b-q4_k_m\.gguf$"], "CHATML_NO_THINK"),
+    ("qwen3.5-2b", "unsloth/Qwen3.5-2B-GGUF", [r"(?i)qwen3\.5-2b-q4_k_m\.gguf$", r"(?i)q4_k_m\.gguf$"], "CHATML_NO_THINK"),
+    ("gemma-4-e2b-mobile", "unsloth/gemma-4-E2B-it-qat-mobile-GGUF", [r"(?i)q4_0\.gguf$", r"(?i)q4_k_m\.gguf$", r"(?i)iq4\w*\.gguf$"], "GEMMA4"),
+    ("gemma-3-4b", "ggml-org/gemma-3-4b-it-GGUF", [r"(?i)q4_k_m\.gguf$"], "GEMMA"),
+    ("qwen3.5-4b", "unsloth/Qwen3.5-4B-GGUF", [r"(?i)qwen3\.5-4b-q4_k_m\.gguf$", r"(?i)q4_k_m\.gguf$"], "CHATML_NO_THINK"),
+    ("qwen2.5-1.5b", "Qwen/Qwen2.5-1.5B-Instruct-GGUF", [r"qwen2\.5-1\.5b-instruct-q4_k_m\.gguf$"], "CHATML"),
 ]
+
+
+def gguf_template(path):
+    """The chat template stored in a GGUF file (stdlib only), or None."""
+    import struct
+    sizes = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
+    with open(path, "rb") as f:
+        if f.read(4) != b"GGUF":
+            return None
+        f.read(4)
+        _, n_kv = struct.unpack("<QQ", f.read(16))
+
+        def rstr():
+            (n,) = struct.unpack("<Q", f.read(8))
+            return f.read(n).decode("utf-8", "replace")
+
+        def skip(t):
+            if t in sizes:
+                f.seek(sizes[t], 1)
+            elif t == 8:
+                (n,) = struct.unpack("<Q", f.read(8))
+                f.seek(n, 1)
+            elif t == 9:
+                it, n = struct.unpack("<IQ", f.read(12))
+                if it in sizes:
+                    f.seek(sizes[it] * n, 1)
+                else:
+                    for _ in range(n):
+                        skip(it)
+        for _ in range(n_kv):
+            key = rstr()
+            (t,) = struct.unpack("<I", f.read(4))
+            if key == "tokenizer.chat_template" and t == 8:
+                return rstr()
+            skip(t)
+    return None
+
+
+def chat_format(template, guess):
+    if not template:
+        return guess
+    if "<|turn>" in template:
+        return "GEMMA4"
+    if "<start_of_turn>" in template:
+        return "GEMMA"
+    if "<|im_start|>" in template:
+        return "CHATML_NO_THINK" if ("enable_thinking" in template or "<think>" in template) else "CHATML"
+    return guess
 SMALL_FAMILIES = re.compile(r"(?i)(gemma-?[34]|qwen3|qwen-?3\.5|qwen4|lfm2|phi-?4-?mini|smollm|ministral|llama-?3\.2|granite)")
 
 
@@ -334,7 +382,7 @@ def model_eval(out):
     for name, repo, patterns, fmt in EVAL_CANDIDATES:
         if name in done:
             continue
-        if time.time() - t_start > 20 * 60:
+        if time.time() - t_start > 24 * 60:
             summary.append(f"| {name} | — | skipped: out of time | | |")
             continue
         try:
@@ -353,7 +401,13 @@ def model_eval(out):
         except Exception as e:  # noqa: BLE001
             print(f"{repo}/{file}: {e}", flush=True)
             continue
-        print(f"{name}: {repo}/{file}, {os.path.getsize(path) // 1_000_000} MB in {time.time() - t:.0f} s", flush=True)
+        tmpl = gguf_template(path)
+        fmt = chat_format(tmpl, fmt)
+        gen = ""
+        if tmpl and "add_generation_prompt" in tmpl:
+            i = tmpl.rfind("add_generation_prompt")
+            gen = tmpl[i:i + 300].replace("\n", "⏎")
+        print(f"{name}: {repo}/{file}, {os.path.getsize(path) // 1_000_000} MB in {time.time() - t:.0f} s, format {fmt}; template end: {gen}", flush=True)
         env["ISKRA_EVAL_MODELS"] = f"{name}|{path}|{fmt}"
         r = subprocess.run(["./gradlew", "-q", ":core:test", "--tests", "ru.iskra.core.LocalModelEval", "--rerun"],
                            env=env, capture_output=True, text=True, timeout=1800)

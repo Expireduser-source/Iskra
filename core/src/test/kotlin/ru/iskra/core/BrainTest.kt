@@ -167,7 +167,16 @@ class BrainTest {
         assertEquals("", MemoryTalk.forgetQuery("забудь всё"))
         assertEquals("я живу в Москве", MemoryTalk.forgetQuery("Забудь, что я живу в Москве"))
         assertNull(MemoryTalk.forgetQuery("не забудь купить хлеб"))
-        withLang(Lang.EN) { assertEquals("The owner's name is John", MemoryTalk.fact("my name is John")!!.text) }
+        assertEquals("Владелец учится на врача", MemoryTalk.fact("Я учусь на врача, сейчас сессия.")!!.text)
+        assertEquals("Владелец работает программистом", MemoryTalk.fact("я работаю программистом")!!.text)
+        assertEquals("Владелец работает в банке уже год", MemoryTalk.fact("Я работаю в банке уже год")!!.text)
+        assertEquals("У владельца есть кот по имени Барсик", MemoryTalk.fact("у меня есть кот по имени барсик")!!.text)
+        assertNull(MemoryTalk.fact("я работаю"))
+        withLang(Lang.EN) {
+            assertEquals("The owner's name is John", MemoryTalk.fact("my name is John")!!.text)
+            assertEquals("The owner studies medicine", MemoryTalk.fact("I study medicine")!!.text)
+            assertEquals("The owner has a dog named Rex", MemoryTalk.fact("I have a dog named rex")!!.text)
+        }
     }
 
     @Test
