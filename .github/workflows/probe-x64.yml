@@ -1,0 +1,9 @@
+name: probe x64
+on:
+  push:
+    branches: [ci-probe]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: uname -m
