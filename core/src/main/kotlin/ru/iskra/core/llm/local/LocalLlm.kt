@@ -35,9 +35,11 @@ interface LlamaEngine : AutoCloseable {
     fun generate(prompt: String, maxTokens: Int, temperature: Float, onPiece: (String) -> Boolean): String
     fun cancel()
     val info: String
+    /** Tokens the context holds: prompt plus reply must fit. */
+    val contextSize: Int
 }
 
-class NativeLlamaEngine private constructor(private val handle: Long) : LlamaEngine {
+class NativeLlamaEngine private constructor(private val handle: Long, override val contextSize: Int) : LlamaEngine {
     @Volatile private var closed = false
     override val info: String get() = if (closed) "" else LlamaNative.info(handle)
 
@@ -57,7 +59,7 @@ class NativeLlamaEngine private constructor(private val handle: Long) : LlamaEng
     companion object {
         /** null if the file isn't a model llama.cpp can load (or memory ran out). */
         fun open(path: String, nCtx: Int, nThreads: Int): NativeLlamaEngine? =
-            LlamaNative.load(path, nCtx, nThreads).takeIf { it != 0L }?.let(::NativeLlamaEngine)
+            LlamaNative.load(path, nCtx, nThreads).takeIf { it != 0L }?.let { NativeLlamaEngine(it, nCtx) }
     }
 }
 
@@ -130,7 +132,8 @@ class LocalLlmProvider(
 
     override suspend fun stream(request: LlmRequest, onText: (String) -> Unit): LlmResponse = lock.withLock {
         val e = engine() ?: throw LlmException("on-device model unavailable", LlmException.Kind.NOT_CONFIGURED)
-        val prompt = format.render(request)
+        val budget = minOf(maxTokens, request.maxTokens)
+        val prompt = format.render(fit(request, e.contextSize - budget))
         val think = ThinkFilter()
         val raw = StringBuilder()
         val text = withContext(Dispatchers.IO) {
@@ -138,7 +141,7 @@ class LocalLlmProvider(
             suspendCancellableCoroutine<String> { cont ->
                 cont.invokeOnCancellation { e.cancel() }
                 val result = try {
-                    e.generate(prompt, minOf(maxTokens, request.maxTokens), request.temperature.toFloat().coerceIn(0.1f, 1.2f)) { piece ->
+                    e.generate(prompt, budget, request.temperature.toFloat().coerceIn(0.1f, 1.2f)) { piece ->
                         raw.append(piece)
                         val stop = format.stops.firstOrNull { raw.contains(it) }
                         if (stop != null) return@generate false
@@ -155,5 +158,37 @@ class LocalLlmProvider(
         }
         val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
         LlmResponse(ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text), emptyList())
+    }
+
+    companion object {
+        /** A cautious guess: Russian is about 2.5 characters per token in these vocabularies, English about 4. */
+        fun estimateTokens(text: String): Int = text.length * 2 / 5 + 8
+
+        /**
+         * The dialogue that fits into [tokens]: the oldest turns go first; a single message longer than the room
+         * (a long shared text) keeps its beginning and end.
+         */
+        fun fit(request: LlmRequest, tokens: Int): LlmRequest {
+            val room = (tokens * 0.92).toInt()
+            fun size(r: LlmRequest) = estimateTokens(r.system) + estimateTokens(r.situation) + r.messages.sumOf {
+                when (it) { is ChatMessage.User -> estimateTokens(it.text); is ChatMessage.Assistant -> estimateTokens(it.text); else -> 0 }
+            } + 6 * r.messages.size
+            var r = request
+            while (size(r) > room && r.messages.size > 1) {
+                // Drop the oldest turn; keep the dialogue starting with the owner.
+                var rest = r.messages.drop(1)
+                while (rest.size > 1 && rest.first() !is ChatMessage.User) rest = rest.drop(1)
+                r = r.copy(messages = rest)
+            }
+            val over = size(r) - room
+            val last = r.messages.lastOrNull() as? ChatMessage.User
+            if (over > 0 && last != null) {
+                val keep = (last.text.length - over * 5 / 2 - 20).coerceAtLeast(200)
+                val head = last.text.take(keep * 3 / 5)
+                val tail = last.text.takeLast(keep - head.length)
+                r = r.copy(messages = r.messages.dropLast(1) + ChatMessage.User("$head … $tail"))
+            }
+            return r
+        }
     }
 }

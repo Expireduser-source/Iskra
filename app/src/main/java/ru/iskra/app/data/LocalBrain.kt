@@ -48,6 +48,8 @@ object LocalBrain {
         val format: ChatFormat,
         private val ru: String,
         private val en: String,
+        /** Known SHA-256, used when Hugging Face doesn't announce one (it normally does, and that one wins). */
+        val sha256: String? = null,
     ) {
         val note: String get() = tr(ru, en)
     }
@@ -55,14 +57,17 @@ object LocalBrain {
     /** Qwen models: Apache-2.0, official GGUF files on Hugging Face, good Russian and English for their size. */
     val models = listOf(
         Model("qwen2.5-0.5b", "Qwen2.5 0.5B", "qwen2.5-0.5b-instruct-q4_k_m.gguf",
-            "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf", 400, 3,
-            ChatFormat.CHATML, "Лёгкий: быстрый на любом телефоне, но отвечает просто.", "Light: fast on any phone, but answers simply."),
+            "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf", 491, 3,
+            ChatFormat.CHATML, "Лёгкий: быстрый на любом телефоне, но отвечает просто.", "Light: fast on any phone, but answers simply.",
+            "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"),
         Model("qwen2.5-1.5b", "Qwen2.5 1.5B", "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf", 1100, 6,
-            ChatFormat.CHATML, "Обычный: заметно умнее, нужен телефон с 6 ГБ памяти.", "Standard: noticeably smarter, needs a phone with 6 GB of memory."),
+            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf", 1117, 6,
+            ChatFormat.CHATML, "Обычный: заметно умнее, нужен телефон с 6 ГБ памяти.", "Standard: noticeably smarter, needs a phone with 6 GB of memory.",
+            "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"),
         Model("qwen3-4b", "Qwen3 4B", "Qwen3-4B-Q4_K_M.gguf",
-            "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf", 2500, 10,
-            ChatFormat.CHATML_NO_THINK, "Сильный: для флагманов с 10+ ГБ памяти, отвечает медленнее.", "Strong: for flagships with 10+ GB of memory, slower to answer."),
+            "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf", 2497, 10,
+            ChatFormat.CHATML_NO_THINK, "Сильный: для флагманов с 10+ ГБ памяти, отвечает медленнее.", "Strong: for flagships with 10+ GB of memory, slower to answer.",
+            "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"),
     )
 
     /** A GGUF file put into the folder by hand (or by the CI check): any ChatML model works. */
@@ -93,10 +98,19 @@ object LocalBrain {
 
     /** The model already on the phone, if any. */
     private fun installed(): State.Ready? {
-        val dir = dir()
         val saved = prefs().getString(KEY_MODEL, null)?.let { id -> models.firstOrNull { it.id == id } }
-        val ready = saved?.takeIf { File(dir, it.file).isFile } ?: custom.takeIf { File(dir, it.file).isFile }
-        return ready?.let { State.Ready(it, File(dir, it.file).length()) }
+        val ready = saved?.takeIf { fileOf(it).isFile } ?: custom.takeIf { fileOf(it).isFile }
+        return ready?.let { State.Ready(it, fileOf(it).length()) }
+    }
+
+    /**
+     * Where a model lives: downloads go to the app's own folder on the phone's storage; a hand-placed custom.gguf may
+     * also be in the app's internal folder (that's where the emulator check puts it).
+     */
+    private fun fileOf(m: Model): File {
+        val primary = File(dir(), m.file)
+        if (m !== custom || primary.isFile) return primary
+        return File(File(app.filesDir, "llm"), m.file).takeIf { it.isFile } ?: primary
     }
 
     fun enabled(): Boolean = prefs().getBoolean(KEY_ENABLED, true)
@@ -163,7 +177,7 @@ object LocalBrain {
         var have = part.length()
         _state.value = State.Downloading(model, have, model.approxMb * 1_000_000L)
         val request = Request.Builder().url(model.url).apply { if (have > 0) header("Range", "bytes=$have-") }.build()
-        var expectedSha: String? = null
+        var expectedSha: String? = model.sha256
         var expectedSize: Long? = null
         client.newCall(request).execute().use { r ->
             // Hugging Face names the file's SHA-256 and size on the redirect it sends first.
@@ -224,6 +238,7 @@ object LocalBrain {
         cancelDownload()
         unload()
         dir().listFiles()?.forEach { it.delete() }
+        File(app.filesDir, "llm").listFiles()?.forEach { it.delete() }
         prefs().edit().remove(KEY_MODEL).apply()
         _state.value = State.None
         Diag.i("local", tr("Модель на телефоне удалена", "On-phone model deleted"))
@@ -257,7 +272,7 @@ object LocalBrain {
             val threads = (cores / 2).coerceIn(2, 4)
             val ctx = if (totalRamGb() >= 7.5) 4096 else 2048
             val t0 = System.currentTimeMillis()
-            engine = withContext(Dispatchers.IO) { NativeLlamaEngine.open(File(dir(), st.model.file).path, ctx, threads) }
+            engine = withContext(Dispatchers.IO) { NativeLlamaEngine.open(fileOf(st.model).path, ctx, threads) }
             engineFor = st.model.id
             if (engine == null) Diag.w("local", tr("Модель не загрузилась в память", "The model didn't load into memory"))
             else Diag.i("local", tr("Модель загружена за ", "Model loaded in ") + "${System.currentTimeMillis() - t0} ms: ${engine?.info}")

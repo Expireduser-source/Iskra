@@ -30,6 +30,7 @@ import kotlin.test.assertTrue
 class FakeEngine(private vararg val pieces: String) : LlamaEngine {
     val prompts = mutableListOf<String>()
     override val info = "fake"
+    override val contextSize = 4096
     override fun generate(prompt: String, maxTokens: Int, temperature: Float, onPiece: (String) -> Boolean): String {
         prompts += prompt
         val out = StringBuilder()
@@ -69,6 +70,31 @@ class LocalLlmTest {
         assertEquals("Хорошо, мрр!", heard.toString())
         assertTrue(r.toolCalls.isEmpty())
         assertTrue(p.onDevice)
+    }
+
+    @Test
+    fun longDialoguesAreTrimmedToTheContext() {
+        val turns = (1..40).flatMap { listOf(ChatMessage.User("Вопрос номер $it, довольно длинный, чтобы занять место в контексте."), ChatMessage.Assistant("Ответ номер $it, тоже не короткий.")) }
+        val r = LocalLlmProvider.fit(LlmRequest("Ты — Искра.", turns + ChatMessage.User("Последний вопрос")), 600)
+        assertTrue(r.messages.size < turns.size)
+        assertTrue(r.messages.first() is ChatMessage.User)
+        assertEquals("Последний вопрос", (r.messages.last() as ChatMessage.User).text)
+        // One huge shared text keeps its start and end.
+        val huge = "Начало. " + "очень длинный текст ".repeat(400) + "Конец."
+        val one = LocalLlmProvider.fit(LlmRequest("Ты — Искра.", listOf(ChatMessage.User(huge))), 1200)
+        val kept = (one.messages.single() as ChatMessage.User).text
+        assertTrue(kept.startsWith("Начало.") && kept.endsWith("Конец.") && kept.length < huge.length, kept.take(40))
+        assertTrue(LocalLlmProvider.estimateTokens(kept) < 1200)
+    }
+
+    @Test
+    fun aFailingPhoneModelGivesAnHonestAnswer() = withLang(Lang.RU) {
+        runTest {
+            val broken = LocalLlmProvider({ null }, ChatFormat.CHATML, "local:broken")
+            val r = agent(null, broken).handle("почему небо голубое?")
+            assertTrue(r.text.contains("мозг"), r.text)
+            assertTrue(r.error != null)
+        }
     }
 
     private class Failing(private val kind: LlmException.Kind) : LlmProvider {

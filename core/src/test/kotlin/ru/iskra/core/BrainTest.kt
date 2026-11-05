@@ -170,6 +170,17 @@ class BrainTest {
         withLang(Lang.EN) { assertEquals("The owner's name is John", MemoryTalk.fact("my name is John")!!.text) }
     }
 
+    @Test
+    fun birthdaysFromMemory() = withLang(Lang.RU) {
+        assertEquals(java.time.MonthDay.of(5, 12), TimeTalk.monthDay("12 мая 1990"))
+        assertEquals(java.time.MonthDay.of(5, 12), TimeTalk.monthDay("двенадцатого мая"))
+        assertEquals(java.time.MonthDay.of(3, 8), TimeTalk.monthDay("08.03"))
+        assertEquals(java.time.MonthDay.of(7, 4), TimeTalk.monthDay("July 4th"))
+        val items = listOf(ru.iskra.core.memory.MemoryItem(1, MemoryKind.FACT, "День рождения владельца: 12 мая", MemorySource.USER_EXPLICIT, 5, 0, 0))
+        assertEquals(java.time.MonthDay.of(5, 12), MemoryTalk.birthday(items))
+        assertTrue(MemoryTalk.birthdayGreeting("Аня").startsWith("С днём рождения, Аня!"))
+    }
+
     private fun agent(memory: MemoryManager) = CompanionAgent(
         persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
         tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null },

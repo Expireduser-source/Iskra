@@ -427,10 +427,10 @@ private fun SettingsScreen(modifier: Modifier) {
             )
             if (hasKey) TextButton(onClick = { app.vault.clear(); hasKey = false }) { Text(tr("Удалить сохранённый ключ", "Delete the saved key")) }
         }
-        if (s.preset == ProviderPreset.OFFLINE) Text(
-            tr("Сейчас у Искры нет «мозга»: она понимает только команды телефона. Чтобы она нормально разговаривала, " +
-                "подключи OpenRouter бесплатно кнопкой выше — или выбери сервис и вставь свой ключ. Из платных дешевле всего DeepSeek " +
-                "(доли копейки за реплику).", "Right now Iskra has no “brain”: she understands only phone commands. To really chat with her, connect OpenRouter for free with the button above — or choose a service and paste your own key. DeepSeek is the cheapest paid option (a fraction of a cent per reply)."),
+        if (s.preset == ProviderPreset.OFFLINE && ru.iskra.app.data.LocalBrain.provider() == null) Text(
+            tr("Сейчас у Искры нет «мозга»: она понимает команды, счёт, даты и простую болтовню. Чтобы она нормально разговаривала, " +
+                "подключи OpenRouter бесплатно кнопкой выше, скачай «мозг на телефон» — или выбери сервис и вставь свой ключ. Из платных дешевле всего DeepSeek " +
+                "(доли копейки за реплику).", "Right now Iskra has no “brain”: she understands commands, sums, dates and simple small talk. To really chat with her, connect OpenRouter for free with the button above, download the brain on the phone — or choose a service and paste your own key. DeepSeek is the cheapest paid option (a fraction of a cent per reply)."),
             fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary,
         )
         VoiceSection(s, onChange = { s = it; saved = false }, persist = { app.settings.save(s.copy(overlayEnabled = app.settings.load().overlayEnabled)) })

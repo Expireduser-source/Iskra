@@ -79,6 +79,13 @@ object DiagCollector {
         val settings = listOf(
             tr("Мозг", "Brain") to s.preset.title + if (s.preset != ProviderPreset.OFFLINE) tr(", модель ${s.model.ifBlank { s.preset.defaultModel }}", ", model ${s.model.ifBlank { s.preset.defaultModel }}") else "",
             tr("Ключ мозга", "Brain key") to keyState(llmKey),
+            tr("Мозг на телефоне", "Brain on the phone") to when (val l = ru.iskra.app.data.LocalBrain.state.value) {
+                is ru.iskra.app.data.LocalBrain.State.Ready -> "${l.model.id}, ${l.bytes / 1_000_000} MB" + if (ru.iskra.app.data.LocalBrain.enabled()) "" else tr(" (выключен)", " (off)")
+                is ru.iskra.app.data.LocalBrain.State.Downloading -> tr("скачивается", "downloading") + " ${l.done / 1_000_000}/${l.total / 1_000_000} MB"
+                is ru.iskra.app.data.LocalBrain.State.Unsupported -> l.reason
+                is ru.iskra.app.data.LocalBrain.State.Failed -> l.message
+                ru.iskra.app.data.LocalBrain.State.None -> tr("нет", "no")
+            },
             tr("Ключ голоса", "Voice key") to if (s.ttsEngine == TtsEngine.SYSTEM) tr("не нужен", "not needed") else keyState(ttsKey),
             tr("Слушать постоянно", "Listen all the time") to yesNo(s.alwaysListen),
             tr("Слушать при выключенном экране", "Listen with the screen off") to yesNo(s.listenScreenOff),

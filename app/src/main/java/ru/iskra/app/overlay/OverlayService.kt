@@ -636,7 +636,11 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             if (!isActive || avatar == null) return@launch // the service stopped while waiting for the weather
             val end = java.time.LocalDate.now().plusDays(1).atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
             val today = runCatching { app.reminders.pending().count { it.atMs < end } }.getOrDefault(0)
-            deliverProactive(trigger, Moments.morning(base, w, today), next.countToday)
+            // On the owner's birthday the morning starts with congratulations (the date comes from memory).
+            val mem = runCatching { app.memory.all() }.getOrDefault(emptyList())
+            val greeting = if (ru.iskra.core.brain.MemoryTalk.birthday(mem) == java.time.MonthDay.now())
+                ru.iskra.core.brain.MemoryTalk.birthdayGreeting(ru.iskra.core.brain.MemoryTalk.ownerName(mem)) else base
+            deliverProactive(trigger, Moments.morning(greeting, w, today), next.countToday)
             Diag.i("proactive", tr("Утренняя сводка: погода ${if (w != null) "есть" else "нет"}, напоминаний $today", "Morning brief: weather ${if (w != null) "yes" else "no"}, reminders $today"))
         }
     }

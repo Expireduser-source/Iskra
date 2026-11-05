@@ -177,6 +177,20 @@ object TimeTalk {
 
     private fun enMonth(s: String) = monthsEn.indexOfFirst { it.startsWith(s.take(3)) } + 1
 
+    /** The day and month in a phrase like "12 мая 1990", "двенадцатого мая", "12.05", "May 12th" (the year is ignored). */
+    fun monthDay(text: String): java.time.MonthDay? {
+        val s = ordinalsToDigits(NumberWords.digitize(text.lowercase().replace('ё', 'е')))
+        fun md(m: Int, d: Int) = runCatching { java.time.MonthDay.of(m, d) }.getOrNull()
+        Regex("""(\d{1,2})\s+$monthRuRe""").find(s)?.let { m ->
+            val month = monthsRu.indexOfFirst { m.groupValues[2].startsWith(it) } + 1
+            return md(month, m.groupValues[1].toInt())
+        }
+        Regex("""$monthEnRe\s+(\d{1,2})""").find(s)?.let { m -> return md(enMonth(m.groupValues[1]), m.groupValues[2].toInt()) }
+        Regex("""(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?$monthEnRe""").find(s)?.let { m -> return md(enMonth(m.groupValues[2]), m.groupValues[1].toInt()) }
+        Regex("""(\d{1,2})\.(\d{1,2})""").find(s)?.let { m -> return md(m.groupValues[2].toInt(), m.groupValues[1].toInt()) }
+        return null
+    }
+
     /** Holidays by the words people use after "до" / "until". */
     private val holidays: Map<String, Pair<Int, Int>> get() = HOLIDAYS + mapOf(
         "christmas" to (12 to 25), "christmas day" to (12 to 25), "christmas eve" to (12 to 24),

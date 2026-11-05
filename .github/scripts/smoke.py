@@ -195,10 +195,17 @@ def local_brain_check(s, api):
     if sha and h.hexdigest() != sha:
         annotate("error", "On-phone model checksum", f"expected {sha}, got {h.hexdigest()}")
         return
-    folder = f"/sdcard/Android/data/{PKG}/files/llm"
-    sh(f"mkdir -p {folder}")
-    print(adb("push", path, f"{folder}/custom.gguf", timeout=900).strip()[-200:], flush=True)
+    # Into the app's internal folder through run-as (debug build): works on every Android version, unlike the
+    # shared-storage folder, which Android 11 hides from files that adb put there.
+    adb("push", path, "/data/local/tmp/iskra-model.gguf", timeout=900)
     sh(f"am force-stop {PKG}")
+    sh(f"cat /data/local/tmp/iskra-model.gguf | run-as {PKG} sh -c 'mkdir -p files/llm && cat > files/llm/custom.gguf'", timeout=600)
+    size_in_app = sh(f"run-as {PKG} sh -c 'wc -c < files/llm/custom.gguf'").strip()
+    print(f"model in the app's folder: {size_in_app} bytes", flush=True)
+    if size_in_app != str(got):
+        annotate("error", f"On-phone model, API {api}", f"copy into the app failed: {size_in_app!r} of {got} bytes")
+        return
+    sh("rm /data/local/tmp/iskra-model.gguf")
     time.sleep(1)
     sh(f"am start -W -n {MAIN}", timeout=120)
     time.sleep(4)

@@ -161,7 +161,13 @@ class CompanionAgent(
         val reply = local ?: when {
             provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
-            provider === onPhone -> askModel(provider, text, state, sink).let { r -> if (r.errorKind != null) offlineInstead(text, r) else r }
+            // The model on the phone failed (memory ran out, a damaged file): an honest answer without a model; the reason goes to the journal.
+            provider === onPhone -> askModel(provider, text, state, sink).let { r ->
+                if (r.errorKind == null) r
+                else (brain.chat(text, java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault()),
+                    currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all())) ?: brain.fallback(text))
+                    .let { a -> AgentReply(a.text, a.emotion, r.actions, error = r.error) }
+            }
             else -> askModel(provider, text, state, sink).let { r -> if (r.errorKind != null) rescue(text, state, sink, r) else r }.also { r ->
                 if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE ||
                     r.errorKind == LlmException.Kind.POLICY || r.errorKind == LlmException.Kind.MODEL)
@@ -185,7 +191,8 @@ class CompanionAgent(
         conversation.append(Turn(Turn.Role.USER, text, now))
         if (reply.text.isNotBlank()) conversation.append(Turn(Turn.Role.ASSISTANT, reply.text, clock(), reply.emotion))
         // Local commands stay free; an unsuccessful cloud reply must not trigger another request.
-        if (provider != null && reply.usedLlm && reply.error == null) maybeSummarize(provider)
+        // Only a working cloud model summarizes: not one that just failed, not the slow model on the phone.
+        if (provider != null && provider === cloud && reply.usedLlm && reply.error == null && reply.errorKind == null) maybeSummarize(provider)
         reply
     }
 
@@ -222,6 +229,13 @@ class CompanionAgent(
     }
 
     private val PASSING = setOf(LlmException.Kind.NETWORK, LlmException.Kind.RATE_LIMIT, LlmException.Kind.SERVER, LlmException.Kind.BAD_RESPONSE)
+
+    /** Things worth knowing today: the owner's birthday. */
+    private fun todayNotes(nowMs: Long): List<String> {
+        val today = java.time.Instant.ofEpochMilli(nowMs).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+        val birthday = MemoryTalk.birthday(memory.all()) ?: return emptyList()
+        return if (birthday == java.time.MonthDay.from(today)) listOf(tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")) else emptyList()
+    }
 
     /** Provider ids whose model refused tools: their requests go without them from now on. */
     private val noTools = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -330,7 +344,7 @@ class CompanionAgent(
         val system = if (small) composer.compact(persona.localized(), state.style)
         else composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
         val situation = if (small) composer.compactSituation(memory.context(text, now, profileLimit = 3, relatedLimit = 3, recentLimit = 1), now)
-        else composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()))
+        else composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()) + todayNotes(now))
         val messages = ArrayList<ChatMessage>()
         for (t in conversation.recent(if (small) minOf(historyTurns, 8) else historyTurns)) messages += when (t.role) {
             Turn.Role.USER -> ChatMessage.User(t.text)

@@ -5,10 +5,13 @@ Iskra is a small animated cat-girl who lives on your phone's screen. Tap her to 
 • reminders that survive a restart: “remind me tomorrow at 9 to call mom”
 • notes: “note: buy milk and bread”
 • the weather in your city: “do I need an umbrella?”
+• exact sums, units and dates: “what's 15% of 2300”, “5 miles to km”, “how many days until New Year”
 • the flashlight, volume, apps, settings, web search
 • “Surprise me” — tiny games with the world around you
 
-<b>A real conversation when you want one.</b> Connect a free “brain” with one tap (OpenRouter: sign in with Google or e-mail, nothing to copy) or use your own key from DeepSeek, OpenAI, Anthropic Claude or any OpenAI-compatible server. Replies arrive sentence by sentence and can be spoken with natural cloud voices or the free system voice. Say “Iskra” or “Spark” and she listens — recognized right on the phone.
+<b>A brain on the phone.</b> Download a small model once and it answers with no internet at all — nothing you say to it leaves the phone.
+
+<b>A real conversation when you want one.</b> Connect a free “brain” with one tap (OpenRouter: sign in with Google or e-mail, nothing to copy) or use your own key from DeepSeek, OpenAI, Anthropic Claude or any OpenAI-compatible server. The cloud brain checks facts on Wikipedia, counts with a calculator, knows exchange rates, remembers what matters about you and prepares calendar events, routes and music. Replies arrive sentence by sentence and can be spoken with natural cloud voices or the free system voice. Say “Iskra” or “Spark” and she listens — recognized right on the phone.
 
 <b>Made for everyone:</b>
 • English and Russian, following your phone's language

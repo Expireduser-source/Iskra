@@ -136,7 +136,8 @@ class QuickChatActivity : ComponentActivity() {
 /** The shared text and what Iskra can do with it. */
 @androidx.compose.runtime.Composable
 private fun SharedTextCard(text: String, onSend: (String) -> Unit, onEdit: (String) -> Unit, onClose: () -> Unit) {
-    val brain = remember { IskraApp.instance.settings.load().preset != ProviderPreset.OFFLINE }
+    // A cloud brain or the model on the phone can explain and summarize; without either, say how to get one.
+    val brain = remember { IskraApp.instance.settings.load().preset != ProviderPreset.OFFLINE || ru.iskra.app.data.LocalBrain.provider() != null }
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).testTag("shared_card")) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

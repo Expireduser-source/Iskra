@@ -36,8 +36,8 @@ T = {
   dl="📥 Download for Android", src="Source code", note="Android 8–16 · English and Russian · free and open source (GPL-3.0)",
   qr="On a computer? Scan with your phone's camera to download.",
   feat="What she can do", cards=[
-   ("iskra_wave","Right away, offline","Alarms, timers, reminders that survive a restart, notes, the weather, the flashlight, apps — just say or type it."),
-   ("iskra_phone","A free brain in one tap","Connect OpenRouter with Google or e-mail — nothing to copy. Or bring your own key: DeepSeek, OpenAI, Claude."),
+   ("iskra_wave","Right away, offline","Alarms, timers, reminders, notes, exact sums, units and dates, small talk, the flashlight, apps — just say or type it."),
+   ("iskra_phone","A brain in the cloud or on the phone","A free brain in one tap (OpenRouter), your own key, or a small model right on the phone that works with no internet at all."),
    ("iskra_joy","Voice and hearing","Natural cloud voices or the system one. Say “Iskra” or “Spark” — recognized right on the phone."),
    ("iskra_thoughtful","From any app","Share text to Iskra or select it → “Ask Iskra”: explain, summarize, translate, note, remind."),
    ("iskra_sit","Every phone and person","Guides for Xiaomi, Samsung, Huawei, OPPO, vivo and more; TalkBack, large fonts, light and dark, tablets."),
@@ -56,8 +56,8 @@ T = {
   dl="📥 Скачать для Android", src="Исходный код", note="Android 8–16 · русский и английский · бесплатно и с открытым кодом (GPL-3.0)",
   qr="Открыл с компьютера? Наведи камеру телефона — начнётся скачивание.",
   feat="Что она умеет", cards=[
-   ("iskra_wave","Сразу и без интернета","Будильники, таймеры, напоминания, которые переживут перезагрузку, заметки, погода, фонарик, приложения — просто скажи или напиши."),
-   ("iskra_phone","Бесплатный «мозг» в одну кнопку","Подключи OpenRouter через Google или почту — копировать ничего не нужно. Или свой ключ: DeepSeek, OpenAI, Claude."),
+   ("iskra_wave","Сразу и без интернета","Будильники, таймеры, напоминания, заметки, точный счёт, единицы и даты, болтовня, фонарик, приложения — просто скажи или напиши."),
+   ("iskra_phone","«Мозг» в облаке или на телефоне","Бесплатный «мозг» одной кнопкой (OpenRouter), свой ключ или небольшая модель прямо на телефоне — совсем без интернета."),
    ("iskra_joy","Голос и слух","Живые облачные голоса или системный. Скажи «Искра» — распознавание прямо на телефоне."),
    ("iskra_thoughtful","Из любого приложения","«Поделиться → Искре» или выдели текст → «Спросить Искру»: объяснить, пересказать, перевести, в заметки, напомнить."),
    ("iskra_sit","Для любого телефона и человека","Подсказки для Xiaomi, Samsung, Huawei, OPPO, vivo и других; TalkBack, крупный шрифт, светлая и тёмная тема, планшеты."),

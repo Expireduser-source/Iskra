@@ -327,6 +327,18 @@ object MemoryTalk {
         return memories.sortedByDescending { it.createdAtMs }.firstNotNullOfOrNull { re.find(it.text)?.groupValues?.get(1) }
     }
 
+    /** The owner's birthday from memory ("День рождения владельца: 12 мая"), if they told it. */
+    fun birthday(memories: List<MemoryItem>): java.time.MonthDay? {
+        val re = Regex("""(?iu)(?:день\s+рождения\s+владельца|the\s+owner's\s+birthday):?\s+(.+)""")
+        return memories.sortedByDescending { it.createdAtMs }.firstNotNullOfOrNull { m -> re.find(m.text)?.let { TimeTalk.monthDay(it.groupValues[1]) } }
+    }
+
+    fun birthdayGreeting(name: String?): String {
+        val n = name?.let { ", $it" }.orEmpty()
+        return tr("С днём рождения$n! Мрр, сегодня твой день — дарю самое тёплое «мяу» и обещаю не ронять ничего со стола. Ну, почти.",
+            "Happy birthday$n! Mrr, today is your day — here's my warmest meow, and I promise not to knock anything off the table. Almost.")
+    }
+
     /** What to forget, or "" for "forget everything" (refused: that's a button in the Memory tab), or null. */
     fun forgetQuery(text: String): String? {
         val t = text.trim().trimEnd('.', '!')
