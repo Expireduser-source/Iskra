@@ -28,6 +28,8 @@ object LlamaNative {
     @JvmStatic external fun cancel(handle: Long)
     /** [tokens in the last prompt, how many of them came from the cache]. */
     @JvmStatic external fun lastRead(handle: Long): IntArray
+    @JvmStatic external fun saveSession(handle: Long, path: String): Boolean
+    @JvmStatic external fun loadSession(handle: Long, path: String): Int
     /** "qwen2 1.5B Q4_K - Medium · ctx 4096 · 4 threads". */
     @JvmStatic external fun info(handle: Long): String
 }
@@ -46,6 +48,13 @@ interface LlamaEngine : AutoCloseable {
     val contextSize: Int
     /** Tokens in the last prompt and how many of them were already in the cache (not computed again). */
     fun lastRead(): Pair<Int, Int> = 0 to 0
+    /**
+     * Saves the dialogue cache to [path], so the next load of this model doesn't read the whole dialogue again.
+     * The file holds the conversation's tokens: keep it private and delete it with the conversation.
+     */
+    fun saveSession(path: String): Boolean = false
+    /** Restores a cache saved by [saveSession] with the same model; the number of tokens it holds (0: nothing). */
+    fun loadSession(path: String): Int = 0
 }
 
 class NativeLlamaEngine private constructor(private val handle: Long, override val contextSize: Int) : LlamaEngine {
@@ -58,6 +67,8 @@ class NativeLlamaEngine private constructor(private val handle: Long, override v
     }
 
     override fun lastRead(): Pair<Int, Int> = if (closed) 0 to 0 else LlamaNative.lastRead(handle).let { it[0] to it[1] }
+    override fun saveSession(path: String): Boolean = !closed && LlamaNative.saveSession(handle, path)
+    override fun loadSession(path: String): Int = if (closed) 0 else LlamaNative.loadSession(handle, path)
 
     override fun cancel() { if (!closed) LlamaNative.cancel(handle) }
 

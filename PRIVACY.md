@@ -13,7 +13,7 @@ no account and no analytics. This policy describes exactly what the app does wit
 ### What stays on your phone
 Everything Iskra knows is stored only in the app's private storage on your phone:
 memory entries, notes, reminders, the chat history, her mood, your settings, the voice cache, the model of the
-«brain on the phone» if you downloaded one, and the diagnostics journal (the journal contains events and timings, never API keys or chat text). API keys are encrypted with the
+«brain on the phone» if you downloaded one, with its conversation cache (what the model has already read, so it doesn't read the dialogue again after a pause; deleted together with the chat history or a forgotten memory), and the diagnostics journal (the journal contains events and timings, never API keys or chat text). API keys are encrypted with the
 Android Keystore. Android backup of the app is turned off, so this data is not uploaded to cloud backups.
 
 You can delete any entry in «Memory», or everything at once with «Erase everything». Uninstalling the app deletes
@@ -61,7 +61,7 @@ Changes to this policy are published in this file in the repository. Questions: 
 
 ### Что остаётся на телефоне
 Всё, что знает Искра, хранится только в закрытом хранилище приложения на телефоне: память, заметки, напоминания,
-переписка, её настроение, настройки, кэш голоса, модель «мозга на телефоне», если ты её скачал, и журнал диагностики (в журнале события и время, но никогда — ключи API
+переписка, её настроение, настройки, кэш голоса, модель «мозга на телефоне», если ты её скачал, с её кэшем разговора (то, что модель уже прочитала, чтобы после паузы не читать переписку заново; стирается вместе с перепиской или забытой записью памяти), и журнал диагностики (в журнале события и время, но никогда — ключи API
 и текст переписки). Ключи API зашифрованы Android Keystore. Резервное копирование приложения в облако Android выключено.
 
 Любую запись можно удалить в «Памяти», всё сразу — кнопкой «Стереть всё». При удалении приложения удаляется всё.

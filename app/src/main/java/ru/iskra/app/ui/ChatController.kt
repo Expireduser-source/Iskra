@@ -235,5 +235,6 @@ class ChatController(private val app: IskraApp) {
 
     fun clearHistory(onComplete: () -> Unit = {}) = clearData(erase = {
         withContext(Dispatchers.IO) { app.conversation.clear() }
+        ru.iskra.app.data.LocalBrain.forgetSession()  // the phone model's saved cache holds the dialogue too
     }, onComplete = onComplete)
 }

@@ -130,6 +130,8 @@ class MemoryManager(
     private val retriever: MemoryRetriever = LexicalRetriever(),
     private val maxItems: Int = 2000,
     private val maxTextLength: Int = 400,
+    /** Called after the owner (or the agent on their request) deleted memories: copies elsewhere must go too. */
+    private val onForget: () -> Unit = {},
 ) {
     sealed interface AddResult {
         data class Added(val item: MemoryItem) : AddResult
@@ -197,8 +199,8 @@ class MemoryManager(
     }
 
     fun all() = store.all()
-    fun delete(id: Long) = store.delete(id)
-    fun deleteAll() = store.deleteAll()
+    fun delete(id: Long) { store.delete(id); onForget() }
+    fun deleteAll() { store.deleteAll(); onForget() }
 
     /**
      * Restore from a backup. The same rules as for new memories apply: no passwords / card numbers,

@@ -258,7 +258,7 @@ object LocalBrain {
 
     fun delete() {
         cancelDownload()
-        unload()
+        forgetSession()
         dir().listFiles()?.forEach { it.delete() }
         File(app.filesDir, "llm").listFiles()?.forEach { it.delete() }
         prefs().edit().remove(KEY_MODEL).apply()
@@ -271,6 +271,7 @@ object LocalBrain {
     private val engineLock = Mutex()
     private var engine: NativeLlamaEngine? = null
     private var engineFor: String? = null
+    private var engineSession: File? = null
     private var idle: Job? = null
     private var provider: Pair<String, LocalLlmProvider>? = null
 
@@ -342,17 +343,60 @@ object LocalBrain {
 
     private suspend fun loaded(st: State.Ready): LlamaEngine? {
         if (engine == null || engineFor != st.model.id) {
-            engine?.close()
+            closeEngine(save = true)
             val threads = threads()
             val ctx = if (totalRamGb() >= 7.5) 4096 else 2048
             val t0 = System.currentTimeMillis()
+            val session = sessionFile(st.model, ctx)
             engine = withContext(Dispatchers.IO) { NativeLlamaEngine.open(fileOf(st.model).path, ctx, threads) }
             engineFor = st.model.id
-            if (engine == null) Diag.w("local", tr("Модель не загрузилась в память", "The model didn't load into memory"))
-            else Diag.i("local", tr("Модель загружена за ", "Model loaded in ") + "${System.currentTimeMillis() - t0} ms: ${engine?.info}")
+            engineSession = session
+            val e = engine
+            if (e == null) Diag.w("local", tr("Модель не загрузилась в память", "The model didn't load into memory"))
+            else {
+                // Where the last conversation stopped: the next message doesn't read the whole dialogue again.
+                val restored = if (session.exists()) withContext(Dispatchers.IO) { e.loadSession(session.path) } else 0
+                Diag.i("local", tr("Модель загружена за ", "Model loaded in ") + "${System.currentTimeMillis() - t0} ms: ${e.info}" +
+                    if (restored > 0) tr(", кэш разговора восстановлен ($restored токенов)", ", conversation cache restored ($restored tokens)") else "")
+            }
         }
         scheduleUnload()
         return engine
+    }
+
+    /**
+     * The dialogue cache saved when the model leaves memory (app-private cache folder; it holds the conversation's
+     * tokens, so it is deleted together with the conversation or a forgotten memory). Per model file and context size.
+     */
+    private fun sessionFile(m: Model, ctx: Int): File = File(app.cacheDir, "llm-session-${m.id}-${fileOf(m).length()}-$ctx.bin")
+
+    private fun deleteSessions() {
+        app.cacheDir.listFiles { f -> f.name.startsWith("llm-session-") }?.forEach { it.delete() }
+    }
+
+    /** Closes the model; with [save], first keeps its dialogue cache for the next load. Call under [engineLock]. */
+    private suspend fun closeEngine(save: Boolean) {
+        val e = engine ?: return
+        val session = engineSession
+        if (save && session != null) {
+            val t0 = System.currentTimeMillis()
+            val ok = withContext(Dispatchers.IO) { runCatching { e.saveSession(session.path) }.getOrDefault(false) }
+            if (ok) Diag.i("local", tr("Кэш разговора сохранён: ", "Conversation cache saved: ") +
+                "${session.length() / 1_000_000} MB, ${System.currentTimeMillis() - t0} ms")
+        }
+        e.close()
+        engine = null; engineFor = null; engineSession = null
+    }
+
+    /**
+     * The conversation or a memory was erased: the saved dialogue cache (it may still hold them) goes too, and the
+     * model in memory is closed, so it starts clean.
+     */
+    fun forgetSession() {
+        scope.launch {
+            engineLock.withLock { closeEngine(save = false) }
+            deleteSessions()
+        }
     }
 
     /**
@@ -376,11 +420,7 @@ object LocalBrain {
     }
 
     fun unload() {
-        scope.launch {
-            engineLock.withLock {
-                engine?.close(); engine = null; engineFor = null
-            }
-        }
+        scope.launch { engineLock.withLock { closeEngine(save = true) } }
     }
 
     private const val KEY_MODEL = "model"

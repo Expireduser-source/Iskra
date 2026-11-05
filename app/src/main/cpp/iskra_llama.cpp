@@ -358,6 +358,44 @@ Java_ru_iskra_core_llm_local_LlamaNative_free(JNIEnv *, jclass, jlong handle) {
     delete s;
 }
 
+// Saves what the context holds (models with recurrent layers: their checkpoint) to [path], so the next load of the
+// same model starts where this one stopped instead of reading the whole dialogue again. The file holds the
+// conversation's tokens: the app keeps it in its private storage and deletes it together with the conversation.
+JNIEXPORT jboolean JNICALL
+Java_ru_iskra_core_llm_local_LlamaNative_saveSession(JNIEnv * env, jclass, jlong handle, jstring jpath) {
+    auto * s = reinterpret_cast<Session *>(handle);
+    if (s == nullptr) return JNI_FALSE;
+    std::lock_guard<std::mutex> guard(s->busy);
+    if (!s->can_cut && (s->checkpoint.toks.empty() || !restore_checkpoint(s))) return JNI_FALSE;
+    if (s->cached.empty()) return JNI_FALSE;
+    const std::string path = to_utf8(env, jpath);
+    const std::string tmp = path + ".tmp";
+    if (llama_state_seq_save_file(s->ctx, tmp.c_str(), 0, s->cached.data(), s->cached.size()) == 0) {
+        std::remove(tmp.c_str());
+        return JNI_FALSE;
+    }
+    return std::rename(tmp.c_str(), path.c_str()) == 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+// Restores a file written by saveSession with the same model. Returns the number of tokens it holds (0: nothing).
+JNIEXPORT jint JNICALL
+Java_ru_iskra_core_llm_local_LlamaNative_loadSession(JNIEnv * env, jclass, jlong handle, jstring jpath) {
+    auto * s = reinterpret_cast<Session *>(handle);
+    if (s == nullptr) return 0;
+    std::lock_guard<std::mutex> guard(s->busy);
+    const std::string path = to_utf8(env, jpath);
+    std::vector<llama_token> toks(static_cast<size_t>(s->n_ctx));
+    size_t n = 0;
+    if (llama_state_seq_load_file(s->ctx, path.c_str(), 0, toks.data(), toks.size(), &n) == 0 || n == 0) {
+        forget_cache(s);
+        return 0;
+    }
+    toks.resize(n);
+    s->cached = toks;
+    if (!s->can_cut) save_checkpoint(s);  // what was saved is the checkpoint
+    return static_cast<jint>(n);
+}
+
 // [tokens in the last prompt, how many of them came from the cache]
 JNIEXPORT jintArray JNICALL
 Java_ru_iskra_core_llm_local_LlamaNative_lastRead(JNIEnv * env, jclass, jlong handle) {

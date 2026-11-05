@@ -45,6 +45,20 @@ class MemoryTest {
         assertIs<MemoryManager.AddResult.Added>(m.add("Новый факт про горы", MemoryKind.FACT, MemorySource.MODEL_PROPOSED, 3, now))
         assertEquals(setOf("Факт первый важный", "Новый факт про горы"), m.all().map { it.text }.toSet())
     }
+
+    @Test fun forgettingIsAnnouncedSoCopiesGoToo() {
+        // The phone model's saved dialogue cache may hold a forgotten fact: deleting tells the app to drop it.
+        var told = 0
+        val m = MemoryManager(InMemoryMemoryStore(), maxItems = 2, onForget = { told++ })
+        val a = (m.add("Факт первый важный", MemoryKind.FACT, MemorySource.USER_EXPLICIT, 5, now) as MemoryManager.AddResult.Added).item
+        m.add("Модель думает про чай", MemoryKind.FACT, MemorySource.MODEL_PROPOSED, 1, now)
+        m.add("Новый факт про горы", MemoryKind.FACT, MemorySource.MODEL_PROPOSED, 3, now)
+        assertEquals(0, told)  // making room for a new memory is not forgetting on request
+        m.delete(a.id)
+        assertEquals(1, told)
+        m.deleteAll()
+        assertEquals(2, told)
+    }
 }
 
 class MemoryRecallTest {

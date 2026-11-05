@@ -128,7 +128,8 @@ class IskraApp : Application() {
                 "реплик в переписке ${runCatching { conversation.count() }.getOrDefault(-1)}", "Data: memory ${runCatching { memory.all().size }.getOrDefault(-1)}, chat turns ${runCatching { conversation.count() }.getOrDefault(-1)}"))
         }, 5000)
         db = IskraDb(this)
-        memory = MemoryManager(SqliteMemoryStore(db))
+        // A deleted memory may still be in the phone model's saved dialogue cache: that goes too.
+        memory = MemoryManager(SqliteMemoryStore(db), onForget = { LocalBrain.forgetSession() })
         conversation = SqliteConversationStore(db)
         stateStore = PrefsStateStore(this)
         confirm = ConfirmBridge()

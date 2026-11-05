@@ -110,4 +110,47 @@ class NativeLlamaTest {
             assertEquals(fresh, answers[i], "message ${i + 1}")
         }
     }
+
+    /**
+     * The model leaves memory after a pause; its dialogue cache is saved and restored with the next load, so the first
+     * message after the pause doesn't read the whole dialogue again — for both kinds of model.
+     */
+    @Test
+    fun theDialogueCacheSurvivesUnloading() {
+        val hybrid = System.getenv("ISKRA_LLAMA_HYBRID")
+        assumeTrue("ISKRA_LLAMA_LIB / ISKRA_LLAMA_MODEL / ISKRA_LLAMA_HYBRID not set", lib != null && model != null && hybrid != null)
+        System.load(lib!!)
+        val dir = kotlin.io.path.createTempDirectory("iskra-session").toFile()
+        try {
+            for ((path, f) in listOf(model!! to ChatFormat.CHATML, hybrid!! to ChatFormat.CHATML_NO_THINK)) {
+                val r1 = LlmRequest("Ты — Искра, кошкодевочка в телефоне. Отвечай тепло и коротко, о себе — в женском роде.",
+                    listOf(ChatMessage.User("Привет! Меня зовут Аня, я учусь на врача.")))
+                val p1 = f.prompt(r1)
+                val session = java.io.File(dir, "${f.name}.bin")
+                val a1 = NativeLlamaEngine.open(path, 1024, 2)!!.use { e ->
+                    val out = e.generate(p1.text, 10, 0f, p1.stable) { true }
+                    assertTrue(e.saveSession(session.path), "$f: saved")
+                    out
+                }
+                val p2 = f.prompt(r1.copy(messages = r1.messages + ChatMessage.Assistant(a1.ifBlank { "мрр" }) + ChatMessage.User("Как дела?")))
+                val (restored, reused, answer) = NativeLlamaEngine.open(path, 1024, 2)!!.use { e ->
+                    val n = e.loadSession(session.path)
+                    val out = e.generate(p2.text, 10, 0f, p2.stable) { true }
+                    Triple(n, e.lastRead().second, out)
+                }
+                println("$f: restored $restored tokens, reused $reused")
+                assertTrue(restored > 0 && reused > 0 && reused <= restored, "$f: restored $restored, reused $reused")
+                // The same answer as without the saved cache.
+                assertEquals(NativeLlamaEngine.open(path, 1024, 2)!!.use { it.generate(p2.text, 10, 0f, 0) { true } }, answer, "$f")
+            }
+            // A cache from another model is refused, and the model still works.
+            NativeLlamaEngine.open(model!!, 1024, 2)!!.use { e ->
+                assertEquals(0, e.loadSession(java.io.File(dir, "CHATML_NO_THINK.bin").path))
+                assertEquals(0, e.loadSession(java.io.File(dir, "missing.bin").path))
+                assertTrue(e.generate(ChatFormat.CHATML.render(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Привет")))), 4, 0f) { true }.isNotEmpty())
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 }

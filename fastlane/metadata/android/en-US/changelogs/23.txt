@@ -1,2 +1,3 @@
 • Qwen3.5 on the phone answers several times faster: the conversation is no longer re-read with every message
+• The first reply after a pause is fast too: the model keeps what it has read (erased with the chat history)
 • The journal shows how much the model had to read anew
