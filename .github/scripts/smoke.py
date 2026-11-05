@@ -126,6 +126,108 @@ class Smoke:
                 f.write(journal)
 
 
+LOCAL_BRAIN_KT = "app/src/main/java/ru/iskra/app/data/LocalBrain.kt"
+
+
+def model_urls():
+    with open(LOCAL_BRAIN_KT, encoding="utf-8") as f:
+        return re.findall(r'"(https://huggingface\.co/[^"]+\.gguf)"', f.read())
+
+
+def model_head(url):
+    """HTTP status plus the size and SHA-256 Hugging Face announces on its first redirect."""
+    import urllib.error
+    import urllib.request
+
+    class Stay(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "Iskra-CI"})
+    try:
+        r = urllib.request.build_opener(Stay).open(req, timeout=30)
+        code, h = r.status, r.headers
+    except urllib.error.HTTPError as e:
+        code, h = e.code, e.headers
+    except Exception as e:  # noqa: BLE001 — network trouble is reported, not fatal
+        return 0, None, f"{type(e).__name__}"
+    return code, h.get("X-Linked-Size"), (h.get("X-Linked-Etag") or "").strip('"')
+
+
+def local_brain_check(s, api):
+    """
+    The model on the phone, for real: every catalog link must answer; the light model is downloaded, put into the
+    app's folder as custom.gguf and asked a question with no cloud configured. The app journal must show its reply.
+    """
+    import hashlib
+    import urllib.request
+
+    urls = model_urls()
+    for u in urls:
+        code, size, sha = model_head(u)
+        print(f"model link {u.rsplit('/', 1)[-1]}: HTTP {code}, size {size}, sha256 {sha}", flush=True)
+        if code not in (200, 301, 302, 307, 308) or not size:
+            annotate("error", "On-phone model link", f"{u}: HTTP {code}, size {size}")
+    if not urls:
+        s.note("no model links found in LocalBrain.kt")
+        return
+    url = urls[0]
+    _, size, sha = model_head(url)
+    path = "/tmp/iskra-model.gguf"
+    t = time.time()
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Iskra-CI"})
+        with urllib.request.urlopen(req, timeout=60) as r, open(path, "wb") as f:
+            while True:
+                b = r.read(1 << 20)
+                if not b:
+                    break
+                f.write(b)
+    except Exception as e:  # noqa: BLE001
+        annotate("error", "On-phone model download", f"{url}: {e}")
+        return
+    got = os.path.getsize(path)
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    print(f"downloaded {got} bytes in {time.time() - t:.0f} s, sha256 {h.hexdigest()}", flush=True)
+    if sha and h.hexdigest() != sha:
+        annotate("error", "On-phone model checksum", f"expected {sha}, got {h.hexdigest()}")
+        return
+    folder = f"/sdcard/Android/data/{PKG}/files/llm"
+    sh(f"mkdir -p {folder}")
+    print(adb("push", path, f"{folder}/custom.gguf", timeout=900).strip()[-200:], flush=True)
+    sh(f"am force-stop {PKG}")
+    time.sleep(1)
+    sh(f"am start -W -n {MAIN}", timeout=120)
+    time.sleep(4)
+    if not (s.tap_id("tab_0") and s.tap_id("chat_input")):
+        return
+    s.type_text("Hi! Say one short sentence about cats.")
+    time.sleep(1)
+    sh("input keyevent KEYCODE_BACK")
+    if not s.tap_id("chat_send"):
+        return
+    t = time.time()
+    reply = loaded = None
+    while time.time() - t < 240:
+        journal = sh(f"run-as {PKG} cat files/diag.log", timeout=60)
+        m = re.search(r"(?:Model loaded in|Модель загружена за) [^\n]+", journal)
+        loaded = m.group(0) if m else loaded
+        m = re.search(r"(?:LLM reply|LLM ответ): [^\n]+", journal)
+        if m:
+            reply = m.group(0)
+            break
+        time.sleep(5)
+    time.sleep(2)
+    s.shot("local-brain-chat")
+    if reply:
+        annotate("notice", f"On-phone model, API {api}", f"{reply}; {loaded or 'load time not logged'}; {got // 1_000_000} MB model")
+    else:
+        annotate("error", f"On-phone model, API {api}", f"no reply in 4 minutes; {loaded or 'the model was not loaded'}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apk", required=True)
@@ -235,6 +337,10 @@ def main():
     sh(f"am start -n {MAIN}")
     time.sleep(3)
     s.shot("final")
+
+    # The model on the phone (x86_64 emulators from Android 11; one download per job).
+    if a.api >= 30 and a.lang in ("", "en"):
+        local_brain_check(s, a.api)
 
     crashes = s.crashes()
     alive = s.alive()

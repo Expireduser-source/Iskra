@@ -405,6 +405,7 @@ private fun SettingsScreen(modifier: Modifier) {
         )
         if (s.preset == ProviderPreset.OFFLINE || !hasKey || freeBrain !is ru.iskra.app.data.FreeBrain.State.Idle)
             FreeBrainCard(onConnected = { s = app.settings.load(); hasKey = app.vault.hasKey(); saved = true })
+        LocalBrainCard()
         ProviderPreset.entries.forEach { p ->
             RadioRow(s.preset == p, p.title) { s = s.copy(preset = p, baseUrl = p.baseUrl, model = p.defaultModel); saved = false }
         }

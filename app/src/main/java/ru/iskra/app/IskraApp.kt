@@ -43,6 +43,7 @@ import ru.iskra.core.agent.CompanionAgent
 import ru.iskra.core.llm.AnthropicProvider
 import ru.iskra.core.llm.FallbackProvider
 import ru.iskra.app.data.FreeBrain
+import ru.iskra.app.data.LocalBrain
 import ru.iskra.core.llm.LlmProvider
 import ru.iskra.core.llm.OpenAiCompatibleProvider
 import ru.iskra.core.memory.MemoryManager
@@ -78,6 +79,14 @@ class IskraApp : Application() {
     val phrases = PhraseBank()
     /** Last message or touch from the owner (for proactive lines). */
     @Volatile var lastContactMs = System.currentTimeMillis()
+
+    /** The phone needs memory back: the on-phone model (hundreds of MB) goes first; it reloads on the next message. */
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) LocalBrain.unload()
+    }
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -135,6 +144,7 @@ class IskraApp : Application() {
             WeatherTool(weather, homePlace = { settings.weatherPlace() }),
             WikipediaTool(WikipediaClient()), CurrencyTool(CurrencyClient()),
         )
+        LocalBrain.init(this)
         val disabledTools = emptySet<String>()
         agent = CompanionAgent(
             persona = Personas.ISKRA,
@@ -144,6 +154,7 @@ class IskraApp : Application() {
             tools = ToolRegistry(AndroidTools.all(this) + skills),
             policy = SafetyPolicy(gate = confirm, disabled = { disabledTools }),
             providerFactory = ::currentProvider,
+            localFactory = { LocalBrain.provider() },
             deviceContext = {
                 tr("Служба управления телефоном (спец. возможности): ", "Phone control service (accessibility): ") +
                     if (CompanionAccessibilityService.isConnected()) tr("включена.", "on.") else tr("выключена — системная навигация недоступна.", "off — system navigation unavailable.")

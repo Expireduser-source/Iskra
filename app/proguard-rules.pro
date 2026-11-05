@@ -9,3 +9,8 @@
 -keep class * implements com.sun.jna.** { *; }
 -keep class org.vosk.** { *; }
 -dontwarn java.awt.**
+
+# The model on the phone: the JNI bridge finds these by name.
+-keep class ru.iskra.core.llm.local.LlamaNative { *; }
+-keep interface ru.iskra.core.llm.local.LlamaNative$TokenSink { *; }
+-keep class * implements ru.iskra.core.llm.local.LlamaNative$TokenSink { *; }

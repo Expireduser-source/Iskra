@@ -6,6 +6,53 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// --- The model on the phone (llama.cpp) ---
+// llama.cpp comes from the llama-cpp-python source package on PyPI: a fixed version with a known SHA-256 (the same
+// sources the core test builds on a computer). Downloaded once into build/, never committed. Only the CPU part is
+// unpacked: no GPU backends, models, docs, tools or tests.
+val llamaVersion = "0.3.36"
+val llamaArchiveUrl = "https://files.pythonhosted.org/packages/ec/e9/e7de2b0463ea3ffbf0ede6cb21b58c1258a8f6521aae45ca773a59fe7cf3/llama_cpp_python-$llamaVersion.tar.gz"
+val llamaArchiveSha256 = "832db0699007f1be95a7e41ef12e88926b02ba836461e36a36372db2760c1a2e"
+val llamaDir: File = rootProject.layout.buildDirectory.dir("llama.cpp-$llamaVersion").get().asFile
+val llamaSkip = listOf("models", "docs", "media", "examples", "tools", "tests", "gguf-py", "scripts", "pocs", "benches", "app",
+    "skills", "ci", "requirements", "grammars", ".github", ".devops")
+val llamaGpu = listOf("cuda", "vulkan", "sycl", "cann", "hip", "musa", "opencl", "openvino", "metal", "webgpu", "zdnn", "zendnn",
+    "virtgpu", "hexagon", "et")
+
+val fetchLlamaCpp by tasks.registering {
+    description = "Downloads and checks the llama.cpp sources for the on-phone model."
+    val marker = File(llamaDir, ".complete")
+    outputs.file(marker)
+    doLast {
+        if (marker.isFile && marker.readText() == llamaArchiveSha256) return@doLast
+        val archive = File(temporaryDir, "llama_cpp_python-$llamaVersion.tar.gz")
+        fun sha(f: File): String {
+            val md = java.security.MessageDigest.getInstance("SHA-256")
+            f.inputStream().use { s -> val b = ByteArray(1 shl 16); while (true) { val n = s.read(b); if (n < 0) break; md.update(b, 0, n) } }
+            return md.digest().joinToString("") { "%02x".format(it) }
+        }
+        if (!archive.isFile || sha(archive) != llamaArchiveSha256) {
+            logger.lifecycle("Downloading llama.cpp sources (llama-cpp-python $llamaVersion)")
+            uri(llamaArchiveUrl).toURL().openStream().use { i -> archive.outputStream().use { o -> i.copyTo(o) } }
+        }
+        check(sha(archive) == llamaArchiveSha256) { "llama.cpp sources: SHA-256 mismatch" }
+        llamaDir.deleteRecursively()
+        copy {
+            from(tarTree(resources.gzip(archive)))
+            include("*/vendor/llama.cpp/**")
+            llamaSkip.forEach { exclude("*/vendor/llama.cpp/$it/**") }
+            llamaGpu.forEach { exclude("*/vendor/llama.cpp/ggml/src/ggml-$it/**") }
+            eachFile { path = path.substringAfter("/vendor/llama.cpp/") }
+            includeEmptyDirs = false
+            into(llamaDir)
+        }
+        marker.writeText(llamaArchiveSha256)
+    }
+}
+tasks.configureEach {
+    if (name.startsWith("configureCMake") || name.startsWith("buildCMake")) dependsOn(fetchLlamaCpp)
+}
+
 android {
     namespace = "ru.iskra.app"
     compileSdk = 36
@@ -24,7 +71,20 @@ android {
         // Dropping x86 keeps the speech engine from adding ~20 MB. The CI emulator check adds x86/x86_64
         // with -Piskra.abis=... (never in the published APKs).
         val abis = (project.findProperty("iskra.abis") as String?)?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }
-        ndk { abiFilters += abis ?: listOf("arm64-v8a", "armeabi-v7a") }
+            ?: listOf("arm64-v8a", "armeabi-v7a")
+        ndk { abiFilters += abis }
+        // The on-phone model is built for 64-bit ARM phones (and x86_64 for the emulator check); elsewhere the app
+        // simply doesn't offer it. Always optimized: a debug build of llama.cpp would be far too slow to talk to.
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DLLAMA_SRC=${llamaDir.absolutePath}", "-DCMAKE_BUILD_TYPE=Release")
+                abiFilters += abis.filter { it == "arm64-v8a" || it == "x86_64" }
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake { path = file("src/main/cpp/CMakeLists.txt") }
     }
 
     signingConfigs {

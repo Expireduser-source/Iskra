@@ -50,6 +50,8 @@ data class AgentReply(
     val usedLlm: Boolean = false,
     val error: String? = null,
     val errorKind: LlmException.Kind? = null,
+    /** Part of a failed reply was already spoken: no other model may answer this message again. */
+    val spoke: Boolean = false,
 )
 
 /**
@@ -68,6 +70,8 @@ class CompanionAgent(
     private val policy: SafetyPolicy,
     /** Returns the currently configured provider, or null for offline mode. */
     private val providerFactory: () -> LlmProvider?,
+    /** The model on the phone, if the owner downloaded one: used when there is no cloud or it fails. */
+    private val localFactory: () -> LlmProvider? = { null },
     private val clock: () -> Long = System::currentTimeMillis,
     private val random: Random = Random.Default,
     private val composer: PromptComposer = PromptComposer(),
@@ -150,12 +154,15 @@ class CompanionAgent(
         stateStore.save(state)
 
         val pause = cloudPause?.takeIf { now < it.first }
-        val provider = if (pause != null) null else providerFactory()
+        val cloud = if (pause != null) null else providerFactory()
+        val onPhone = if (cloud == null) localFactory() else null
+        val provider = cloud ?: onPhone
         val local = handleLocally(text, provider != null)
         val reply = local ?: when {
-            pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
+            provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
-            else -> askModel(provider, text, state, sink).let { r -> if (r.errorKind in PASSING) offlineInstead(text, r) else r }.also { r ->
+            provider === onPhone -> askModel(provider, text, state, sink).let { r -> if (r.errorKind != null) offlineInstead(text, r) else r }
+            else -> askModel(provider, text, state, sink).let { r -> if (r.errorKind != null) rescue(text, state, sink, r) else r }.also { r ->
                 if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE ||
                     r.errorKind == LlmException.Kind.POLICY || r.errorKind == LlmException.Kind.MODEL)
                     cloudPause = (clock() + cloudPauseMs) to r.errorKind
@@ -180,6 +187,28 @@ class CompanionAgent(
         // Local commands stay free; an unsuccessful cloud reply must not trigger another request.
         if (provider != null && reply.usedLlm && reply.error == null) maybeSummarize(provider)
         reply
+    }
+
+    /**
+     * The cloud failed: the model on the phone answers instead if there is one (with a short note when the owner
+     * should fix something), otherwise small talk for passing failures, otherwise the error itself.
+     */
+    private suspend fun rescue(text: String, state: CompanionState, sink: ReplySink?, failed: AgentReply): AgentReply {
+        val onPhone = if (failed.actions.isEmpty() && !failed.spoke) localFactory() else null   // never redo actions or speech
+        if (onPhone != null) {
+            val r = askModel(onPhone, text, state, sink)
+            if (r.errorKind == null) {
+                val note = when (failed.errorKind) {
+                    LlmException.Kind.AUTH, LlmException.Kind.BALANCE, LlmException.Kind.POLICY, LlmException.Kind.MODEL,
+                    LlmException.Kind.FREE_QUOTA, LlmException.Kind.LIMIT ->
+                        tr("\n\n(Облако сейчас недоступно — ответила моделью на телефоне. ", "\n\n(The cloud is unavailable — I answered with the model on the phone. ") +
+                            failed.text.substringBefore(". ") + ".)"
+                    else -> ""
+                }
+                return r.copy(text = r.text + note, errorKind = failed.errorKind)
+            }
+        }
+        return if (failed.errorKind in PASSING) offlineInstead(text, failed) else failed
     }
 
     /**
@@ -296,11 +325,14 @@ class CompanionAgent(
 
     private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?): AgentReply {
         val now = clock()
-        val system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
-        val situation = composer.situation(state.mood, memory.context(text, now), now, deviceContext(),
-            runCatching { upcoming() }.getOrDefault(emptyList()))
+        // A small model on the phone gets a short prompt, no tools and less history: every token costs it time.
+        val small = provider.onDevice
+        val system = if (small) composer.compact(persona.localized(), state.style)
+        else composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
+        val situation = if (small) composer.compactSituation(memory.context(text, now, profileLimit = 3, relatedLimit = 3, recentLimit = 1), now)
+        else composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()))
         val messages = ArrayList<ChatMessage>()
-        for (t in conversation.recent(historyTurns)) messages += when (t.role) {
+        for (t in conversation.recent(if (small) minOf(historyTurns, 8) else historyTurns)) messages += when (t.role) {
             Turn.Role.USER -> ChatMessage.User(t.text)
             Turn.Role.ASSISTANT -> ChatMessage.Assistant(t.text)
         }
@@ -308,6 +340,13 @@ class CompanionAgent(
         while (messages.isNotEmpty() && messages.first() !is ChatMessage.User) messages.removeAt(0)
         messages += ChatMessage.User(text)
 
+        var spoke = false
+        val voice = sink?.let { out ->
+            object : ReplySink {
+                override fun emotion(e: Emotion) = out.emotion(e)
+                override fun sentence(text: String, emotion: Emotion) { spoke = true; out.sentence(text, emotion) }
+            }
+        }
         val actions = mutableListOf<ActionRecord>()
         // Text the model already said in tool rounds ("Ставлю таймер…"): heard, so also shown.
         val said = StringBuilder()
@@ -316,9 +355,10 @@ class CompanionAgent(
             repeat(maxToolRounds) { round ->
                 val offerTools = round < maxToolRounds - 1
                 val request = LlmRequest(system = system, messages = messages,
-                    tools = if (offerTools && provider.id !in noTools) tools.specs() else emptyList(), situation = situation)
-                suspend fun send(r: LlmRequest) = if (sink == null) provider.complete(r) else {
-                    val stream = ReplyStream(sink, state.mood.dominantEmotion())
+                    tools = if (offerTools && !small && provider.id !in noTools) tools.specs() else emptyList(), situation = situation,
+                    maxTokens = if (small) 320 else 600, temperature = if (small) 0.7 else 0.8)
+                suspend fun send(r: LlmRequest) = if (voice == null) provider.complete(r) else {
+                    val stream = ReplyStream(voice, state.mood.dominantEmotion())
                     provider.stream(r) { stream.feed(it) }.also { stream.finish() }
                 }
                 val response = try {
@@ -357,7 +397,7 @@ class CompanionAgent(
         } catch (e: CancellationException) {
             throw e
         } catch (e: LlmException) {
-            return AgentReply(e.userMessage(), Emotion.SAD, actions, error = e.message, errorKind = e.kind)
+            return AgentReply(e.userMessage(), Emotion.SAD, actions, error = e.message, errorKind = e.kind, spoke = spoke)
         }
     }
 
