@@ -370,7 +370,7 @@ class CompanionAgent(
                 val offerTools = round < maxToolRounds - 1
                 val request = LlmRequest(system = system, messages = messages,
                     tools = if (offerTools && !small && provider.id !in noTools) tools.specs() else emptyList(), situation = situation,
-                    maxTokens = if (small) 320 else 600, temperature = if (small) 0.7 else 0.8)
+                    maxTokens = if (small) 320 else 600, temperature = if (small) 0.6 else 0.8)
                 suspend fun send(r: LlmRequest) = if (voice == null) provider.complete(r) else {
                     val stream = ReplyStream(voice, state.mood.dominantEmotion())
                     provider.stream(r) { stream.feed(it) }.also { stream.finish() }

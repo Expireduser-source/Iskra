@@ -114,11 +114,14 @@ class LocalLlmTest {
         runTest {
             val engine = FakeEngine("[happy] Жила-была кошка…")
             val a = agent(null, LocalLlmProvider({ engine }, ChatFormat.CHATML, "local:test"))
+            a.handle("меня зовут Аня")   // stored as "Владельца зовут Аня"; the small model reads "Человека зовут Аня"
             val r = a.handle("расскажи сказку")
             assertEquals("Жила-была кошка…", r.text)
             assertTrue(r.usedLlm)
-            val prompt = engine.prompts.single()
-            assertTrue(prompt.contains("Отвечай коротко"), prompt)            // the compact prompt
+            val prompt = engine.prompts.last()
+            assertTrue(prompt.contains("Человека зовут Аня"), prompt)
+            assertTrue(prompt.contains("коротко (1–3 предложения)"), prompt)  // the compact prompt
+            assertFalse(prompt.contains("владел"))                              // plain words for a small model
             assertFalse(prompt.contains("Инструменты"))                       // no tools for a small model
             assertTrue(a.handle("сколько будет 2+2").text.endsWith("= 4"))    // exact answers stay local
         }
