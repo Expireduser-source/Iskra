@@ -3,6 +3,11 @@
 // One session = one loaded model + one context. The context keeps the keys/values of the last prompt and reply,
 // so the next message only has to process what changed after the longest common prefix (the instructions and the
 // earlier dialogue are not computed again). Text crosses the bridge as UTF-16 (Java) <-> UTF-8 (llama.cpp).
+//
+// Models with recurrent layers (Qwen3.5 is a hybrid: gated delta net + attention) cannot cut their state back to an
+// earlier position, so any difference near the end of the prompt would mean reading the whole dialogue again. For them
+// the bridge saves a checkpoint (a copy of the state) where the caller says the next prompt will still agree — the end
+// of the dialogue before the newest message — and goes back to it.
 #include <jni.h>
 
 #include <algorithm>
@@ -24,6 +29,12 @@
 
 namespace {
 
+// A saved state of sequence 0 after reading [toks].
+struct Checkpoint {
+    std::vector<llama_token> toks;
+    std::vector<uint8_t> state;
+};
+
 struct Session {
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
@@ -34,6 +45,10 @@ struct Session {
     int n_ctx = 0;
     int n_batch = 256;
     int n_threads = 4;
+    bool can_cut = true;              // false: recurrent layers, the state can only go back to a checkpoint
+    Checkpoint checkpoint;
+    int last_prompt = 0;              // tokens in the last prompt
+    int last_reused = 0;              // of them, taken from the cache instead of computed
 };
 
 std::once_flag g_init;
@@ -47,8 +62,10 @@ void init_backend() {
     });
 }
 
-std::string to_utf8(JNIEnv * env, jstring s) {
-    const jsize len = env->GetStringLength(s);
+// The first [limit] UTF-16 units of s (all of it if limit < 0) as UTF-8.
+std::string to_utf8(JNIEnv * env, jstring s, jint limit = -1) {
+    jsize len = env->GetStringLength(s);
+    if (limit >= 0 && limit < len) len = limit;
     const jchar * ch = env->GetStringChars(s, nullptr);
     std::string out;
     out.reserve(static_cast<size_t>(len) * 2);
@@ -154,6 +171,34 @@ void forget_cache(Session * s) {
     s->cached.clear();
 }
 
+void save_checkpoint(Session * s) {
+    Checkpoint & c = s->checkpoint;
+    const size_t n = llama_state_seq_get_size(s->ctx, 0);
+    c.state.resize(n);
+    if (n == 0 || llama_state_seq_get_data(s->ctx, c.state.data(), n, 0) != n) {
+        c = Checkpoint();
+        return;
+    }
+    c.toks = s->cached;
+}
+
+// Is the checkpoint the start of toks, with at least one token after it (the last token is always decoded anew)?
+bool checkpoint_fits(const Session * s, const std::vector<llama_token> & toks) {
+    const auto & c = s->checkpoint.toks;
+    return !c.empty() && c.size() < toks.size() && std::equal(c.begin(), c.end(), toks.begin());
+}
+
+bool restore_checkpoint(Session * s) {
+    const Checkpoint & c = s->checkpoint;
+    if (llama_state_seq_set_data(s->ctx, c.state.data(), c.state.size(), 0) == 0) {
+        s->checkpoint = Checkpoint();
+        forget_cache(s);
+        return false;
+    }
+    s->cached = c.toks;
+    return true;
+}
+
 }  // namespace
 
 extern "C" {
@@ -191,12 +236,14 @@ Java_ru_iskra_core_llm_local_LlamaNative_load(JNIEnv * env, jclass, jstring jpat
     s->vocab = llama_model_get_vocab(model);
     s->n_ctx = static_cast<int>(llama_n_ctx(ctx));
     s->n_threads = n_threads;
+    s->can_cut = !llama_model_is_recurrent(model) && !llama_model_is_hybrid(model);
     return reinterpret_cast<jlong>(s);
 }
 
 JNIEXPORT jstring JNICALL
-Java_ru_iskra_core_llm_local_LlamaNative_generate(JNIEnv * env, jclass, jlong handle, jstring jprompt, jint max_tokens,
-                                                 jfloat temp, jfloat top_p, jfloat min_p, jfloat repeat_penalty, jobject sink) {
+Java_ru_iskra_core_llm_local_LlamaNative_generate(JNIEnv * env, jclass, jlong handle, jstring jprompt, jint stable,
+                                                 jint max_tokens, jfloat temp, jfloat top_p, jfloat min_p,
+                                                 jfloat repeat_penalty, jobject sink) {
     auto * s = reinterpret_cast<Session *>(handle);
     if (s == nullptr) return to_jstring(env, "");
     std::lock_guard<std::mutex> guard(s->busy);
@@ -214,33 +261,57 @@ Java_ru_iskra_core_llm_local_LlamaNative_generate(JNIEnv * env, jclass, jlong ha
         return nullptr;
     }
 
+    // Where the next prompt will most likely still agree with this one (a checkpoint goes there), in tokens.
+    size_t mark = 0;
+    if (!s->can_cut && stable > 0) {
+        const std::vector<llama_token> head = tokenize(s->vocab, to_utf8(env, jprompt, stable));
+        while (mark < head.size() && mark < toks.size() && head[mark] == toks[mark]) mark++;
+    }
+
     // Keep the longest common prefix with what the context already holds; at least one token is decoded anew.
     size_t keep = 0;
     while (keep < s->cached.size() && keep < toks.size() && s->cached[keep] == toks[keep]) keep++;
     if (keep == toks.size()) keep--;
-    if (!llama_memory_seq_rm(llama_get_memory(s->ctx), 0, static_cast<llama_pos>(keep), -1)) {
-        forget_cache(s);
-        keep = 0;
+    const bool fits = checkpoint_fits(s, toks);
+    if (fits && s->checkpoint.toks.size() > keep) {
+        keep = restore_checkpoint(s) ? s->cached.size() : 0;
+    } else if (!llama_memory_seq_rm(llama_get_memory(s->ctx), 0, static_cast<llama_pos>(keep), -1)) {
+        // Recurrent layers can't be cut back to [keep]: go back to the checkpoint, or read everything again.
+        if (fits && restore_checkpoint(s)) {
+            keep = s->cached.size();
+        } else {
+            forget_cache(s);
+            keep = 0;
+        }
     }
     s->cached.resize(keep);
+    s->last_prompt = static_cast<int>(toks.size());
+    s->last_reused = static_cast<int>(keep);
 
-    for (size_t i = keep; i < toks.size(); i += static_cast<size_t>(s->n_batch)) {
-        const int n = static_cast<int>(std::min(static_cast<size_t>(s->n_batch), toks.size() - i));
-        const bool last = i + static_cast<size_t>(n) == toks.size();
-        if (!decode(s, toks.data() + i, n, static_cast<int>(i), last)) {
+    for (size_t i = keep; i < toks.size();) {
+        if (i == mark && mark > 0 && s->checkpoint.toks != s->cached) save_checkpoint(s);
+        size_t end = std::min(i + static_cast<size_t>(s->n_batch), toks.size());
+        if (mark > i && mark < end) end = mark;  // stop at the mark to save the state there
+        const int n = static_cast<int>(end - i);
+        if (!decode(s, toks.data() + i, n, static_cast<int>(i), end == toks.size())) {
             forget_cache(s);  // aborted or failed half-way: the cache may be partial
             return to_jstring(env, "");
         }
-        s->cached.insert(s->cached.end(), toks.begin() + static_cast<long>(i), toks.begin() + static_cast<long>(i) + n);
+        s->cached.insert(s->cached.end(), toks.begin() + static_cast<long>(i), toks.begin() + static_cast<long>(end));
+        i = end;
     }
 
     llama_sampler * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
-    llama_sampler_chain_add(smpl, llama_sampler_init_penalties(llama_vocab_n_tokens(s->vocab), 64, repeat_penalty, 0.0f, 0.0f));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_k(40));
-    llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_min_p(min_p, 1));
-    llama_sampler_chain_add(smpl, llama_sampler_init_temp(temp));
-    llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    if (temp <= 0.0f) {
+        llama_sampler_chain_add(smpl, llama_sampler_init_greedy());  // for tests: the same answer every time
+    } else {
+        llama_sampler_chain_add(smpl, llama_sampler_init_penalties(llama_vocab_n_tokens(s->vocab), 64, repeat_penalty, 0.0f, 0.0f));
+        llama_sampler_chain_add(smpl, llama_sampler_init_top_k(40));
+        llama_sampler_chain_add(smpl, llama_sampler_init_top_p(top_p, 1));
+        llama_sampler_chain_add(smpl, llama_sampler_init_min_p(min_p, 1));
+        llama_sampler_chain_add(smpl, llama_sampler_init_temp(temp));
+        llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+    }
 
     std::string out;
     std::string pending;
@@ -285,6 +356,21 @@ Java_ru_iskra_core_llm_local_LlamaNative_free(JNIEnv *, jclass, jlong handle) {
     llama_free(s->ctx);
     llama_model_free(s->model);
     delete s;
+}
+
+// [tokens in the last prompt, how many of them came from the cache]
+JNIEXPORT jintArray JNICALL
+Java_ru_iskra_core_llm_local_LlamaNative_lastRead(JNIEnv * env, jclass, jlong handle) {
+    auto * s = reinterpret_cast<Session *>(handle);
+    jint v[2] = {0, 0};
+    if (s != nullptr) {
+        std::lock_guard<std::mutex> guard(s->busy);
+        v[0] = s->last_prompt;
+        v[1] = s->last_reused;
+    }
+    jintArray out = env->NewIntArray(2);
+    if (out != nullptr) env->SetIntArrayRegion(out, 0, 2, v);
+    return out;
 }
 
 JNIEXPORT jstring JNICALL

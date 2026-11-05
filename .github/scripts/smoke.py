@@ -301,13 +301,15 @@ def hf_json(url):
         return json.load(r)
 
 
-def model_eval(out):
+def model_eval(out, threads=4, arch=""):
     """
     The on-phone models judged on a real conversation: the app's own pipeline (agent, compact prompt, dialogue cache,
     JNI, llama.cpp) on this computer, for every candidate model. Transcripts and timings go to out/eval.
+    [arch] (e.g. armv8.2-a+dotprod+fp16 on an ARM computer) builds the bridge exactly like the phone library instead of
+    for this computer's own instruction set; with [threads] = 2, like the two fast cores of a mid-range phone.
     """
     import hashlib
-    import shutil
+    import platform
     import tarfile
     import urllib.request
 
@@ -358,8 +360,9 @@ def model_eval(out):
             with t.extractfile(m) as fi, open(dest, "wb") as fo:
                 fo.write(fi.read())
     build = os.path.join(work, "build")
-    for cmd in (["cmake", "-S", "app/src/main/cpp", "-B", build, "-DCMAKE_BUILD_TYPE=Release", f"-DLLAMA_SRC={src}", "-DISKRA_HOST_NATIVE=ON"],
-                ["cmake", "--build", build, "--target", "iskra_llama", "-j", "4"]):
+    flags = ["-DISKRA_HOST_NATIVE=OFF", f"-DGGML_CPU_ARM_ARCH={arch}"] if arch else ["-DISKRA_HOST_NATIVE=ON"]
+    for cmd in (["cmake", "-S", "app/src/main/cpp", "-B", build, "-DCMAKE_BUILD_TYPE=Release", f"-DLLAMA_SRC={src}", *flags],
+                ["cmake", "--build", build, "--target", "iskra_llama", "-j", str(os.cpu_count() or 4)]):
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
         if r.returncode != 0:
             annotate("error", "Model evaluation", f"{' '.join(cmd[:3])}: {r.stdout[-1500:]} {r.stderr[-1500:]}")
@@ -368,7 +371,7 @@ def model_eval(out):
     print(f"bridge built in {time.time() - t_start:.0f} s", flush=True)
 
     # 3. Every candidate: download, talk, delete (disk space).
-    env = dict(os.environ, ISKRA_CORE_ONLY="1", ISKRA_LLAMA_LIB=lib, ISKRA_EVAL_OUT=ev, ISKRA_EVAL_THREADS="4")
+    env = dict(os.environ, ISKRA_CORE_ONLY="1", ISKRA_LLAMA_LIB=lib, ISKRA_EVAL_OUT=ev, ISKRA_EVAL_THREADS=str(threads))
     for k in ("JAVA_HOME_17_X64", "JAVA_HOME_21_X64"):
         if os.environ.get(k):
             env["JAVA_HOME"] = os.environ[k]
@@ -379,7 +382,7 @@ def model_eval(out):
         if name in done:
             continue
         if time.time() - t_start > 24 * 60:
-            summary.append(f"| {name} | — | skipped: out of time | | |")
+            summary.append(f"| {name} | — | skipped: out of time | | | |")
             continue
         try:
             files = [s_["rfilename"] for s_ in hf_json(f"https://huggingface.co/api/models/{repo}").get("siblings", [])]
@@ -416,20 +419,31 @@ def model_eval(out):
             os.remove(sp)
         done.add(name)
         os.remove(path)
-    table = "| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) |\n|---|---|---|---|---|\n" + "\n".join(summary)
+    table = ("| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) | new prompt tokens (median) |\n"
+             "|---|---|---|---|---|---|\n" + "\n".join(summary))
     with open(os.path.join(ev, "summary.md"), "w") as f:
         f.write(table + "\n")
     print(table, flush=True)
-    annotate("notice", "On-phone model evaluation (CI computer, 4 threads)", table)
+    where = f"{platform.machine()}, {threads} threads" + (f", built like the phone ({arch})" if arch else "")
+    annotate("notice", f"On-phone model evaluation ({where})", table)
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--apk", required=True)
+    ap.add_argument("--apk")
     ap.add_argument("--out", required=True)
-    ap.add_argument("--api", type=int, required=True)
+    ap.add_argument("--api", type=int, default=0)
     ap.add_argument("--lang", default="")
+    # Only the model evaluation, without an emulator (the ARM job): threads and the phone's instruction set.
+    ap.add_argument("--eval-only", action="store_true")
+    ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--arch", default="")
     a = ap.parse_args()
+    if a.eval_only:
+        model_eval(a.out, a.threads, a.arch)
+        return
+    if not a.apk or not a.api:
+        ap.error("--apk and --api are needed for the emulator check")
     s = Smoke(a.out, a.api, a.lang)
 
     adb("wait-for-device", timeout=300)

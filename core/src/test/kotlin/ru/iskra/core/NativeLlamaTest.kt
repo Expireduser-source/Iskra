@@ -63,4 +63,51 @@ class NativeLlamaTest {
             assertTrue(e.generate(prompt, 4, 0.8f) { true }.isNotEmpty())
         }
     }
+
+    /**
+     * A hybrid model (Qwen3.5's architecture: gated delta net + attention; ISKRA_LLAMA_HYBRID, a tiny one with random
+     * weights) can't cut its state back. A checkpoint where the prompt stays the same keeps the dialogue cached anyway,
+     * and the answers are the same as when everything is read anew.
+     */
+    @Test
+    fun hybridModelKeepsTheDialogueThroughACheckpoint() {
+        val hybrid = System.getenv("ISKRA_LLAMA_HYBRID")
+        assumeTrue("ISKRA_LLAMA_LIB / ISKRA_LLAMA_HYBRID not set", lib != null && hybrid != null)
+        System.load(lib!!)
+        val f = ChatFormat.CHATML_NO_THINK
+        val system = "Ты — Искра, игривая и заботливая кошкодевочка, которая живёт в этом телефоне. Тебя зовут Искра. " +
+            "Ты девушка: о себе говори в женском роде. Отвечай тепло, живо и коротко, на языке собеседника. " +
+            "Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты."
+        var request = LlmRequest(system, listOf(ChatMessage.User("Привет! Меня зовут Аня.")), situation = "Ты помнишь: Аня учится на врача.")
+        val prompts = ArrayList<ru.iskra.core.llm.local.Prompt>()
+        val answers = ArrayList<String>()
+        val reads = ArrayList<Pair<Int, Int>>()
+        NativeLlamaEngine.open(hybrid!!, 1024, 2)!!.use { e ->
+            for (next in listOf("Как дела?", "Расскажи сказку.", "Спасибо!")) {
+                val p = f.prompt(request)
+                prompts += p
+                answers += e.generate(p.text, 12, 0f, p.stable) { true }
+                reads += e.lastRead()
+                request = request.copy(messages = request.messages + ChatMessage.Assistant(answers.last().ifBlank { "мрр" }) + ChatMessage.User(next), situation = "")
+            }
+        }
+        println("reads (prompt tokens, reused): $reads")
+        assertEquals(0, reads[0].second)
+        // Later messages reuse what was there up to the newest message: everything but the last exchange.
+        for (i in 1 until reads.size) {
+            val (n, reused) = reads[i]
+            assertTrue(reused > n / 2 && n - reused < 80, "message ${i + 1}: only $reused of $n tokens reused")
+        }
+        // Without a checkpoint the state can't go back past the answer header: everything is read again.
+        NativeLlamaEngine.open(hybrid, 1024, 2)!!.use { e ->
+            e.generate(prompts[1].text, 4, 0f, 0) { true }
+            e.generate(prompts[2].text, 4, 0f, 0) { true }
+            assertEquals(0, e.lastRead().second)
+        }
+        // The same answers as reading each prompt from scratch.
+        for ((i, p) in prompts.withIndex()) {
+            val fresh = NativeLlamaEngine.open(hybrid, 1024, 2)!!.use { it.generate(p.text, 12, 0f, 0) { true } }
+            assertEquals(fresh, answers[i], "message ${i + 1}")
+        }
+    }
 }

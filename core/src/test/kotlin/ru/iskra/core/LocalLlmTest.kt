@@ -30,10 +30,12 @@ import kotlin.test.assertTrue
 /** Replays [pieces] as if a model generated them; records prompts. */
 class FakeEngine(private vararg val pieces: String) : LlamaEngine {
     val prompts = mutableListOf<String>()
+    val stables = mutableListOf<Int>()
     override val info = "fake"
     override val contextSize = 4096
-    override fun generate(prompt: String, maxTokens: Int, temperature: Float, onPiece: (String) -> Boolean): String {
+    override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, onPiece: (String) -> Boolean): String {
         prompts += prompt
+        stables += stable
         val out = StringBuilder()
         for (p in pieces) { out.append(p); if (!onPiece(p)) break }
         return out.toString()
@@ -114,6 +116,41 @@ class LocalLlmTest {
             repeat(12) { a.handle("ещё вопрос номер $it?") }
             val kept = engine.prompts.zipWithNext().count { (prev, next) -> next.startsWith(prev + "[happy] Мрр, привет!") }
             assertTrue(kept >= 9, "the cache held in $kept of ${engine.prompts.size - 1} messages")
+        }
+    }
+
+    @Test
+    fun everyFormatTellsWhereTheNextPromptStillAgrees() {
+        // Models that can't cut their cache back (Qwen3.5) save their state at `stable`: the next prompt must repeat it.
+        val r1 = LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Привет")), situation = "Ты помнишь: Аня любит чай.")
+        val r2 = r1.copy(messages = r1.messages + ChatMessage.Assistant("[happy] Мрр, привет!") + ChatMessage.User("Как дела?"), situation = "")
+        val r3 = r2.copy(messages = r2.messages + ChatMessage.Assistant("[calm] Хорошо.") + ChatMessage.User("Что почитать?"), situation = "Ты помнишь: Аня любит фантастику.")
+        for (f in ChatFormat.entries) {
+            val (p1, p2, p3) = listOf(r1, r2, r3).map { f.prompt(it) }
+            for ((a, b) in listOf(p1 to p2, p2 to p3)) {
+                assertTrue(a.stable > 0, "$f: nothing stable")
+                assertTrue(b.text.startsWith(a.text.take(a.stable)), "$f: the next prompt differs within the stable part")
+            }
+            // With a situation, the stable part ends right before it (it won't be in the next prompt).
+            assertTrue(p1.text.substring(p1.stable).removePrefix("<|im_start|>system\n").startsWith("Ты помнишь"), "$f: ${p1.text.substring(p1.stable)}")
+            // Without one, the newest message is stable too: only the answer header follows it.
+            assertTrue(p2.text.substring(0, p2.stable).endsWith("Как дела?" + mapOf(ChatFormat.GEMMA to "<end_of_turn>\n",
+                ChatFormat.GEMMA4 to "<turn|>\n").getOrDefault(f, "<|im_end|>\n")), "$f: ${p2.text.substring(p2.stable)}")
+            assertEquals(f.render(r3), p3.text)
+        }
+    }
+
+    @Test
+    fun theModelHearsWhereToSaveItsState() = withLang(Lang.RU) {
+        runTest {
+            val engine = FakeEngine("[happy] Мрр, привет!")
+            val a = agent(null, LocalLlmProvider({ engine }, ChatFormat.CHATML_NO_THINK, "local:test"))
+            a.handle("как дела?")
+            a.handle("что почитать?")
+            val (s1, p2) = engine.stables[0] to engine.prompts[1]
+            assertTrue(s1 > 0 && p2.startsWith(engine.prompts[0].take(s1)))
+            // The empty <think> block is only in the newest prompt's header, so the state is saved before it.
+            assertFalse(engine.prompts[0].take(s1).contains("<think>"))
         }
     }
 

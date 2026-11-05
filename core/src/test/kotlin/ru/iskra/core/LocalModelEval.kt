@@ -55,7 +55,7 @@ class LocalModelEval {
         System.load(lib!!)
         val out = File(System.getenv("ISKRA_EVAL_OUT") ?: "build/eval").apply { mkdirs() }
         val threads = (System.getenv("ISKRA_EVAL_THREADS") ?: "4").toInt()
-        val summary = StringBuilder("| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) |\n|---|---|---|---|---|\n")
+        val summary = StringBuilder("| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) | new prompt tokens (median) |\n|---|---|---|---|---|---|\n")
         val deadline = System.getenv("ISKRA_EVAL_DEADLINE_MS")?.toLongOrNull() ?: Long.MAX_VALUE
         for (spec in models!!.split(';').filter { it.isNotBlank() }) {
             if (System.currentTimeMillis() > deadline) { summary.append("| ${spec.substringBefore('|')} | — | skipped: out of time | | |\n"); continue }
@@ -80,12 +80,14 @@ class LocalModelEval {
                         val r = runBlocking { agent.handle(q) }
                         val g = stats.drop(before).lastOrNull()
                         val how = if (g == null) "local answer" else
-                            "first words %.1f s, %.1f s total, %d pieces".format(java.util.Locale.ROOT, g.firstPieceMs / 1000.0, g.totalMs / 1000.0, g.pieces)
+                            "first words %.1f s, %.1f s total, %d pieces; read %d new of %d prompt tokens".format(java.util.Locale.ROOT,
+                                g.firstPieceMs / 1000.0, g.totalMs / 1000.0, g.pieces, g.newTokens, g.promptTokens)
                         doc.append("\n**Q:** $q\n\n**A** [${r.emotion.name.lowercase()}] ($how): ${r.text}\n")
                     }
                     fun median(xs: List<Double>) = xs.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
-                    summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f |\n".format(java.util.Locale.ROOT,
-                        median(stats.map { it.firstPieceMs / 1000.0 }), median(stats.map { it.totalMs / 1000.0 }), median(stats.map { it.piecesPerSecond })))
+                    summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.0f |\n".format(java.util.Locale.ROOT,
+                        median(stats.map { it.firstPieceMs / 1000.0 }), median(stats.map { it.totalMs / 1000.0 }), median(stats.map { it.piecesPerSecond }),
+                        median(stats.map { it.newTokens.toDouble() })))
                 }
             }
             File(out, "$name.md").writeText(doc.toString())

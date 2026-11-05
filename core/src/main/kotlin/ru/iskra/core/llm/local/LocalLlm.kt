@@ -22,31 +22,42 @@ object LlamaNative {
 
     @JvmStatic external fun load(path: String, nCtx: Int, nThreads: Int): Long
     @JvmStatic external fun free(handle: Long)
-    @JvmStatic external fun generate(handle: Long, prompt: String, maxTokens: Int, temperature: Float, topP: Float, minP: Float,
-                                     repeatPenalty: Float, sink: TokenSink): String
+    /** [stable]: see [LlamaEngine.generate]. A [temperature] of 0 always picks the likeliest token (for tests). */
+    @JvmStatic external fun generate(handle: Long, prompt: String, stable: Int, maxTokens: Int, temperature: Float, topP: Float,
+                                     minP: Float, repeatPenalty: Float, sink: TokenSink): String
     @JvmStatic external fun cancel(handle: Long)
+    /** [tokens in the last prompt, how many of them came from the cache]. */
+    @JvmStatic external fun lastRead(handle: Long): IntArray
     /** "qwen2 1.5B Q4_K - Medium · ctx 4096 · 4 threads". */
     @JvmStatic external fun info(handle: Long): String
 }
 
 /** A loaded on-device model. One generation at a time. */
 interface LlamaEngine : AutoCloseable {
-    /** Continues [prompt]; [onPiece] gets the text as it comes (return false to stop). Blocking. */
-    fun generate(prompt: String, maxTokens: Int, temperature: Float, onPiece: (String) -> Boolean): String
+    /**
+     * Continues [prompt]; [onPiece] gets the text as it comes (return false to stop). Blocking.
+     * [stable]: how many characters at the start of [prompt] the next message's prompt will most likely repeat. Models
+     * that can't cut their cache back (Qwen3.5) save their state there, so the next message doesn't re-read the dialogue.
+     */
+    fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int = 0, onPiece: (String) -> Boolean): String
     fun cancel()
     val info: String
     /** Tokens the context holds: prompt plus reply must fit. */
     val contextSize: Int
+    /** Tokens in the last prompt and how many of them were already in the cache (not computed again). */
+    fun lastRead(): Pair<Int, Int> = 0 to 0
 }
 
 class NativeLlamaEngine private constructor(private val handle: Long, override val contextSize: Int) : LlamaEngine {
     @Volatile private var closed = false
     override val info: String get() = if (closed) "" else LlamaNative.info(handle)
 
-    override fun generate(prompt: String, maxTokens: Int, temperature: Float, onPiece: (String) -> Boolean): String {
+    override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, onPiece: (String) -> Boolean): String {
         check(!closed) { "engine closed" }
-        return LlamaNative.generate(handle, prompt, maxTokens, temperature, 0.9f, 0.05f, 1.1f) { onPiece(it) }
+        return LlamaNative.generate(handle, prompt, stable, maxTokens, temperature, 0.9f, 0.05f, 1.1f) { onPiece(it) }
     }
+
+    override fun lastRead(): Pair<Int, Int> = if (closed) 0 to 0 else LlamaNative.lastRead(handle).let { it[0] to it[1] }
 
     override fun cancel() { if (!closed) LlamaNative.cancel(handle) }
 
@@ -77,7 +88,13 @@ enum class ChatFormat {
     companion object
 
     /** Renders the dialogue; the per-message situation goes right before the last message, so the rest stays cached. */
-    fun render(request: LlmRequest): String {
+    fun render(request: LlmRequest): String = prompt(request).text
+
+    /**
+     * The rendered dialogue and its [Prompt.stable] part: the next message's prompt repeats it, because the situation
+     * and the answer header (Qwen's empty <think>, Gemma 4's thought channel) appear only at the end of this one.
+     */
+    fun prompt(request: LlmRequest): Prompt {
         val turns = request.messages.mapNotNull {
             when (it) {
                 is ChatMessage.User -> "user" to it.text
@@ -85,41 +102,49 @@ enum class ChatFormat {
                 is ChatMessage.ToolResult -> null
             }
         }
+        val situation = request.situation.trim()
         val sb = StringBuilder()
+        var stable = 0
         when (this) {
             CHATML, CHATML_NO_THINK -> {
                 sb.append("<|im_start|>system\n").append(request.system.trim()).append("<|im_end|>\n")
                 turns.forEachIndexed { i, (role, text) ->
-                    if (i == turns.lastIndex && request.situation.isNotBlank())
-                        sb.append("<|im_start|>system\n").append(request.situation.trim()).append("<|im_end|>\n")
+                    val last = i == turns.lastIndex
+                    if (last) stable = sb.length
+                    if (last && situation.isNotEmpty()) sb.append("<|im_start|>system\n").append(situation).append("<|im_end|>\n")
                     sb.append("<|im_start|>").append(role).append('\n').append(text.trim()).append("<|im_end|>\n")
+                    if (last && situation.isEmpty()) stable = sb.length
                 }
+                if (turns.isEmpty()) stable = sb.length
                 sb.append("<|im_start|>assistant\n")
                 if (this == CHATML_NO_THINK) sb.append("<think>\n\n</think>\n\n")
             }
             GEMMA -> {
                 turns.forEachIndexed { i, (role, text) ->
-                    val head = buildString {
-                        if (i == 0) append(request.system.trim()).append("\n\n")
-                        if (i == turns.lastIndex && request.situation.isNotBlank()) append(request.situation.trim()).append("\n\n")
-                    }
+                    val last = i == turns.lastIndex
                     sb.append("<start_of_turn>").append(if (role == "assistant") "model" else "user").append('\n')
-                        .append(head).append(text.trim()).append("<end_of_turn>\n")
+                    if (i == 0) sb.append(request.system.trim()).append("\n\n")
+                    if (last && situation.isNotEmpty()) { stable = sb.length; sb.append(situation).append("\n\n") }
+                    sb.append(text.trim()).append("<end_of_turn>\n")
+                    if (last && situation.isEmpty()) stable = sb.length
                 }
                 sb.append("<start_of_turn>model\n")
             }
             GEMMA4 -> {
                 sb.append("<|turn>system\n").append(request.system.trim()).append("<turn|>\n")
+                stable = sb.length
                 turns.forEachIndexed { i, (role, text) ->
                     // A system turn is only expected first, so the per-message situation leads the last message.
-                    val head = if (i == turns.lastIndex && request.situation.isNotBlank()) request.situation.trim() + "\n\n" else ""
+                    val last = i == turns.lastIndex
                     sb.append("<|turn>").append(if (role == "assistant") "model" else "user").append('\n')
-                        .append(head).append(text.trim()).append("<turn|>\n")
+                    if (last && situation.isNotEmpty()) { stable = sb.length; sb.append(situation).append("\n\n") }
+                    sb.append(text.trim()).append("<turn|>\n")
+                    if (last && situation.isEmpty()) stable = sb.length
                 }
                 sb.append("<|turn>model\n<|channel>thought\n<channel|>")
             }
         }
-        return sb.toString()
+        return Prompt(sb.toString(), stable)
     }
 
     /** Text that means the model started writing the next turn itself. */
@@ -130,16 +155,23 @@ enum class ChatFormat {
     }
 }
 
+/** A rendered prompt; the first [stable] characters will most likely start the next message's prompt too. */
+data class Prompt(val text: String, val stable: Int)
+
 /**
- * The model on the phone as an [LlmProvider]: no tools, a short prompt, a dialogue cache kept between messages.
- * [engine] loads the model on first use (seconds) and may return null if it can't.
+ * How one generation went: for the journal and the speed check. Pieces are about one token each. Of the
+ * [promptTokens], only [newTokens] were computed; the rest came from the dialogue cache.
  */
-/** How one generation went: for the journal and the speed check. Pieces are about one token each. */
-data class GenStats(val promptChars: Int, val firstPieceMs: Long, val pieces: Int, val chars: Int, val totalMs: Long) {
+data class GenStats(val promptChars: Int, val firstPieceMs: Long, val pieces: Int, val chars: Int, val totalMs: Long,
+                    val promptTokens: Int = 0, val newTokens: Int = 0) {
     /** Pieces per second after the first one (the reading of the prompt is over by then). */
     val piecesPerSecond: Double get() = if (pieces > 1 && totalMs > firstPieceMs) (pieces - 1) * 1000.0 / (totalMs - firstPieceMs) else 0.0
 }
 
+/**
+ * The model on the phone as an [LlmProvider]: no tools, a short prompt, a dialogue cache kept between messages.
+ * [engine] loads the model on first use (seconds) and may return null if it can't.
+ */
 class LocalLlmProvider(
     private val engine: suspend () -> LlamaEngine?,
     private val format: ChatFormat,
@@ -155,7 +187,8 @@ class LocalLlmProvider(
     override suspend fun stream(request: LlmRequest, onText: (String) -> Unit): LlmResponse = lock.withLock {
         val e = engine() ?: throw LlmException("on-device model unavailable", LlmException.Kind.NOT_CONFIGURED)
         val budget = minOf(maxTokens, request.maxTokens)
-        val prompt = format.render(fit(request, e.contextSize - budget))
+        val rendered = format.prompt(fit(request, e.contextSize - budget))
+        val prompt = rendered.text
         // Small Qwen models sometimes slip Chinese characters into Russian or English; unless the person wrote them, drop them.
         val lastUser = (request.messages.lastOrNull { it is ChatMessage.User } as? ChatMessage.User)?.text.orEmpty()
         val guard = !lastUser.any(::isCjk)
@@ -171,7 +204,7 @@ class LocalLlmProvider(
             suspendCancellableCoroutine<String> { cont ->
                 cont.invokeOnCancellation { e.cancel() }
                 val result = try {
-                    e.generate(prompt, budget, request.temperature.toFloat().coerceIn(0.1f, 1.2f)) { piece ->
+                    e.generate(prompt, budget, request.temperature.toFloat().coerceIn(0.1f, 1.2f), rendered.stable) { piece ->
                         if (firstMs < 0) firstMs = (System.nanoTime() - t0) / 1_000_000
                         pieces++
                         raw.append(piece)
@@ -189,7 +222,8 @@ class LocalLlmProvider(
             }
         }
         val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
-        onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000))
+        val (promptTokens, reused) = e.lastRead()
+        onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000, promptTokens, promptTokens - reused))
         var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
         if (hold) {
             reply = reply.substringAfterLast("<channel|>").trim()

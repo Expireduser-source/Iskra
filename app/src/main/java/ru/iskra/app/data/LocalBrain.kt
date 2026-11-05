@@ -293,9 +293,11 @@ object LocalBrain {
     /** Every reply's speed goes to the journal: the numbers that tell which model suits this phone. */
     private fun logStats(g: GenStats) {
         Diag.i("local", tr("Ответ модели на телефоне: первые слова через ${g.firstPieceMs} мс, ${g.pieces} частей за ${g.totalMs} мс " +
-            "(${"%.1f".format(java.util.Locale.ROOT, g.piecesPerSecond)} в секунду), запрос ${g.promptChars} символов",
+            "(${"%.1f".format(java.util.Locale.ROOT, g.piecesPerSecond)} в секунду), запрос ${g.promptChars} символов, " +
+            "прочитано заново ${g.newTokens} из ${g.promptTokens} токенов",
             "On-phone model reply: first words after ${g.firstPieceMs} ms, ${g.pieces} pieces in ${g.totalMs} ms " +
-                "(${"%.1f".format(java.util.Locale.ROOT, g.piecesPerSecond)} per second), prompt ${g.promptChars} characters"))
+                "(${"%.1f".format(java.util.Locale.ROOT, g.piecesPerSecond)} per second), prompt ${g.promptChars} characters, " +
+                "read ${g.newTokens} new of ${g.promptTokens} tokens"))
     }
 
     class SpeedCheck(val firstWordsMs: Long, val wordsPerSecond: Double, val slow: Boolean, val text: String)
