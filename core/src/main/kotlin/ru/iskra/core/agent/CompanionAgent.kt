@@ -348,7 +348,9 @@ class CompanionAgent(
             // Steady facts go with the instructions (cached); only memories matching this message come next to it.
             val mem = memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true)
             system = composer.compact(persona.localized(), state.style) + "\n\n" + composer.compactProfile(mem, now)
-            situation = composer.compactSituation(mem)
+            val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
+            situation = listOf(composer.compactSituation(mem), composer.languageNudge(text, lastReply))
+                .filter { it.isNotBlank() }.joinToString("\n")
         } else {
             system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
             situation = composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()) + todayNotes(now))

@@ -28,7 +28,7 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
   (“remind me tomorrow at 9 to call mom”), notes (“note: buy milk”), exact sums (“what's 15% of 2300”), units (“5 miles
   to km”), dates (“how many days until New Year”), coins and dice, small talk, the flashlight, volume, apps, settings,
   and “Surprise me” — tiny games with the world around you. Online without any account: weather and exchange rates.
-- **A brain on the phone:** download a small model once (Gemma 3 1B or Qwen3.5, 0.8–2.7 GB, chosen for your phone's memory) and talk
+- **A brain on the phone:** download a small model once (Gemma 3 1B or 4B, 0.7–2.5 GB, chosen for your phone) and talk
   **with no internet at all** — nothing you say leaves the phone. It also steps in when the cloud is unreachable.
 - **A real conversation:** connect a **free brain with one tap** (OpenRouter — sign in with Google or e-mail, nothing to
   copy; a busy free model quietly hands over to another) or use your own key from DeepSeek, OpenAI, Anthropic Claude or

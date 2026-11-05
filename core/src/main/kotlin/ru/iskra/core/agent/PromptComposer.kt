@@ -145,6 +145,32 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         memory.related.take(3).forEach { appendLine("- ${plain(sanitize(it.text))}") }
     }.trim()
 
+    /**
+     * A small model drifts into the language of its last reply (after «переведи на английский» Gemma 3 1B went on
+     * answering Russian messages in English). When that reply is in another language than this message, a one-line
+     * reminder goes next to the message — only there, so the cached dialogue stays the same. Not for translation requests.
+     */
+    fun languageNudge(message: String, lastReply: String?): String {
+        val asked = script(message) ?: return ""
+        val replied = lastReply?.let(::script) ?: return ""
+        if (asked == replied || translation.containsMatchIn(message)) return ""
+        return if (asked == 'r') "Ответь по-русски." else "Answer in English."
+    }
+
+    private val translation = Regex("(?iu)(перев[её]д|переведи|по-английски|по-русски|на английск|на русск|translat|in russian|in english)")
+
+    /** 'r' for mostly Cyrillic text, 'e' for mostly Latin, null when it's mixed or too short to tell. */
+    private fun script(s: String): Char? {
+        val cyr = s.count { it in 'а'..'я' || it in 'А'..'Я' || it == 'ё' || it == 'Ё' }
+        val lat = s.count { it in 'a'..'z' || it in 'A'..'Z' }
+        return when {
+            cyr + lat < 4 -> null
+            cyr >= lat * 2 -> 'r'
+            lat >= cyr * 2 -> 'e'
+            else -> null
+        }
+    }
+
     private fun sanitize(s: String) = s.replace("<", "‹").replace(">", "›").take(400)
 
     /** "Владельца зовут Аня" → "Человека зовут Аня": the same plain word as in [compact]. */

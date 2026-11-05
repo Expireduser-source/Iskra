@@ -60,24 +60,26 @@ object LocalBrain {
     }
 
     /**
-     * Chosen on real conversations in Russian and English (CI evaluation, docs/reports/2026-11-05-0.12.1.md): Gemma 3 1B
-     * talks the most naturally for its size, Qwen3.5 2B and 4B are smarter and slower. Official or well-known GGUF files.
+     * Chosen on real conversations in Russian and English (CI evaluation on x86 and on ARM built like the phone library,
+     * docs/reports/2026-11-05-0.12.3.md). Gemma 3 trained by Google for 4-bit (QAT, Q4_0): the 4B speaks Russian the best of
+     * all the small models tried, and Q4_0 runs through llama.cpp's fastest ARM path. Official ggml-org GGUF files.
      */
     val models = listOf(
-        Model("gemma-3-1b", "Gemma 3 1B", "gemma-3-1b-it-Q4_K_M.gguf",
-            "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf", 806, 4,
-            ChatFormat.GEMMA, "Лёгкий: живой русский и английский, отвечает быстро.", "Light: lively Russian and English, answers quickly."),
-        Model("qwen3.5-2b", "Qwen3.5 2B", "Qwen3.5-2B-Q4_K_M.gguf",
-            "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf", 1280, 6,
-            ChatFormat.CHATML_NO_THINK, "Обычный: умнее и грамотнее, нужен телефон с 6 ГБ памяти.", "Standard: smarter, needs a phone with 6 GB of memory."),
-        Model("qwen3.5-4b", "Qwen3.5 4B", "Qwen3.5-4B-Q4_K_M.gguf",
-            "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf", 2740, 10,
-            ChatFormat.CHATML_NO_THINK, "Сильный: лучшие ответы, но заметно медленнее; для флагманов с 10+ ГБ памяти.",
-            "Strong: the best answers, but noticeably slower; for flagships with 10+ GB of memory."),
+        Model("gemma-3-1b-qat", "Gemma 3 1B", "gemma-3-1b-it-qat-Q4_0.gguf",
+            "https://huggingface.co/ggml-org/gemma-3-1b-it-qat-GGUF/resolve/main/gemma-3-1b-it-qat-Q4_0.gguf", 720, 4,
+            ChatFormat.GEMMA, "Лёгкая: отвечает быстро на любом телефоне, но проще в разговоре и иногда путается.",
+            "Light: answers quickly on any phone, but is simpler and sometimes gets confused."),
+        Model("gemma-3-4b-qat", "Gemma 3 4B", "gemma-3-4b-it-qat-Q4_0.gguf",
+            "https://huggingface.co/ggml-org/gemma-3-4b-it-qat-GGUF/resolve/main/gemma-3-4b-it-qat-Q4_0.gguf", 2526, 6,
+            ChatFormat.GEMMA, "Умная: лучший русский, помнит сказанное и объясняет толково. Нужно 6 ГБ памяти; на телефонах с двумя быстрыми ядрами отвечает медленнее.",
+            "Smart: the best Russian, remembers what you said and explains well. Needs 6 GB of memory; slower on phones with two fast cores."),
     )
 
-    /** Models of 0.12.0: still recognized if downloaded, with a hint that a better one exists. */
+    /** Earlier catalogs: still work if downloaded; the card suggests the better one. */
     private val legacy = listOf(
+        Model("gemma-3-1b", "Gemma 3 1B (Q4_K_M)", "gemma-3-1b-it-Q4_K_M.gguf", "", 806, 4, ChatFormat.GEMMA, "", ""),
+        Model("qwen3.5-2b", "Qwen3.5 2B", "Qwen3.5-2B-Q4_K_M.gguf", "", 1280, 6, ChatFormat.CHATML_NO_THINK, "", ""),
+        Model("qwen3.5-4b", "Qwen3.5 4B", "Qwen3.5-4B-Q4_K_M.gguf", "", 2740, 10, ChatFormat.CHATML_NO_THINK, "", ""),
         Model("qwen2.5-0.5b", "Qwen2.5 0.5B", "qwen2.5-0.5b-instruct-q4_k_m.gguf", "", 491, 3, ChatFormat.CHATML, "", ""),
         Model("qwen2.5-1.5b", "Qwen2.5 1.5B", "qwen2.5-1.5b-instruct-q4_k_m.gguf", "", 1117, 6, ChatFormat.CHATML, "", ""),
         Model("qwen3-4b", "Qwen3 4B", "Qwen3-4B-Q4_K_M.gguf", "", 2497, 10, ChatFormat.CHATML_NO_THINK, "", ""),
@@ -138,13 +140,22 @@ object LocalBrain {
 
     /**
      * The model for this phone: the strongest one its memory comfortably holds — but with only two fast cores (Redmi
-     * Note 14 and most mid-range phones) the light one, which answers in a second or two instead of ten.
+     * Note 14 and most mid-range phones) the light one, which writes about three times faster there.
      */
     fun suggested(): Model {
         val ram = totalRamGb()
-        if (performanceCores() <= 2) return models.first()
+        if (fewFastCores()) return models.first()
         return models.lastOrNull { ram + 0.5 >= it.minRamGb } ?: models.first()
     }
+
+    /** Two fast cores or fewer: bigger models write slowly here (2–3 words a second for the 4B, estimated from the ARM check). */
+    fun fewFastCores(): Boolean = runCatching { performanceCores() <= 2 }.getOrDefault(false)
+
+    /** For a model from an earlier catalog: why the suggested one is better. */
+    fun whyBetter(old: Model): String = if (old.id == "gemma-3-1b" && suggested().id == "gemma-3-1b-qat") tr(
+        "та же модель, но обученная Google для такого сжатия: быстрее и меньше",
+        "the same model, trained by Google for this compression: faster and smaller")
+    else tr("быстрее отвечает и естественнее говорит по-русски", "answers faster and speaks Russian more naturally")
 
     private fun unsupportedReason(): String? {
         val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()

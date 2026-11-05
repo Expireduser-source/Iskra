@@ -89,6 +89,26 @@ class LocalLlmTest {
     }
 
     @Test
+    fun aSmallModelIsRemindedOfTheLanguageAfterATranslation() = withLang(Lang.RU) {
+        runTest {
+            val engine = FakeEngine("[happy] I love winter evenings.")
+            val a = agent(null, LocalLlmProvider({ engine }, ChatFormat.GEMMA, "local:test"))
+            a.handle("Переведи на английский: «Я люблю зимние вечера»")
+            a.handle("Что лучше на завтрак перед экзаменом: каша или омлет?")
+            a.handle("Переведи ещё: «Я люблю снег»")
+            assertFalse(engine.prompts[0].contains("Ответь по-русски"))
+            // The last reply was English, the message Russian: a reminder next to the message only.
+            val p = engine.prompts[1]
+            assertTrue(p.substringAfterLast("<start_of_turn>user\n").startsWith("Ответь по-русски."), p.takeLast(200))
+            assertFalse(engine.prompts[2].contains("Ответь по-русски"))  // another translation request: no reminder
+            val c = ru.iskra.core.agent.PromptComposer()
+            assertEquals("Answer in English.", c.languageNudge("And what about breakfast?", "Мрр, омлет лучше!"))
+            assertEquals("", c.languageNudge("Как дела?", "Мрр, хорошо!"))
+            assertEquals("", c.languageNudge("Ок", "I love winter evenings."))  // too short to tell
+        }
+    }
+
+    @Test
     fun strayPunctuationBeforeTheFirstWordIsDropped() = runTest {
         // Gemma 3 4B began replies with stray symbols that the Chinese filter turned into ", , ,".
         val p = LocalLlmProvider({ FakeEngine("，", "很 ，", " , ", "[happy] Мрр, привет!") }, ChatFormat.GEMMA, "local:test")

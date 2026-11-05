@@ -1,0 +1,4 @@
+• New on-phone models: Gemma 3 1B and 4B in the versions Google trained to work compressed
+• The smart Gemma 3 4B speaks Russian the best of all models tried, and starts answering sooner than the earlier Qwen3.5
+• The light one got faster (about 1.5×) and smaller: 720 MB
+• Replies no longer start with stray punctuation

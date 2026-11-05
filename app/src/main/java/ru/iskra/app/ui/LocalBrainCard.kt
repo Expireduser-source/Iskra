@@ -76,6 +76,10 @@ fun LocalBrainCard() {
                         tr("На этом телефоне ${"%.0f".format(Locale.ROOT, LocalBrain.totalRamGb())} ГБ памяти — выбранная модель может работать медленно или не загрузиться.",
                             "This phone has ${"%.0f".format(Locale.ROOT, LocalBrain.totalRamGb())} GB of memory — the chosen model may be slow or fail to load."),
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                    else if (choice != LocalBrain.models.first() && LocalBrain.fewFastCores()) Text(
+                        tr("У этого телефона два быстрых ядра: умная модель будет писать примерно 2–3 слова в секунду, лёгкая — втрое быстрее. Проверить можно кнопкой «Проверить скорость» после скачивания.",
+                            "This phone has two fast cores: the smart model will write about 2–3 words a second, the light one three times faster. “Check the speed” after the download tells for sure."),
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (s is LocalBrain.State.Failed) Text(s.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
                     Button(onClick = { if (metered(ctx)) confirm = true else LocalBrain.download(choice) }, modifier = Modifier.fillMaxWidth().testTag("local_brain_download")) {
                         Text(tr("Скачать (${mb(choice.approxMb.toLong() * 1_000_000)})", "Download (${mb(choice.approxMb.toLong() * 1_000_000)})"))
@@ -98,8 +102,8 @@ fun LocalBrainCard() {
                         Switch(checked = enabled, onCheckedChange = { enabled = it; LocalBrain.setEnabled(it) }, modifier = Modifier.testTag("local_brain_enabled"))
                     }
                     if (LocalBrain.isLegacy(s.model)) Text(
-                        tr("Появилась модель лучше — ${LocalBrain.suggested().title}: она заметно умнее по-русски. Удали эту и скачай новую.",
-                            "A better model is available — ${LocalBrain.suggested().title}: noticeably smarter. Delete this one and download the new one."),
+                        tr("Есть модель лучше — ${LocalBrain.suggested().title} (${mb(LocalBrain.suggested().approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Удали эту и скачай новую.",
+                            "A better model is available — ${LocalBrain.suggested().title} (${mb(LocalBrain.suggested().approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Delete this one and download the new one."),
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     speed?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     Row {
