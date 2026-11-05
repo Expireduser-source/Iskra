@@ -30,6 +30,9 @@ object LlamaNative {
     @JvmStatic external fun lastRead(handle: Long): IntArray
     @JvmStatic external fun saveSession(handle: Long, path: String): Boolean
     @JvmStatic external fun loadSession(handle: Long, path: String): Int
+    @JvmStatic external fun setThreads(handle: Long, gen: Int, batch: Int)
+    /** [reading, writing] tokens per second with the current threads; empties the dialogue cache. */
+    @JvmStatic external fun bench(handle: Long, nPrompt: Int, nGen: Int): FloatArray
     /** "qwen2 1.5B Q4_K - Medium · ctx 4096 · 4 threads". */
     @JvmStatic external fun info(handle: Long): String
 }
@@ -56,7 +59,14 @@ interface LlamaEngine : AutoCloseable {
     fun saveSession(path: String): Boolean = false
     /** Restores a cache saved by [saveSession] with the same model; the number of tokens it holds (0: nothing). */
     fun loadSession(path: String): Int = 0
+    /** Threads for writing the answer and for reading a prompt. */
+    fun setThreads(gen: Int, batch: Int) {}
+    /** Speed with the current threads on throwaway tokens (the dialogue cache is emptied); null if unknown. */
+    fun bench(nPrompt: Int, nGen: Int): EngineSpeed? = null
 }
+
+/** Tokens per second: reading a prompt (many at once) and writing an answer (one at a time). */
+data class EngineSpeed(val read: Double, val write: Double)
 
 class NativeLlamaEngine private constructor(private val handle: Long, override val contextSize: Int) : LlamaEngine {
     @Volatile private var closed = false
@@ -70,6 +80,9 @@ class NativeLlamaEngine private constructor(private val handle: Long, override v
     override fun lastRead(): Pair<Int, Int> = if (closed) 0 to 0 else LlamaNative.lastRead(handle).let { it[0] to it[1] }
     override fun saveSession(path: String): Boolean = !closed && LlamaNative.saveSession(handle, path)
     override fun loadSession(path: String): Int = if (closed) 0 else LlamaNative.loadSession(handle, path)
+    override fun setThreads(gen: Int, batch: Int) { if (!closed) LlamaNative.setThreads(handle, gen, batch) }
+    override fun bench(nPrompt: Int, nGen: Int): EngineSpeed? =
+        if (closed) null else LlamaNative.bench(handle, nPrompt, nGen).let { if (it[0] > 0f && it[1] > 0f) EngineSpeed(it[0].toDouble(), it[1].toDouble()) else null }
 
     override fun cancel() { if (!closed) LlamaNative.cancel(handle) }
 

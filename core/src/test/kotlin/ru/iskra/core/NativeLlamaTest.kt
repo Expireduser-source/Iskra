@@ -144,6 +144,24 @@ class NativeLlamaTest {
         }
     }
 
+    /** The phone measures its own speed: a benchmark with throwaway tokens, threads changed on the fly, then a pick. */
+    @Test
+    fun theModelMeasuresItsSpeedAndTakesTheBestThreads() {
+        assumeTrue("ISKRA_LLAMA_LIB / ISKRA_LLAMA_MODEL not set", lib != null && model != null)
+        System.load(lib!!)
+        NativeLlamaEngine.open(model!!, 512, 2)!!.use { e ->
+            val speed = e.bench(64, 8)!!
+            assertTrue(speed.read > 0 && speed.write > 0, "$speed")
+            e.setThreads(1, 2)
+            assertTrue(e.info.endsWith("1 threads (reading: 2)"), e.info)
+            val r = ru.iskra.core.llm.local.ThreadTuning.calibrate(e, fast = 1, all = 2, nPrompt = 64, nGen = 8)!!
+            println("tuning: ${r.tried} -> writing ${r.gen}, reading ${r.batch}")
+            assertEquals(setOf(1, 2), r.tried.keys)
+            // Still answers after the benchmark emptied its cache.
+            assertTrue(e.generate(ChatFormat.CHATML.render(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Привет")))), 4, 0f) { true }.isNotEmpty())
+        }
+    }
+
     /**
      * The model leaves memory after a pause; its dialogue cache is saved and restored with the next load, so the first
      * message after the pause doesn't read the whole dialogue again — for both kinds of model.

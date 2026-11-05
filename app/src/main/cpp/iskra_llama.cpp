@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <mutex>
@@ -48,7 +49,8 @@ struct Session {
     std::mutex busy;
     int n_ctx = 0;
     int n_batch = 256;
-    int n_threads = 4;
+    int n_threads = 4;                // for writing the answer (one token at a time)
+    int n_threads_batch = 4;          // for reading the prompt (many tokens at once)
     bool can_cut = true;              // false: recurrent layers, the state can only go back to a checkpoint
     bool can_shift = false;           // cache positions can be moved (turns that stay when older ones leave)
     Checkpoint checkpoint;            // the end of the dialogue before the newest message
@@ -276,6 +278,7 @@ Java_ru_iskra_core_llm_local_LlamaNative_load(JNIEnv * env, jclass, jstring jpat
     s->vocab = llama_model_get_vocab(model);
     s->n_ctx = static_cast<int>(llama_n_ctx(ctx));
     s->n_threads = n_threads;
+    s->n_threads_batch = n_threads;
     s->can_cut = !llama_model_is_recurrent(model) && !llama_model_is_hybrid(model);
     s->can_shift = s->can_cut && llama_memory_can_shift(llama_get_memory(ctx));
     return reinterpret_cast<jlong>(s);
@@ -447,6 +450,57 @@ Java_ru_iskra_core_llm_local_LlamaNative_loadSession(JNIEnv * env, jclass, jlong
     return static_cast<jint>(n);
 }
 
+// Threads for writing (one token at a time) and for reading a prompt (many at once). Phones mix fast and slow cores, so
+// the best numbers differ from phone to phone: the app measures them with bench().
+JNIEXPORT void JNICALL
+Java_ru_iskra_core_llm_local_LlamaNative_setThreads(JNIEnv *, jclass, jlong handle, jint gen, jint batch) {
+    auto * s = reinterpret_cast<Session *>(handle);
+    if (s == nullptr || gen < 1 || batch < 1) return;
+    std::lock_guard<std::mutex> guard(s->busy);
+    llama_set_n_threads(s->ctx, gen, batch);
+    s->n_threads = gen;
+    s->n_threads_batch = batch;
+}
+
+// Speed with the current threads, in tokens per second: [reading n_prompt tokens, writing n_gen tokens one by one].
+// Uses throwaway tokens, so the dialogue cache is emptied (checkpoints stay). Zeros if cancelled or failed.
+JNIEXPORT jfloatArray JNICALL
+Java_ru_iskra_core_llm_local_LlamaNative_bench(JNIEnv * env, jclass, jlong handle, jint n_prompt, jint n_gen) {
+    auto * s = reinterpret_cast<Session *>(handle);
+    jfloat out[2] = {0.0f, 0.0f};
+    if (s != nullptr && n_prompt > 1 && n_gen > 0 && n_prompt + n_gen < s->n_ctx) {
+        std::lock_guard<std::mutex> guard(s->busy);
+        s->cancel = false;
+        forget_cache(s);
+        const int n_vocab = llama_vocab_n_tokens(s->vocab);
+        std::vector<llama_token> toks(static_cast<size_t>(n_prompt));
+        uint32_t x = 2463534242u;  // xorshift: the same "text" on every phone
+        for (auto & t : toks) { x ^= x << 13; x ^= x >> 17; x ^= x << 5; t = static_cast<llama_token>(1 + x % static_cast<uint32_t>(n_vocab - 1)); }
+        bool ok = true;
+        const auto t0 = std::chrono::steady_clock::now();
+        for (int i = 0; ok && i < n_prompt; i += s->n_batch) {
+            const int n = std::min(s->n_batch, n_prompt - i);
+            ok = decode(s, toks.data() + i, n, i, i + n == n_prompt);
+        }
+        const auto t1 = std::chrono::steady_clock::now();
+        for (int i = 0; ok && i < n_gen; i++) {
+            const llama_token t = toks[static_cast<size_t>(i) % toks.size()];
+            ok = decode(s, &t, 1, n_prompt + i, true);
+        }
+        const auto t2 = std::chrono::steady_clock::now();
+        forget_cache(s);
+        if (ok) {
+            const double pp = std::chrono::duration<double>(t1 - t0).count();
+            const double tg = std::chrono::duration<double>(t2 - t1).count();
+            out[0] = pp > 0 ? static_cast<jfloat>(n_prompt / pp) : 0.0f;
+            out[1] = tg > 0 ? static_cast<jfloat>(n_gen / tg) : 0.0f;
+        }
+    }
+    jfloatArray arr = env->NewFloatArray(2);
+    if (arr != nullptr) env->SetFloatArrayRegion(arr, 0, 2, out);
+    return arr;
+}
+
 // [tokens in the last prompt, how many of them came from the cache]
 JNIEXPORT jintArray JNICALL
 Java_ru_iskra_core_llm_local_LlamaNative_lastRead(JNIEnv * env, jclass, jlong handle) {
@@ -469,7 +523,8 @@ Java_ru_iskra_core_llm_local_LlamaNative_info(JNIEnv * env, jclass, jlong handle
     char desc[160] = {0};
     llama_model_desc(s->model, desc, sizeof(desc));
     char buf[256];
-    snprintf(buf, sizeof(buf), "%s · ctx %d · %d threads", desc, s->n_ctx, s->n_threads);
+    if (s->n_threads_batch == s->n_threads) snprintf(buf, sizeof(buf), "%s · ctx %d · %d threads", desc, s->n_ctx, s->n_threads);
+    else snprintf(buf, sizeof(buf), "%s · ctx %d · %d threads (reading: %d)", desc, s->n_ctx, s->n_threads, s->n_threads_batch);
     return to_jstring(env, buf);
 }
 

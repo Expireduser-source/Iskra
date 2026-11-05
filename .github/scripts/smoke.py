@@ -234,6 +234,34 @@ def local_brain_check(s, api):
         annotate("notice", f"On-phone model, API {api}", f"{reply}; {loaded or 'load time not logged'}; {got // 1_000_000} MB model")
     else:
         annotate("error", f"On-phone model, API {api}", f"no reply in 6 minutes; {loaded or 'the model was not loaded'}")
+        return
+
+    # «Check the speed»: the app measures this device itself and picks threads for reading and for writing.
+    if not s.tap_id("tab_2", quiet=True):
+        return
+    for _ in range(10):
+        if s.find("local_brain_speed") is not None:
+            break
+        sh("input swipe 540 1700 540 700 400")
+        time.sleep(1.5)
+    if not s.tap_id("local_brain_speed", wait=5):
+        return
+    t = time.time()
+    tuned = checked = None
+    while time.time() - t < 420:
+        journal = sh(f"run-as {PKG} cat files/diag.log", timeout=60)
+        m = re.search(r"(?:Подбор потоков|Thread tuning) [^\n]+", journal)
+        tuned = m.group(0) if m else tuned
+        m = re.search(r"(?:Проверка скорости|Speed check) [^\n]+", journal)
+        checked = m.group(0) if m else checked
+        if checked:
+            break
+        time.sleep(5)
+    s.shot("local-brain-speed")
+    if checked:
+        annotate("notice", f"On-phone model speed, API {api}", f"{tuned or 'no tuning line'}\n{checked}")
+    else:
+        annotate("warning", f"On-phone model speed, API {api}", f"no speed check in 7 minutes; {tuned or 'no tuning line'}")
 
 
 # Models to compare in the evaluation: the catalog's and candidates for it (a missing repo or file is skipped).

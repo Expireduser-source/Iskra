@@ -1,0 +1,2 @@
+• Iskra measures the model's speed on your phone itself and picks how many cores to use for reading and for answering
+• It happens right after the model is downloaded, without your help; the result is shown on the model card

@@ -30,6 +30,7 @@ import ru.iskra.core.llm.local.detect
 import ru.iskra.core.llm.local.LlamaEngine
 import ru.iskra.core.llm.local.LocalLlmProvider
 import ru.iskra.core.llm.local.NativeLlamaEngine
+import ru.iskra.core.llm.local.ThreadTuning
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
@@ -253,6 +254,8 @@ object LocalBrain {
         unload()
         _state.value = State.Ready(model, target.length())
         Diag.i("local", tr("Модель на телефоне готова: ", "On-phone model ready: ") + model.id + " (${target.length() / 1_000_000} MB)")
+        // Right away, while the owner looks at the card: which threads suit this phone (seconds, once per model).
+        scope.launch { runCatching { tune() }.onFailure { Diag.w("local", "tune: ${it.message}") } }
     }
 
     private suspend fun currentCoroutineContextActive() = kotlinx.coroutines.currentCoroutineContext().isActive
@@ -320,6 +323,7 @@ object LocalBrain {
      */
     suspend fun speedCheck(): SpeedCheck? {
         val st = state.value as? State.Ready ?: return null
+        val tunedNow = runCatching { tune() }.getOrNull()
         val e = engine() ?: return null
         val prompt = formatOf(st.model).render(LlmRequest(
             system = tr("Ты — Искра, кошкодевочка в телефоне. Отвечай тепло и коротко.", "You are Iskra, a cat-girl in the phone. Answer warmly and briefly."),
@@ -342,6 +346,7 @@ object LocalBrain {
         val lighter = models.indexOfFirst { it.id == st.model.id } > 0
         val text = tr("Первые слова через ${"%.1f".format(java.util.Locale.getDefault(), first / 1000.0)} с, дальше ≈ ${"%.1f".format(java.util.Locale.getDefault(), wps)} слова в секунду — $verdict.",
             "First words after ${"%.1f".format(java.util.Locale.getDefault(), first / 1000.0)} s, then ≈ ${"%.1f".format(java.util.Locale.getDefault(), wps)} words a second — $verdict.") +
+            (tunedNow?.let { " " + tunedText(it.gen, it.batch, it.speed.read, it.speed.write) } ?: "") +
             if (slow && lighter) tr(" Для этого телефона лучше модель полегче: удали эту и скачай «Лёгкий».", " A lighter model suits this phone better: delete this one and download “Light”.") else ""
         Diag.i("local", tr("Проверка скорости (${st.model.id}): ", "Speed check (${st.model.id}): ") + text)
         return SpeedCheck(first, wps, slow, text)
@@ -350,6 +355,52 @@ object LocalBrain {
     private suspend fun engine(): LlamaEngine? {
         val st = state.value as? State.Ready ?: return null
         return engineLock.withLock { loaded(st) }
+    }
+
+    /** Threads measured on this phone for a model, and the speed they gave (tokens per second). */
+    private class Tuned(val gen: Int, val batch: Int, val read: Double, val write: Double)
+
+    private fun tuned(m: Model): Tuned? = prefs().getString("tuned:${m.id}", null)?.split(',')?.let { p ->
+        runCatching { Tuned(p[0].toInt(), p[1].toInt(), p[2].toDouble(), p[3].toDouble()) }.getOrNull()
+    }
+
+    private val _tuning = MutableStateFlow(false)
+    /** True while the threads are being measured (the card says so). */
+    val tuning: StateFlow<Boolean> = _tuning
+
+    /**
+     * Measures which threads suit this phone and this model (reading and writing separately; seconds, a few tens for a
+     * 4B model on a mid-range phone), remembers and applies them. Phones mix fast and slow cores, so this is measured,
+     * not guessed. Empties the model's dialogue cache.
+     */
+    suspend fun tune(): ThreadTuning.Result? {
+        val st = state.value as? State.Ready ?: return null
+        _tuning.value = true
+        try {
+            return engineLock.withLock {
+                val e = loaded(st) ?: return@withLock null
+                val all = Runtime.getRuntime().availableProcessors()
+                val r = withContext(Dispatchers.IO) { ThreadTuning.calibrate(e, performanceCores().coerceIn(1, all), all) } ?: return@withLock null
+                prefs().edit().putString("tuned:${st.model.id}", "${r.gen},${r.batch},${r.speed.read},${r.speed.write}").apply()
+                Diag.i("local", tr("Подбор потоков (${st.model.id}): ", "Thread tuning (${st.model.id}): ") +
+                    r.tried.entries.joinToString("; ") { (t, v) ->
+                        "$t: " + tr("чтение %.0f, ответ %.1f ток/с", "reading %.0f, writing %.1f tok/s").format(java.util.Locale.ROOT, v.read, v.write)
+                    } + tr(" → для ответа ${r.gen}, для чтения ${r.batch}", " → ${r.gen} for writing, ${r.batch} for reading"))
+                r
+            }
+        } finally {
+            _tuning.value = false
+        }
+    }
+
+    private fun tunedText(gen: Int, batch: Int, read: Double, write: Double): String = tr(
+        "На этом телефоне модель читает ≈ ${read.toInt()} и пишет ≈ ${"%.1f".format(java.util.Locale.getDefault(), write)} токена в секунду (потоков: $gen для ответа, $batch для чтения).",
+        "On this phone the model reads ≈ ${read.toInt()} and writes ≈ ${"%.1f".format(java.util.Locale.getDefault(), write)} tokens a second ($gen threads for writing, $batch for reading).")
+
+    /** What was measured for the ready model, for the card; null before the first measurement. */
+    fun tunedSpeed(): String? {
+        val st = state.value as? State.Ready ?: return null
+        return tuned(st.model)?.let { tunedText(it.gen, it.batch, it.read, it.write) }
     }
 
     private suspend fun loaded(st: State.Ready): LlamaEngine? {
@@ -365,6 +416,7 @@ object LocalBrain {
             val e = engine
             if (e == null) Diag.w("local", tr("Модель не загрузилась в память", "The model didn't load into memory"))
             else {
+                tuned(st.model)?.let { e.setThreads(it.gen, it.batch) }
                 // Where the last conversation stopped: the next message doesn't read the whole dialogue again.
                 val restored = if (session.exists()) withContext(Dispatchers.IO) { e.loadSession(session.path) } else 0
                 Diag.i("local", tr("Модель загружена за ", "Model loaded in ") + "${System.currentTimeMillis() - t0} ms: ${e.info}" +

@@ -46,6 +46,7 @@ import java.util.Locale
 fun LocalBrainCard() {
     val ctx = LocalContext.current
     val state by LocalBrain.state.collectAsState()
+    val tuning by LocalBrain.tuning.collectAsState()
     var choice by remember { mutableStateOf(runCatching { LocalBrain.suggested() }.getOrNull() ?: LocalBrain.models.first()) }
     var confirm by remember { mutableStateOf(false) }
     var enabled by remember { mutableStateOf(LocalBrain.enabled()) }
@@ -105,9 +106,13 @@ fun LocalBrainCard() {
                         tr("Есть модель лучше — ${LocalBrain.suggested().title} (${mb(LocalBrain.suggested().approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Удали эту и скачай новую.",
                             "A better model is available — ${LocalBrain.suggested().title} (${mb(LocalBrain.suggested().approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Delete this one and download the new one."),
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
-                    speed?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    if (tuning) Row(verticalAlignment = Alignment.CenterVertically) {
+                        LinearProgressIndicator(Modifier.weight(1f))
+                        Text(tr("  Подбираю настройки под этот телефон…", "  Tuning for this phone…"), fontSize = 12.sp)
+                    }
+                    (speed ?: if (tuning) null else LocalBrain.tunedSpeed())?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     Row {
-                        TextButton(enabled = speed != CHECKING, onClick = {
+                        TextButton(enabled = speed != CHECKING && !tuning, onClick = {
                             speed = CHECKING
                             scope.launch { speed = runCatching { LocalBrain.speedCheck()?.text }.getOrNull() ?: tr("Не получилось загрузить модель.", "Couldn't load the model.") }
                         }, modifier = Modifier.testTag("local_brain_speed")) { Text(tr("Проверить скорость", "Check the speed")) }
