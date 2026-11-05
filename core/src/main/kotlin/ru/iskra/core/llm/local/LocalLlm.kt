@@ -217,6 +217,7 @@ class LocalLlmProvider(
         val t0 = System.nanoTime()
         var firstMs = -1L
         var pieces = 0
+        var started = false  // stray punctuation before the first word is dropped (", , , Мрр" → "Мрр")
         val text = withContext(Dispatchers.IO) {
             val scope = currentCoroutineContext()
             suspendCancellableCoroutine<String> { cont ->
@@ -228,7 +229,8 @@ class LocalLlmProvider(
                         raw.append(piece)
                         val stop = format.stops.firstOrNull { raw.contains(it) }
                         if (stop != null) return@generate false
-                        val visible = think.feed(piece).let { if (guard) stripCjk(it) else it }
+                        var visible = think.feed(piece).let { if (guard) stripCjk(it) else it }
+                        if (!started) { visible = trimLead(visible); started = visible.isNotEmpty() }
                         if (visible.isNotEmpty() && !hold) onText(visible)
                         scope.isActive
                     }
@@ -245,12 +247,15 @@ class LocalLlmProvider(
         var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
         if (hold) {
             reply = reply.substringAfterLast("<channel|>").trim()
-            if (reply.isNotEmpty()) onText(if (guard) stripCjk(reply) else reply)
+            if (reply.isNotEmpty()) onText(trimLead(if (guard) stripCjk(reply) else reply))
         }
-        LlmResponse(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, emptyList())
+        LlmResponse(trimLead(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply).trim(), emptyList())
     }
 
     companion object {
+        /** Spaces and punctuation that can't start a reply (left over when a model begins with stray symbols). */
+        fun trimLead(s: String): String = s.trimStart { it.isWhitespace() || it in ",，、;；:：" }
+
         /** Chinese, Japanese and Korean letters. */
         fun isCjk(c: Char): Boolean {
             if (c.code < 0x2E80) return false

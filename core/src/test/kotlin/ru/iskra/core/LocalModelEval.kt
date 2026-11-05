@@ -68,7 +68,14 @@ class LocalModelEval {
             engine.use { e ->
                 for ((lang, script) in listOf(Lang.RU to ru, Lang.EN to en)) withLang(lang) {
                     val stats = ArrayList<GenStats>()
-                    val provider = LocalLlmProvider({ e }, ChatFormat.valueOf(format), "local:$name", onStats = { stats += it })
+                    var raw = ""
+                    // The model's own text before any cleaning, to see what it really began with.
+                    val recording = object : ru.iskra.core.llm.local.LlamaEngine by e {
+                        override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, head: Int,
+                                              onPiece: (String) -> Boolean): String =
+                            e.generate(prompt, maxTokens, temperature, stable, head, onPiece).also { raw = it }
+                    }
+                    val provider = LocalLlmProvider({ recording }, ChatFormat.valueOf(format), "local:$name", onStats = { stats += it })
                     val agent = CompanionAgent(
                         persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
                         stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
@@ -77,12 +84,17 @@ class LocalModelEval {
                     doc.append("\n## ${lang.name}\n")
                     for (q in script) {
                         val before = stats.size
+                        raw = ""
                         val r = runBlocking { agent.handle(q) }
                         val g = stats.drop(before).lastOrNull()
                         val how = if (g == null) "local answer" else
                             "first words %.1f s, %.1f s total, %d pieces; read %d new of %d prompt tokens".format(java.util.Locale.ROOT,
                                 g.firstPieceMs / 1000.0, g.totalMs / 1000.0, g.pieces, g.newTokens, g.promptTokens)
-                        doc.append("\n**Q:** $q\n\n**A** [${r.emotion.name.lowercase()}] ($how): ${r.text}\n")
+                        val start = raw.trimStart().take(24)
+                        val odd = start.isNotEmpty() && !(start[0].isLetterOrDigit() || start[0] in "[«\"*(—-…")
+                        val note = if (!odd) "" else "; raw start: `" + start.map { c ->
+                            if (c.code < 32 || c.code >= 0x2E80) "\\u%04x".format(c.code) else c.toString() }.joinToString("") + "`"
+                        doc.append("\n**Q:** $q\n\n**A** [${r.emotion.name.lowercase()}] ($how$note): ${r.text}\n")
                     }
                     fun median(xs: List<Double>) = xs.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
                     summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.0f |\n".format(java.util.Locale.ROOT,

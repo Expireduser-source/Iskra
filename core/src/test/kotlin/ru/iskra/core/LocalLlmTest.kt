@@ -89,6 +89,16 @@ class LocalLlmTest {
     }
 
     @Test
+    fun strayPunctuationBeforeTheFirstWordIsDropped() = runTest {
+        // Gemma 3 4B began replies with stray symbols that the Chinese filter turned into ", , ,".
+        val p = LocalLlmProvider({ FakeEngine("，", "很 ，", " , ", "[happy] Мрр, привет!") }, ChatFormat.GEMMA, "local:test")
+        val heard = StringBuilder()
+        assertEquals("[happy] Мрр, привет!", p.stream(request) { heard.append(it) }.text)
+        assertEquals("[happy] Мрр, привет!", heard.toString())
+        assertEquals("…ну ладно", LocalLlmProvider.trimLead(" …ну ладно"))
+    }
+
+    @Test
     fun strayChineseIsDroppedUnlessThePersonWroteIt() = runTest {
         val p = LocalLlmProvider({ FakeEngine("[happy] Это очень 很好 хорошая идея", "，мрр!") }, ChatFormat.CHATML, "local:test")
         val heard = StringBuilder()

@@ -240,6 +240,10 @@ def local_brain_check(s, api):
 EVAL_CANDIDATES = [
     # (name, repo, file patterns in order of preference, chat format if the file's own template can't tell)
     ("gemma-3-1b", "ggml-org/gemma-3-1b-it-GGUF", [r"(?i)gemma-3-1b-it-q4_k_m\.gguf$"], "GEMMA"),
+    # Quantization-aware trained by Google for 4-bit (Q4_0): usually closer to the full model at the same size.
+    ("gemma-3-1b-qat", "ggml-org/gemma-3-1b-it-qat-GGUF", [r"(?i)q4_0\.gguf$"], "GEMMA"),
+    ("gemma-3-4b-qat", "ggml-org/gemma-3-4b-it-qat-GGUF", [r"(?i)q4_0\.gguf$"], "GEMMA"),
+    ("gemma-3-4b", "ggml-org/gemma-3-4b-it-GGUF", [r"(?i)gemma-3-4b-it-q4_k_m\.gguf$"], "GEMMA"),
     ("qwen3.5-2b", "unsloth/Qwen3.5-2B-GGUF", [r"(?i)qwen3\.5-2b-q4_k_m\.gguf$"], "CHATML_NO_THINK"),
     ("qwen3.5-4b", "unsloth/Qwen3.5-4B-GGUF", [r"(?i)qwen3\.5-4b-q4_k_m\.gguf$"], "CHATML_NO_THINK"),
 ]
@@ -302,7 +306,7 @@ def hf_json(url):
         return json.load(r)
 
 
-def model_eval(out, threads=4, arch=""):
+def model_eval(out, threads=4, arch="", minutes=24):
     """
     The on-phone models judged on a real conversation: the app's own pipeline (agent, compact prompt, dialogue cache,
     JNI, llama.cpp) on this computer, for every candidate model. Transcripts and timings go to out/eval.
@@ -382,7 +386,7 @@ def model_eval(out, threads=4, arch=""):
     for name, repo, patterns, fmt in EVAL_CANDIDATES:
         if name in done:
             continue
-        if time.time() - t_start > 24 * 60:
+        if time.time() - t_start > minutes * 60:
             summary.append(f"| {name} | — | skipped: out of time | | | |")
             continue
         try:
@@ -440,8 +444,8 @@ def main():
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--arch", default="")
     a = ap.parse_args()
-    if a.eval_only:
-        model_eval(a.out, a.threads, a.arch)
+    if a.eval_only:  # its own job (50 minutes): more time for more models than next to the emulator
+        model_eval(a.out, a.threads, a.arch, minutes=38)
         return
     if not a.apk or not a.api:
         ap.error("--apk and --api are needed for the emulator check")
