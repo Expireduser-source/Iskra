@@ -135,6 +135,18 @@ class LocalLlmTest {
     }
 
     @Test
+    fun aReplyBeginsWithMrrAtMostOnceInThree() = runTest {
+        // Small models began every reply with «Мрр,», copying their own history.
+        val p = LocalLlmProvider({ FakeEngine("[hap", "py] М", "рр, при", "вет!") }, ChatFormat.GEMMA, "local:test")
+        val got = (1..4).map { val heard = StringBuilder(); p.stream(request) { heard.append(it) }.text to heard.toString() }
+        assertEquals(listOf("[happy] Мрр, привет!", "[happy] Привет!", "[happy] Привет!", "[happy] Мрр, привет!"), got.map { it.first })
+        assertEquals(got.map { it.first }, got.map { it.second })  // what's heard is what's kept
+        assertEquals("[happy] Мрр!", LocalLlmProvider.cleanStart("[happy] Мрр!", true))  // a reply that is only a purr stays
+        assertEquals("Мурка спит.", LocalLlmProvider.cleanStart("Мурка спит.", true))
+        assertEquals("Okay!", LocalLlmProvider.cleanStart("Mrr... okay!", true))
+    }
+
+    @Test
     fun strayChineseIsDroppedUnlessThePersonWroteIt() = runTest {
         val p = LocalLlmProvider({ FakeEngine("[happy] Это очень 很好 хорошая идея", "，мрр!") }, ChatFormat.CHATML, "local:test")
         val heard = StringBuilder()
@@ -148,19 +160,20 @@ class LocalLlmTest {
     @Test
     fun theNextMessageReusesTheWholeCachedDialogue() = withLang(Lang.RU) {
         runTest {
-            val engine = FakeEngine("[happy] Мрр, привет!")
+            // (A reply without «мрр»: a leading one may be dropped from the history — see aReplyBeginsWithMrrAtMostOnceInThree.)
+            val engine = FakeEngine("[happy] Хорошо, привет!")
             val a = agent(null, LocalLlmProvider({ engine }, ChatFormat.CHATML, "local:test"))
             a.handle("меня зовут Аня")
             a.handle("как дела?")
             a.handle("что посоветуешь почитать?")
             val (p2, p3) = engine.prompts[1] to engine.prompts[2]
             // Everything the model saw (and wrote) last time is the start of the next prompt: only the new message is read.
-            val before = p2 + "[happy] Мрр, привет!"
+            val before = p2 + "[happy] Хорошо, привет!"
             assertTrue(p3.startsWith(before), "the cache breaks at ${before.commonPrefixWith(p3).length} of ${before.length}")
             assertTrue(p2.contains("Человека зовут Аня"))
             // A long talk: the window of the dialogue moves in steps, so most messages still reuse the cache.
             repeat(12) { a.handle("ещё вопрос номер $it?") }
-            val kept = engine.prompts.zipWithNext().count { (prev, next) -> next.startsWith(prev + "[happy] Мрр, привет!") }
+            val kept = engine.prompts.zipWithNext().count { (prev, next) -> next.startsWith(prev + "[happy] Хорошо, привет!") }
             assertTrue(kept >= 9, "the cache held in $kept of ${engine.prompts.size - 1} messages")
         }
     }

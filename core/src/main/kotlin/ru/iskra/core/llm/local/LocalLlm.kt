@@ -199,6 +199,8 @@ class LocalLlmProvider(
 ) : LlmProvider {
     override val onDevice: Boolean get() = true
     private val lock = Mutex()
+    /** Replies since the last one with a «мрр»: small models began every reply with it, copying their own history. */
+    private var sincePurr = 3
 
     override suspend fun complete(request: LlmRequest): LlmResponse = stream(request) {}
 
@@ -217,7 +219,11 @@ class LocalLlmProvider(
         val t0 = System.nanoTime()
         var firstMs = -1L
         var pieces = 0
-        var started = false  // stray punctuation before the first word is dropped (", , , Мрр" → "Мрр")
+        // The beginning is held until its first word is complete, so stray punctuation (", , , Мрр" → "Мрр") and an
+        // over-used «Мрр,» (a reply may begin with it only if the two before didn't) go before anything is shown or spoken.
+        val dropPurr = sincePurr < 2
+        val lead = StringBuilder()
+        var leadDone = false
         val text = withContext(Dispatchers.IO) {
             val scope = currentCoroutineContext()
             suspendCancellableCoroutine<String> { cont ->
@@ -230,7 +236,14 @@ class LocalLlmProvider(
                         val stop = format.stops.firstOrNull { raw.contains(it) }
                         if (stop != null) return@generate false
                         var visible = think.feed(piece).let { if (guard) stripCjk(it) else it }
-                        if (!started) { visible = trimLead(visible); started = visible.isNotEmpty() }
+                        if (!leadDone) {
+                            lead.append(visible)
+                            val trimmed = trimLead(lead.toString())
+                            visible = if (trimmed.length < 40 && !LEAD_READY.containsMatchIn(trimmed)) "" else {
+                                leadDone = true
+                                cleanStart(trimmed, dropPurr)
+                            }
+                        }
                         if (visible.isNotEmpty() && !hold) onText(visible)
                         scope.isActive
                     }
@@ -241,20 +254,39 @@ class LocalLlmProvider(
                 if (cont.isActive) cont.resume(result)
             }
         }
+        if (!leadDone && !hold) cleanStart(lead.toString(), dropPurr).takeIf { it.isNotEmpty() }?.let(onText)
         val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
         val (promptTokens, reused) = e.lastRead()
         onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000, promptTokens, promptTokens - reused))
         var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
         if (hold) {
             reply = reply.substringAfterLast("<channel|>").trim()
-            if (reply.isNotEmpty()) onText(trimLead(if (guard) stripCjk(reply) else reply))
+            if (reply.isNotEmpty()) onText(cleanStart(if (guard) stripCjk(reply) else reply, dropPurr))
         }
-        LlmResponse(trimLead(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply).trim(), emptyList())
+        val final = cleanStart(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()
+        sincePurr = if (PURR.containsMatchIn(final)) 0 else sincePurr + 1
+        LlmResponse(final, emptyList())
     }
 
     companion object {
         /** Spaces and punctuation that can't start a reply (left over when a model begins with stray symbols). */
         fun trimLead(s: String): String = s.trimStart { it.isWhitespace() || it in ",，、;；:：" }
+
+        /** The first word (after a mood tag) is complete. */
+        private val LEAD_READY = Regex("""^(?:\[[^\]\n]*]\s*)?[^\s\[]+[\s,.!?…—–-]""")
+        // (?iu): Java ignores case for Cyrillic only with the Unicode flag.
+        private val PURR_START = Regex("""(?iu)^((?:\[[^\]\n]{1,24}]\s*)?)(?:м+р+|мур+|m+r+|purr+)(?![\p{L}])[\s,.!?…—–-]*""")
+        private val PURR = Regex("""(?iu)(?<![\p{L}])(?:м+р+|мур+|m+r+|purr+)(?![\p{L}])""")
+
+        /** [trimLead], and with [dropPurr] a leading «Мрр,» (after the mood tag) — unless the reply is nothing else. */
+        fun cleanStart(s: String, dropPurr: Boolean): String {
+            val t = trimLead(s)
+            if (!dropPurr) return t
+            val m = PURR_START.find(t) ?: return t
+            val rest = t.substring(m.range.last + 1)
+            if (rest.isBlank()) return t
+            return m.groupValues[1] + rest.replaceFirstChar { it.uppercase() }
+        }
 
         /** Chinese, Japanese and Korean letters. */
         fun isCjk(c: Char): Boolean {

@@ -1,3 +1,3 @@
 • Questions about you ("what's my name and what am I learning?", "what's my cat's name?", "what do you know about me?") are answered exactly from memory — no small-model mix-ups
 • Remembers facts from a message of several sentences ("My name is Tom. I'm learning the guitar.")
-• Says "mrr" less often
+• Starts replies with "mrr" less often — about one in three instead of every one

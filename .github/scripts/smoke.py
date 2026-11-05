@@ -413,8 +413,12 @@ def model_eval(out, threads=4, arch="", minutes=24):
             gen = tmpl[i:i + 300].replace("\n", "⏎")
         print(f"{name}: {repo}/{file}, {os.path.getsize(path) // 1_000_000} MB in {time.time() - t:.0f} s, format {fmt}; template end: {gen}", flush=True)
         env["ISKRA_EVAL_MODELS"] = f"{name}|{path}|{fmt}"
-        r = subprocess.run(["./gradlew", "-q", ":core:test", "--tests", "ru.iskra.core.LocalModelEval", "--rerun"],
-                           env=env, capture_output=True, text=True, timeout=1800)
+        for attempt in range(2):  # a 5xx while Gradle downloads itself is not the model's fault: once more
+            r = subprocess.run(["./gradlew", "-q", ":core:test", "--tests", "ru.iskra.core.LocalModelEval", "--rerun"],
+                               env=env, capture_output=True, text=True, timeout=1800)
+            if r.returncode == 0 or not re.search(r"HTTP response code: 5\d\d|Could not install Gradle", r.stdout + r.stderr):
+                break
+            time.sleep(30)
         if r.returncode != 0:
             annotate("warning", f"Model evaluation {name}", (r.stdout + r.stderr)[-2000:])
         sp = os.path.join(ev, "summary.md")
