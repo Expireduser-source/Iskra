@@ -2,6 +2,7 @@ package ru.iskra.core.brain
 
 import ru.iskra.core.i18n.tr
 import ru.iskra.core.memory.MemoryItem
+import ru.iskra.core.memory.MemoryKind
 import ru.iskra.core.persona.Emotion
 import ru.iskra.core.skills.PhraseBank
 import java.time.LocalDateTime
@@ -300,6 +301,8 @@ object MemoryTalk {
     private val study = Regex("""^(?:а\s+)?я\s+(?:сейчас\s+)?учусь\s+((?:на|в|во)\s+[^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
     private val work = Regex("""^(?:а\s+)?я\s+работаю\s+((?:в|во|на)\s+[^,.;!?]{2,40}|[\p{L}-]{3,30}(?:ом|ем|ой|ей|ёй)(?:\s+[\p{L}-]{2,30})?)""", RegexOption.IGNORE_CASE)
     private val pet = Regex("""^у\s+меня\s+(?:есть\s+)?(кот|кошка|собака|пёс|пес|попугай|хомяк|кролик|черепаха)(?:\s*,)?\s+(?:по\s+имени|по\s+кличке|(?:его|её|ее)\s+зовут|зовут)\s+(\p{L}[\p{L}-]{1,20})""", RegexOption.IGNORE_CASE)
+    private val learning = Regex("""^(?:а\s+)?я\s+(?:сейчас\s+)?учусь\s+(\p{L}+(?:ть|ться)\s+[^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
+    private val learningEn = Regex("""^i(?:'m| am)\s+learning\s+([^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
     private val studyEn = Regex("""^i(?:'m| am)?\s+(?:study(?:ing)?|a student of)\s+([^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
     private val workEn = Regex("""^i\s+work\s+((?:as|at|in)\s+[^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
     private val petEn = Regex("""^i\s+have\s+an?\s+(cat|dog|parrot|hamster|rabbit|turtle)\s+(?:named|called)\s+(\p{L}[\p{L}-]{1,20})""", RegexOption.IGNORE_CASE)
@@ -322,10 +325,11 @@ object MemoryTalk {
             val c = m.groupValues[1].trim().split(' ').joinToString(" ") { cap(it) }
             return Fact(tr("Владелец живёт в $c", "The owner lives in $c"), 4, tr("Запомнила: ты живёшь в $c.", "Got it: you live in $c."))
         }
-        study.find(t)?.let { m ->
+        (study.find(t) ?: learning.find(t))?.let { m ->
             val what = m.groupValues[1].trim()
             return Fact("Владелец учится ${what}", 4, "Запомнила: ты учишься $what.")
         }
+        learningEn.find(t)?.let { m -> return Fact("The owner is learning ${m.groupValues[1].trim()}", 4, "Got it: you're learning ${m.groupValues[1].trim()}.") }
         work.find(t)?.let { m ->
             val what = m.groupValues[1].trim()
             return Fact("Владелец работает ${what}", 4, "Запомнила: ты работаешь $what.")
@@ -345,7 +349,89 @@ object MemoryTalk {
         return null
     }
 
+    /** Facts from every sentence of a message («Меня зовут Аня. Я учусь на врача.»), not only from a one-sentence one. */
+    fun facts(text: String): List<Fact> {
+        val whole = fact(text)
+        val parts = text.trim().split(Regex("""(?<=[.!?])\s+""")).map { it.trim() }.filter { it.isNotEmpty() }
+        if (parts.size < 2) return listOfNotNull(whole)
+        return parts.mapNotNull { fact(it) }.distinctBy { it.text }.ifEmpty { listOfNotNull(whole) }
+    }
+
     fun asksName(text: String) = askName.matches(text.trim())
+
+    private enum class Topic { NAME, STUDY, WORK, CITY, PET, BIRTHDAY, ALL }
+
+    // Each clause of a question about the owner; ё is read as е.
+    private val topics: List<Pair<Topic, Regex>> = listOf(
+        Topic.NAME to """(?:(?:ты\s+)?(?:помнишь|знаешь)\s+)?как\s+меня\s+зовут|(?:what's|what\s+is)\s+my\s+name|do\s+you\s+(?:know|remember)\s+my\s+name""",
+        Topic.STUDY to """(?:на\s+кого|где|чему)\s+я\s+учусь|что\s+я\s+изучаю|what\s+(?:do|am)\s+i\s+(?:study|studying|learn|learning)""",
+        Topic.WORK to """(?:где|кем)\s+я\s+работаю|where\s+do\s+i\s+work|what(?:'s|\s+is)\s+my\s+job""",
+        Topic.CITY to """(?:где|в\s+каком\s+городе)\s+я\s+живу|where\s+do\s+i\s+live""",
+        Topic.PET to """как\s+зовут\s+(?:мо(?:его|ю)\s+)?(?:кота|кошку|собаку|пса|попугая|хомяка|кролика|черепаху)|what(?:'s|\s+is)\s+my\s+(?:cat|dog|parrot|hamster|rabbit|turtle)(?:'s)?\s+name""",
+        Topic.BIRTHDAY to """когда\s+(?:у\s+меня\s+)?(?:мой\s+)?день\s+рождения|when(?:'s|\s+is)\s+my\s+birthday""",
+        Topic.ALL to """что\s+ты\s+(?:обо|про)\s+мне\s+знаешь|что\s+ты\s+знаешь\s+(?:обо|про)\s+мне|what\s+do\s+you\s+know\s+about\s+me""",
+    ).map { (t, re) -> t to Regex("^(?:а\\s+)?(?:$re)$", RegexOption.IGNORE_CASE) }
+
+    private val pets = mapOf("кота" to "кот", "кошку" to "кошка", "собаку" to "собака", "пса" to "пёс", "попугая" to "попугай",
+        "хомяка" to "хомяк", "кролика" to "кролик", "черепаху" to "черепаха")
+
+    /**
+     * A question about the owner that memory answers exactly: «как меня зовут и на кого я учусь?», «где я живу»,
+     * «как зовут моего кота», «что ты обо мне знаешь». Small models mixed this up («Ты называешь меня Искра?»). Every part
+     * of the message must be such a question and every fact must be in memory — otherwise null, and the model answers
+     * (it also sees the dialogue, where a fact may have just been told).
+     */
+    fun recall(text: String, memories: List<MemoryItem>): String? {
+        val q = text.trim().lowercase().replace('ё', 'е').replace('’', '\'')
+            .replace(Regex("""^(?:искра|iskra)[,!\s]+"""), "").replace(Regex("""^(?:скажи|напомни|tell\s+me)[,:\s]+"""), "")
+        val clauses = q.split(Regex("""\s*[?!.]+\s*|\s*,\s*(?:а\s+|и\s+|and\s+)?|\s+(?:и|а\s+также|and)\s+""")).map { it.trim() }.filter { it.isNotEmpty() }
+        if (clauses.isEmpty()) return null
+        val asked = clauses.map { c -> topics.firstOrNull { it.second.matches(c) }?.let { it.first to c } ?: return null }
+        val isRu = text.any { it in 'а'..'я' || it in 'А'..'Я' }
+        fun about(re: String) = Regex(re, RegexOption.IGNORE_CASE).let { r -> memories.sortedByDescending { it.createdAtMs }.firstNotNullOfOrNull { r.find(it.text) } }
+        val name = ownerName(memories)
+        val study = if (isRu) about("""^Владелец учится (.+)$""")?.let { "ты учишься ${it.groupValues[1]}" }
+            else about("""^The owner (studies|is learning) (.+)$""")?.let { if (it.groupValues[1] == "studies") "you study ${it.groupValues[2]}" else "you're learning ${it.groupValues[2]}" }
+        val work = if (isRu) about("""^Владелец работает (.+)$""")?.let { "ты работаешь ${it.groupValues[1]}" }
+            else about("""^The owner works (.+)$""")?.let { "you work ${it.groupValues[1]}" }
+        val city = if (isRu) about("""^Владелец живёт в (.+)$""")?.let { "ты живёшь в ${it.groupValues[1]}" }
+            else about("""^The owner lives in (.+)$""")?.let { "you live in ${it.groupValues[1]}" }
+        val birthday = about("""^(?:День рождения владельца|The owner's birthday): (.+)$""")?.let { if (isRu) "твой день рождения — ${it.groupValues[1]}" else "your birthday is ${it.groupValues[1]}" }
+        val petFacts = memories.mapNotNull { m ->
+            Regex("""^У владельца есть (\p{L}+) по имени (.+)$""").find(m.text)?.let { it.groupValues[1] to it.groupValues[2] }
+                ?: Regex("""^The owner has an? (\p{L}+) named (.+)$""").find(m.text)?.let { it.groupValues[1] to it.groupValues[2] }
+        }
+        fun pet(clause: String): String? {
+            val kind = if (isRu) pets.entries.firstOrNull { clause.contains(it.key) }?.value else Regex("""my\s+(\p{L}+)""").find(clause)?.groupValues?.get(1)
+            val (k, n) = petFacts.firstOrNull { (k, _) -> kind == null || k == kind || (kind == "пёс" && k in setOf("пес", "собака")) || (kind == "собака" && k in setOf("пёс", "пес")) } ?: return null
+            return if (isRu) "${mapOf("кот" to "твоего кота", "кошка" to "твою кошку", "собака" to "твою собаку", "пёс" to "твоего пса", "пес" to "твоего пса")[k] ?: "твоего питомца ($k)"} зовут $n"
+            else "your $k's name is $n"
+        }
+        val parts = ArrayList<String>()
+        for ((topic, clause) in asked) parts += when (topic) {
+            Topic.NAME -> name?.let { if (isRu) "тебя зовут $it" else "your name is $it" }
+            Topic.STUDY -> study
+            Topic.WORK -> work
+            Topic.CITY -> city
+            Topic.PET -> pet(clause)
+            Topic.BIRTHDAY -> birthday
+            Topic.ALL -> {
+                val known = listOfNotNull(name?.let { if (isRu) "тебя зовут $it" else "your name is $it" }, study, work, city, birthday) +
+                    petFacts.map { (k, n) -> if (isRu) "у тебя есть $k по имени $n" else "you have a $k named $n" }
+                if (known.isEmpty()) return null
+                val rest = memories.count { it.kind != MemoryKind.EPISODE } - known.size
+                return (if (isRu) "Вот что я о тебе знаю: " else "Here's what I know about you: ") + joined(known, isRu) + "." +
+                    if (rest > 0) (if (isRu) " И ещё записей: $rest — их видно на вкладке «Память»." else " And $rest more entries — see the Memory tab.") else ""
+            }
+        } ?: return null
+        return (if (isRu) "Мрр, помню: " else "Mrr, I remember: ") + joined(parts.distinct(), isRu) + "."
+    }
+
+    private fun joined(parts: List<String>, ru: Boolean): String = when (parts.size) {
+        1 -> parts[0]
+        2 -> parts[0] + (if (ru) ", и " else ", and ") + parts[1]
+        else -> parts.dropLast(1).joinToString(", ") + (if (ru) " и " else ", and ") + parts.last()
+    }
 
     /** The owner's name from memory ("Владельца зовут Аня" / "The owner's name is Anna"). */
     fun ownerName(memories: List<MemoryItem>): String? {

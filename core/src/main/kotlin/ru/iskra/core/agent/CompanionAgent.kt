@@ -267,11 +267,18 @@ class CompanionAgent(
         if (smallModel) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         MemoryTalk.forgetQuery(text)?.let { return forget(it) }
-        MemoryTalk.fact(text)?.let { f ->
-            // Kept even if the model is weak at tools; with a model the reply is the model's (it now sees the fact).
-            val r = memory.add(f.text, MemoryKind.FACT, MemorySource.USER_EXPLICIT, f.importance, clock())
-            if (!llmAvailable) return AgentReply(if (r is MemoryManager.AddResult.Rejected) tr("Не стану это запоминать: ${r.reason}.", "I won't remember that: ${r.reason}.") else f.reply, Emotion.HAPPY)
+        val facts = MemoryTalk.facts(text)
+        if (facts.isNotEmpty()) {
+            // Kept even if the model is weak at tools; with a model the reply is the model's (it now sees the facts).
+            val added = facts.map { f -> f to memory.add(f.text, MemoryKind.FACT, MemorySource.USER_EXPLICIT, f.importance, clock()) }
+            if (!llmAvailable) {
+                val kept = added.filter { it.second !is MemoryManager.AddResult.Rejected }.map { it.first.reply }
+                val refused = (added.firstOrNull { it.second is MemoryManager.AddResult.Rejected }?.second as? MemoryManager.AddResult.Rejected)?.reason
+                return AgentReply(kept.joinToString(" ").ifEmpty { tr("Не стану это запоминать: $refused.", "I won't remember that: $refused.") }, Emotion.HAPPY)
+            }
         }
+        // "Как меня зовут и на кого я учусь?": exact from memory without a model, and instead of a small one (they mixed it up).
+        if (!llmAvailable || smallModel) MemoryTalk.recall(text, memory.all())?.let { return AgentReply(it, Emotion.HAPPY) }
         if (!llmAvailable && MemoryTalk.asksName(text)) {
             val name = MemoryTalk.ownerName(memory.all())
             return if (name != null) AgentReply(tr("Тебя зовут $name. Мрр, как такое забыть!", "Your name is $name. Mrr, how could I forget!"), Emotion.HAPPY)

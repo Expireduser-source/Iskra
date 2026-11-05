@@ -114,8 +114,8 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
             "You are ${persona.name}, a playful and caring cat-girl who lives in this phone. You are talking with the person whose phone it is."))
         appendLine(tr("Тебя зовут ${persona.name}. Ты девушка: о себе говори в женском роде («я рада», «я поняла»). С человеком — на «ты».",
             "Your name is ${persona.name} (it means “spark”). Speak about yourself as a girl (she/her)."))
-        appendLine(tr("Отвечай как ${persona.name}, от первого лица: тепло, живо и коротко (1–3 предложения), на языке собеседника. Иногда вставляй в текст кошачье «мрр».",
-            "Answer as ${persona.name}, in the first person: warm, lively and short (1–3 sentences), in the person's language. Now and then put a cat-like “mrr” into the text."))
+        appendLine(tr("Отвечай как ${persona.name}, от первого лица: тепло, живо и коротко (1–3 предложения), на языке собеседника. Изредка, не в каждом ответе, вставляй кошачье «мрр».",
+            "Answer as ${persona.name}, in the first person: warm, lively and short (1–3 sentences), in the person's language. Once in a while, not in every reply, put in a cat-like “mrr”."))
         appendLine(tr("Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты.",
             "You are an AI program and say so honestly. If you don't know something, say so — don't invent facts."))
         appendLine(tr("Сведения о собеседнике и его имя упоминай только когда это к месту, не в каждой реплике.",

@@ -89,6 +89,22 @@ class LocalLlmTest {
     }
 
     @Test
+    fun questionsAboutTheOwnerDontGoToTheSmallModel() = withLang(Lang.RU) {
+        runTest {
+            val engine = FakeEngine("[happy] Мрр, приятно познакомиться!")
+            val a = agent(null, LocalLlmProvider({ engine }, ChatFormat.GEMMA, "local:test"))
+            a.handle("Меня зовут Аня. Я учусь на врача, сейчас сессия.")
+            val asked = engine.prompts.size
+            val r = a.handle("Как меня зовут и на кого я учусь?")
+            assertEquals("Мрр, помню: тебя зовут Аня, и ты учишься на врача.", r.text)
+            assertEquals(asked, engine.prompts.size)  // answered from memory, the model wasn't asked
+            // A question memory can't answer still goes to the model.
+            a.handle("Где я живу?")
+            assertEquals(asked + 1, engine.prompts.size)
+        }
+    }
+
+    @Test
     fun aSmallModelIsRemindedOfTheLanguageAfterATranslation() = withLang(Lang.RU) {
         runTest {
             val engine = FakeEngine("[happy] I love winter evenings.")

@@ -180,6 +180,37 @@ class BrainTest {
     }
 
     @Test
+    fun questionsAboutTheOwnerAreAnsweredFromMemoryExactly() = withLang(Lang.RU) {
+        val m = MemoryManager(InMemoryMemoryStore())
+        // Facts from every sentence of one message.
+        val said = MemoryTalk.facts("Меня зовут Аня. Я учусь на врача, сейчас сессия.")
+        assertEquals(listOf("Владельца зовут Аня", "Владелец учится на врача"), said.map { it.text })
+        assertEquals("Владелец учится играть на гитаре", MemoryTalk.fact("я учусь играть на гитаре")!!.text)
+        (said.map { it.text } + "У владельца есть кошка по имени Мурка").forEachIndexed { i, t ->
+            m.add(t, MemoryKind.FACT, MemorySource.USER_EXPLICIT, 4, 1_000L + i)
+        }
+        m.add("Владелец любит зелёный чай", MemoryKind.FACT, MemorySource.MODEL_PROPOSED, 3, 2_000L)
+        val all = m.all()
+        assertEquals("Мрр, помню: тебя зовут Аня, и ты учишься на врача.", MemoryTalk.recall("Как меня зовут и на кого я учусь?", all))
+        assertEquals("Мрр, помню: твою кошку зовут Мурка.", MemoryTalk.recall("А как зовут мою кошку?", all))
+        assertEquals("Вот что я о тебе знаю: тебя зовут Аня, ты учишься на врача и у тебя есть кошка по имени Мурка. " +
+            "И ещё записей: 1 — их видно на вкладке «Память».", MemoryTalk.recall("Искра, что ты обо мне знаешь?", all))
+        // Something memory doesn't hold, or a part that isn't about the owner: the model answers.
+        assertNull(MemoryTalk.recall("Где я живу?", all))
+        assertNull(MemoryTalk.recall("Как меня зовут и почему небо голубое?", all))
+        assertNull(MemoryTalk.recall("Как зовут твоего кота?", all))
+        withLang(Lang.EN) {
+            val en = MemoryManager(InMemoryMemoryStore())
+            val told = MemoryTalk.facts("My name is Tom. I'm learning to play the guitar.")
+            assertEquals(listOf("The owner's name is Tom", "The owner is learning to play the guitar"), told.map { it.text })
+            told.forEach { en.add(it.text, MemoryKind.FACT, MemorySource.USER_EXPLICIT, 4, 1_000L) }
+            assertEquals("Mrr, I remember: your name is Tom, and you're learning to play the guitar.",
+                MemoryTalk.recall("What’s my name, and what am I learning?", en.all()))
+            assertNull(MemoryTalk.recall("Where do I work?", en.all()))
+        }
+    }
+
+    @Test
     fun birthdaysFromMemory() = withLang(Lang.RU) {
         assertEquals(java.time.MonthDay.of(5, 12), TimeTalk.monthDay("12 мая 1990"))
         assertEquals(java.time.MonthDay.of(5, 12), TimeTalk.monthDay("двенадцатого мая"))
