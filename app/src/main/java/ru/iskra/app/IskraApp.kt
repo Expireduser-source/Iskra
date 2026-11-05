@@ -41,6 +41,8 @@ import ru.iskra.app.ui.ChatController
 import ru.iskra.app.voice.Speaker
 import ru.iskra.core.agent.CompanionAgent
 import ru.iskra.core.llm.AnthropicProvider
+import ru.iskra.core.llm.FallbackProvider
+import ru.iskra.app.data.FreeBrain
 import ru.iskra.core.llm.LlmProvider
 import ru.iskra.core.llm.OpenAiCompatibleProvider
 import ru.iskra.core.memory.MemoryManager
@@ -157,6 +159,7 @@ class IskraApp : Application() {
         )
         chat = ChatController(this)
         AutoBackup.schedule(this, onlyIfMissing = true)
+        FreeBrain.refreshStandInsIfStale()
     }
 
     /** Built per request so settings/key changes apply immediately. */
@@ -168,12 +171,15 @@ class IskraApp : Application() {
         if (model.isBlank()) return null
         val base = s.baseUrl.ifBlank { s.preset.baseUrl }
         if (!base.startsWith("https://")) return null
-        val provider = if (s.preset.anthropic) AnthropicProvider(apiKey = key, model = model, baseUrl = base)
-        else OpenAiCompatibleProvider(
-            baseUrl = base, apiKey = key, model = model,
+        fun openAi(m: String) = OpenAiCompatibleProvider(
+            baseUrl = base, apiKey = key, model = m,
             extraHeaders = if (s.preset == ProviderPreset.OPENROUTER) mapOf("X-Title" to "Iskra") else emptyMap(),
             streamUsage = s.preset == ProviderPreset.OPENAI || s.preset == ProviderPreset.DEEPSEEK || s.preset == ProviderPreset.OPENROUTER,
         )
+        val primary = if (s.preset.anthropic) AnthropicProvider(apiKey = key, model = model, baseUrl = base) else openAi(model)
+        // A busy free model hands the message to another free one; paid ones get one quiet retry after a hiccup.
+        val standIns = if (s.preset == ProviderPreset.OPENROUTER && model.endsWith(":free")) FreeBrain.standIns().filter { it != model } else emptyList()
+        val provider = FallbackProvider(listOf(primary) + standIns.map(::openAi))
         return MeteredProvider(provider, usage) // counts tokens, enforces the owner's daily limit
     }
 

@@ -12,7 +12,7 @@ object ReplyParser {
     data class Parsed(val text: String, val emotion: Emotion?)
 
     fun parse(raw: String): Parsed {
-        var text = raw.trim()
+        var text = ru.iskra.core.llm.ThinkFilter.strip(raw)
         var emotion: Emotion? = null
         tag.find(text)?.let { m ->
             emotion = runCatching { Emotion.valueOf(m.groupValues[1].uppercase()) }.getOrNull()

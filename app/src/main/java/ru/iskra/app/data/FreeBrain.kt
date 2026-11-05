@@ -87,8 +87,10 @@ object FreeBrain {
         val app = IskraApp.instance
         try {
             val key = connect.exchange(code, verifier)
-            val model = runCatching { OpenRouterConnect.pick(connect.freeModels()) }.getOrNull()
+            val models = runCatching { connect.freeModels() }.getOrNull().orEmpty()
+            val model = OpenRouterConnect.pick(models)
             use(model?.id ?: FALLBACK_MODEL, key)
+            saveStandIns(OpenRouterConnect.standIns(models, model?.id ?: FALLBACK_MODEL))
             _state.value = State.Done(model?.name ?: FALLBACK_MODEL)
             Diag.i("brain", tr("Бесплатный мозг подключён: ", "Free brain connected: ") + (model?.id ?: FALLBACK_MODEL) +
                 (if (model?.tools == false) tr(" (без действий с телефоном)", " (no phone actions)") else ""))
@@ -113,11 +115,39 @@ object FreeBrain {
     fun repick() = scope.launch {
         val s = IskraApp.instance.settings.load()
         if (s.preset != ProviderPreset.OPENROUTER || !s.model.endsWith(":free")) return@launch
-        val m = runCatching { OpenRouterConnect.pick(connect.freeModels().filter { it.id != s.model }) }.getOrNull() ?: return@launch
+        val models = runCatching { connect.freeModels().filter { it.id != s.model } }.getOrNull() ?: return@launch
+        val m = OpenRouterConnect.pick(models) ?: return@launch
         IskraApp.instance.settings.save(s.copy(model = m.id))
+        saveStandIns(OpenRouterConnect.standIns(models, m.id))
         IskraApp.instance.agent.resumeCloud()
         Diag.i("brain", tr("Бесплатная модель сменилась: ", "Free model changed: ") + m.id)
     }
+
+    /**
+     * Free models that quietly take over when the chosen one is busy (rate limits on free models are per model).
+     * Kept apart from the settings: they change with OpenRouter's list, not with the owner's choice.
+     */
+    fun standIns(): List<String> = prefs().getString(STAND_INS, "").orEmpty().split(',').map { it.trim() }.filter { it.endsWith(":free") }
+
+    private fun saveStandIns(ids: List<String>) {
+        prefs().edit().putString(STAND_INS, ids.joinToString(",")).putLong(STAND_INS_AT, System.currentTimeMillis()).apply()
+    }
+
+    /** Owners who connected before stand-ins existed, or a list older than a week: refresh it in the background. */
+    fun refreshStandInsIfStale() {
+        val s = IskraApp.instance.settings.load()
+        if (s.preset != ProviderPreset.OPENROUTER || !s.model.endsWith(":free")) return
+        if (System.currentTimeMillis() - prefs().getLong(STAND_INS_AT, 0) < 7 * 86_400_000L) return
+        scope.launch {
+            val models = runCatching { connect.freeModels() }.getOrNull() ?: return@launch
+            saveStandIns(OpenRouterConnect.standIns(models, s.model))
+            Diag.i("brain", tr("Запасные бесплатные модели: ", "Free stand-in models: ") + standIns().joinToString())
+        }
+    }
+
+    private fun prefs() = IskraApp.instance.getSharedPreferences("free_brain", Context.MODE_PRIVATE)
+    private const val STAND_INS = "stand_ins"
+    private const val STAND_INS_AT = "stand_ins_at"
 
     private fun open(ctx: Context, url: String) {
         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

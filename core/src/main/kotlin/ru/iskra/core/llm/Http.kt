@@ -87,6 +87,7 @@ internal object Http {
 
     private val freeQuota = Regex("free-models-per-day|free model.*per day|per-day", RegexOption.IGNORE_CASE)
     private val dataPolicy = Regex("data policy|privacy settings", RegexOption.IGNORE_CASE)
+    private val noTools = Regex("support tool use|support tools|tools? (?:are|is) not supported|does not support (?:tools|function|tool)|function calling is not (?:supported|enabled)", RegexOption.IGNORE_CASE)
     private val modelGone = Regex("not a valid model|model not found|no endpoints found for|model .* does not exist|is not available", RegexOption.IGNORE_CASE)
 
     fun kindFor(code: Int, body: String): LlmException.Kind = when {
@@ -95,6 +96,7 @@ internal object Http {
         code == 429 && freeQuota.containsMatchIn(body) -> LlmException.Kind.FREE_QUOTA
         code == 429 -> LlmException.Kind.RATE_LIMIT
         code == 404 && dataPolicy.containsMatchIn(body) -> LlmException.Kind.POLICY
+        (code == 404 || code == 400) && noTools.containsMatchIn(body) -> LlmException.Kind.NO_TOOLS
         (code == 404 || code == 400) && modelGone.containsMatchIn(body) -> LlmException.Kind.MODEL
         code in 500..599 -> LlmException.Kind.SERVER
         else -> LlmException.Kind.BAD_RESPONSE

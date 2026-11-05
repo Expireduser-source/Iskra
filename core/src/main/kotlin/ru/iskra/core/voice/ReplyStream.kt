@@ -34,8 +34,12 @@ class ReplyStream(
 
     val chunks get() = emitted
 
-    fun feed(delta: String) {
-        if (finished || delta.isEmpty()) return
+    private val think = ru.iskra.core.llm.ThinkFilter()
+
+    fun feed(raw: String) {
+        if (finished || raw.isEmpty()) return
+        val delta = think.feed(raw)
+        if (delta.isEmpty()) return
         buf.append(delta)
         if (!tagResolved) resolveTag(final = false)
         if (tagResolved) drain(final = false)
@@ -43,6 +47,7 @@ class ReplyStream(
 
     fun finish() {
         if (finished) return
+        buf.append(think.finish())
         if (!tagResolved) resolveTag(final = true)
         drain(final = true)
         finished = true

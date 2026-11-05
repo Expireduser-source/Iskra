@@ -103,11 +103,25 @@ class OpenRouterConnect(
         private val slow = Regex("""(-r1|r1-|:thinking|thinking|reason|distill|vision|-vl|coder|math|embed|guard)""")
 
         /** The best free model for a companion: tool calling, a known good family, enough context. */
-        fun pick(models: List<FreeModel>): FreeModel? {
+        fun pick(models: List<FreeModel>): FreeModel? = ranked(models).firstOrNull()
+
+        /**
+         * Free models from best to worst for a companion. The runners-up become quiet stand-ins when the first is
+         * busy — preferably from other families, which run on other servers.
+         */
+        fun ranked(models: List<FreeModel>): List<FreeModel> {
             fun rank(m: FreeModel): Int = preferred.indexOfFirst { m.id.lowercase().contains(it) }.let { if (it < 0) preferred.size else it }
             val usable = models.filter { it.contextLength == 0 || it.contextLength >= 16_000 }
             val fast = usable.filter { !slow.containsMatchIn(it.id.lowercase()) }.ifEmpty { usable }
-            return fast.sortedWith(compareBy<FreeModel>({ !it.tools }, { rank(it) }, { -it.contextLength })).firstOrNull()
+            return fast.sortedWith(compareBy<FreeModel>({ !it.tools }, { rank(it) }, { -it.contextLength }))
+        }
+
+        /** [count] stand-ins for [primary]: the best of other vendors first ("qwen/…" after "deepseek/…"). */
+        fun standIns(models: List<FreeModel>, primary: String, count: Int = 2): List<String> {
+            val rest = ranked(models).filter { it.id != primary }
+            val vendor = { id: String -> id.substringBefore('/') }
+            val otherVendors = rest.filter { vendor(it.id) != vendor(primary) }.distinctBy { vendor(it.id) }
+            return (otherVendors + rest).map { it.id }.distinct().take(count)
         }
     }
 }

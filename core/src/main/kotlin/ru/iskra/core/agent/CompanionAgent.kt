@@ -155,7 +155,7 @@ class CompanionAgent(
         val reply = local ?: when {
             pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
-            else -> askModel(provider, text, state, sink).also { r ->
+            else -> askModel(provider, text, state, sink).let { r -> if (r.errorKind in PASSING) offlineInstead(text, r) else r }.also { r ->
                 if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE ||
                     r.errorKind == LlmException.Kind.POLICY || r.errorKind == LlmException.Kind.MODEL)
                     cloudPause = (clock() + cloudPauseMs) to r.errorKind
@@ -181,6 +181,21 @@ class CompanionAgent(
         if (provider != null && reply.usedLlm && reply.error == null) maybeSummarize(provider)
         reply
     }
+
+    /**
+     * A passing cloud failure (no internet, a busy server): small talk still gets a real answer. Key, balance
+     * and quota errors are not hidden — the owner needs to know; the following messages go offline anyway.
+     */
+    private fun offlineInstead(text: String, failed: AgentReply): AgentReply {
+        val now = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault())
+        val chat = brain.chat(text, now, currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all())) ?: return failed
+        return AgentReply(chat.text, chat.emotion, failed.actions, errorKind = failed.errorKind)
+    }
+
+    private val PASSING = setOf(LlmException.Kind.NETWORK, LlmException.Kind.RATE_LIMIT, LlmException.Kind.SERVER, LlmException.Kind.BAD_RESPONSE)
+
+    /** Provider ids whose model refused tools: their requests go without them from now on. */
+    private val noTools = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     private fun nextMidnight(): Long = java.time.LocalDate.now().plusDays(1)
         .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
@@ -300,10 +315,19 @@ class CompanionAgent(
         try {
             repeat(maxToolRounds) { round ->
                 val offerTools = round < maxToolRounds - 1
-                val request = LlmRequest(system = system, messages = messages, tools = if (offerTools) tools.specs() else emptyList(), situation = situation)
-                val response = if (sink == null) provider.complete(request) else {
+                val request = LlmRequest(system = system, messages = messages,
+                    tools = if (offerTools && provider.id !in noTools) tools.specs() else emptyList(), situation = situation)
+                suspend fun send(r: LlmRequest) = if (sink == null) provider.complete(r) else {
                     val stream = ReplyStream(sink, state.mood.dominantEmotion())
-                    provider.stream(request) { stream.feed(it) }.also { stream.finish() }
+                    provider.stream(r) { stream.feed(it) }.also { stream.finish() }
+                }
+                val response = try {
+                    send(request)
+                } catch (e: LlmException) {
+                    // The model can't call tools: the same request without them still gets an answer.
+                    if (e.kind != LlmException.Kind.NO_TOOLS || request.tools.isEmpty()) throw e
+                    noTools += provider.id
+                    send(request.copy(tools = emptyList()))
                 }
                 val parsed = ReplyParser.parse(response.text)
                 if (parsed.emotion != null) emotion = parsed.emotion

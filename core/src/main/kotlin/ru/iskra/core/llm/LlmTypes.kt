@@ -70,6 +70,8 @@ class LlmException(
         POLICY,
         /** The model no longer exists (free models come and go). */
         MODEL,
+        /** The model can't call tools; the same request works without them. */
+        NO_TOOLS,
     }
 
     /** Message for the user in the current language. Never contains the API key. */
@@ -88,6 +90,7 @@ class LlmException(
             "и разреши бесплатные модели (они могут учиться на переписке) — или выбери платную модель. $OFFLINE",
             "OpenRouter won't serve this free model because of your account's privacy settings: open openrouter.ai/settings/privacy " +
             "and allow free models (they may learn from the chat) — or choose a paid model. $OFFLINE")
+        Kind.NO_TOOLS -> tr("Эта модель не умеет действия с телефоном — отвечаю без них.", "This model can't do phone actions — I answer without them.")
         Kind.MODEL -> tr("Эта модель больше недоступна. Нажми в настройках «Подключить бесплатно» ещё раз — я выберу другую. $OFFLINE",
             "This model is no longer available. Tap “Connect for free” in Settings again — I'll pick another one. $OFFLINE")
     }
