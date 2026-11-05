@@ -395,7 +395,7 @@ object LocalBrain {
 
     private fun tunedText(gen: Int, batch: Int, read: Double, write: Double): String = tr(
         "На этом телефоне модель читает ≈ ${read.toInt()} и пишет ≈ ${"%.1f".format(java.util.Locale.getDefault(), write)} токена в секунду (потоков: $gen для ответа, $batch для чтения).",
-        "On this phone the model reads ≈ ${read.toInt()} and writes ≈ ${"%.1f".format(java.util.Locale.getDefault(), write)} tokens a second ($gen threads for writing, $batch for reading).")
+        "On this phone the model reads ≈ ${read.toInt()} and writes ≈ ${"%.1f".format(java.util.Locale.getDefault(), write)} tokens a second (threads: $gen for writing, $batch for reading).")
 
     /** What was measured for the ready model, for the card; null before the first measurement. */
     fun tunedSpeed(): String? {
