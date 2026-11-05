@@ -22,9 +22,9 @@ object LlamaNative {
 
     @JvmStatic external fun load(path: String, nCtx: Int, nThreads: Int): Long
     @JvmStatic external fun free(handle: Long)
-    /** [stable]: see [LlamaEngine.generate]. A [temperature] of 0 always picks the likeliest token (for tests). */
-    @JvmStatic external fun generate(handle: Long, prompt: String, stable: Int, maxTokens: Int, temperature: Float, topP: Float,
-                                     minP: Float, repeatPenalty: Float, sink: TokenSink): String
+    /** [head], [stable]: see [LlamaEngine.generate]. A [temperature] of 0 always picks the likeliest token (for tests). */
+    @JvmStatic external fun generate(handle: Long, prompt: String, head: Int, stable: Int, maxTokens: Int, temperature: Float,
+                                     topP: Float, minP: Float, repeatPenalty: Float, sink: TokenSink): String
     @JvmStatic external fun cancel(handle: Long)
     /** [tokens in the last prompt, how many of them came from the cache]. */
     @JvmStatic external fun lastRead(handle: Long): IntArray
@@ -38,10 +38,11 @@ object LlamaNative {
 interface LlamaEngine : AutoCloseable {
     /**
      * Continues [prompt]; [onPiece] gets the text as it comes (return false to stop). Blocking.
-     * [stable]: how many characters at the start of [prompt] the next message's prompt will most likely repeat. Models
-     * that can't cut their cache back (Qwen3.5) save their state there, so the next message doesn't re-read the dialogue.
+     * [stable]: how many characters at the start of [prompt] the next message's prompt will most likely repeat; [head]:
+     * how many will stay even when the dialogue window moves on (the instructions). Models that can't cut their cache
+     * back (Qwen3.5) save their state at both, so later messages don't re-read the dialogue.
      */
-    fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int = 0, onPiece: (String) -> Boolean): String
+    fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int = 0, head: Int = 0, onPiece: (String) -> Boolean): String
     fun cancel()
     val info: String
     /** Tokens the context holds: prompt plus reply must fit. */
@@ -61,9 +62,9 @@ class NativeLlamaEngine private constructor(private val handle: Long, override v
     @Volatile private var closed = false
     override val info: String get() = if (closed) "" else LlamaNative.info(handle)
 
-    override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, onPiece: (String) -> Boolean): String {
+    override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, head: Int, onPiece: (String) -> Boolean): String {
         check(!closed) { "engine closed" }
-        return LlamaNative.generate(handle, prompt, stable, maxTokens, temperature, 0.9f, 0.05f, 1.1f) { onPiece(it) }
+        return LlamaNative.generate(handle, prompt, head, stable, maxTokens, temperature, 0.9f, 0.05f, 1.1f) { onPiece(it) }
     }
 
     override fun lastRead(): Pair<Int, Int> = if (closed) 0 to 0 else LlamaNative.lastRead(handle).let { it[0] to it[1] }
@@ -116,9 +117,11 @@ enum class ChatFormat {
         val situation = request.situation.trim()
         val sb = StringBuilder()
         var stable = 0
+        var head = 0
         when (this) {
             CHATML, CHATML_NO_THINK -> {
                 sb.append("<|im_start|>system\n").append(request.system.trim()).append("<|im_end|>\n")
+                head = sb.length
                 turns.forEachIndexed { i, (role, text) ->
                     val last = i == turns.lastIndex
                     if (last) stable = sb.length
@@ -134,7 +137,7 @@ enum class ChatFormat {
                 turns.forEachIndexed { i, (role, text) ->
                     val last = i == turns.lastIndex
                     sb.append("<start_of_turn>").append(if (role == "assistant") "model" else "user").append('\n')
-                    if (i == 0) sb.append(request.system.trim()).append("\n\n")
+                    if (i == 0) { sb.append(request.system.trim()).append("\n\n"); head = sb.length }
                     if (last && situation.isNotEmpty()) { stable = sb.length; sb.append(situation).append("\n\n") }
                     sb.append(text.trim()).append("<end_of_turn>\n")
                     if (last && situation.isEmpty()) stable = sb.length
@@ -143,6 +146,7 @@ enum class ChatFormat {
             }
             GEMMA4 -> {
                 sb.append("<|turn>system\n").append(request.system.trim()).append("<turn|>\n")
+                head = sb.length
                 stable = sb.length
                 turns.forEachIndexed { i, (role, text) ->
                     // A system turn is only expected first, so the per-message situation leads the last message.
@@ -155,7 +159,7 @@ enum class ChatFormat {
                 sb.append("<|turn>model\n<|channel>thought\n<channel|>")
             }
         }
-        return Prompt(sb.toString(), stable)
+        return Prompt(sb.toString(), stable, head)
     }
 
     /** Text that means the model started writing the next turn itself. */
@@ -166,8 +170,11 @@ enum class ChatFormat {
     }
 }
 
-/** A rendered prompt; the first [stable] characters will most likely start the next message's prompt too. */
-data class Prompt(val text: String, val stable: Int)
+/**
+ * A rendered prompt. The first [stable] characters will most likely start the next message's prompt too; the first
+ * [head] (the instructions) stay even when the dialogue window moves on.
+ */
+data class Prompt(val text: String, val stable: Int, val head: Int = 0)
 
 /**
  * How one generation went: for the journal and the speed check. Pieces are about one token each. Of the
@@ -215,7 +222,7 @@ class LocalLlmProvider(
             suspendCancellableCoroutine<String> { cont ->
                 cont.invokeOnCancellation { e.cancel() }
                 val result = try {
-                    e.generate(prompt, budget, request.temperature.toFloat().coerceIn(0.1f, 1.2f), rendered.stable) { piece ->
+                    e.generate(prompt, budget, request.temperature.toFloat().coerceIn(0.1f, 1.2f), rendered.stable, rendered.head) { piece ->
                         if (firstMs < 0) firstMs = (System.nanoTime() - t0) / 1_000_000
                         pieces++
                         raw.append(piece)

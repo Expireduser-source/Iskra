@@ -112,6 +112,39 @@ class NativeLlamaTest {
     }
 
     /**
+     * The dialogue window moves on: the oldest turns leave the prompt. A model whose cache positions can be shifted
+     * keeps the turns that stayed (moved into place); a hybrid one goes back to its checkpoint after the instructions.
+     */
+    @Test
+    fun whenTheWindowMovesOnWhatStayedIsNotReadAgain() {
+        val hybrid = System.getenv("ISKRA_LLAMA_HYBRID")
+        assumeTrue("ISKRA_LLAMA_LIB / ISKRA_LLAMA_MODEL / ISKRA_LLAMA_HYBRID not set", lib != null && model != null && hybrid != null)
+        System.load(lib!!)
+        val system = "Ты — Искра, игривая и заботливая кошкодевочка, которая живёт в этом телефоне. Тебя зовут Искра. " +
+            "Ты девушка: о себе говори в женском роде. Отвечай тепло, живо и коротко, на языке собеседника."
+        val turns = (1..8).flatMap {
+            listOf(ChatMessage.User("Вопрос номер $it: расскажи что-нибудь интересное про кошек и собак, пожалуйста."),
+                ChatMessage.Assistant("Ответ номер $it: кошки любят спать на солнышке, а собаки любят гулять во дворе с хозяином."))
+        }
+        for ((path, f) in listOf(model!! to ChatFormat.CHATML, hybrid!! to ChatFormat.CHATML_NO_THINK)) {
+            NativeLlamaEngine.open(path, 2048, 2)!!.use { e ->
+                val before = f.prompt(LlmRequest(system, turns + ChatMessage.User("Что ещё расскажешь?")))
+                val reply = e.generate(before.text, 8, 0f, before.stable, before.head) { true }.ifBlank { "мрр" }
+                // The four oldest messages leave the window.
+                val after = f.prompt(LlmRequest(system, turns.drop(4) + ChatMessage.User("Что ещё расскажешь?") +
+                    ChatMessage.Assistant(reply) + ChatMessage.User("А про птиц?")))
+                val out = e.generate(after.text, 8, 0f, after.stable, after.head) { true }
+                val (n, reused) = e.lastRead()
+                println("$f: after the window moved, $reused of $n tokens reused; answer ${out.length} chars")
+                if (f == ChatFormat.CHATML) assertTrue(reused > n * 2 / 3, "$f: only $reused of $n reused")
+                else assertTrue(reused in 1 until n / 2, "$f: $reused of $n reused (the instructions only)")
+                // The model keeps working on top of it.
+                e.generate(f.render(LlmRequest(system, listOf(ChatMessage.User("Привет")))), 4, 0f) { true }
+            }
+        }
+    }
+
+    /**
      * The model leaves memory after a pause; its dialogue cache is saved and restored with the next load, so the first
      * message after the pause doesn't read the whole dialogue again — for both kinds of model.
      */

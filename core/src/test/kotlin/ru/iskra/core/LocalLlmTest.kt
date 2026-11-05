@@ -33,7 +33,7 @@ class FakeEngine(private vararg val pieces: String) : LlamaEngine {
     val stables = mutableListOf<Int>()
     override val info = "fake"
     override val contextSize = 4096
-    override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, onPiece: (String) -> Boolean): String {
+    override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, head: Int, onPiece: (String) -> Boolean): String {
         prompts += prompt
         stables += stable
         val out = StringBuilder()
@@ -137,6 +137,10 @@ class LocalLlmTest {
             assertTrue(p2.text.substring(0, p2.stable).endsWith("Как дела?" + mapOf(ChatFormat.GEMMA to "<end_of_turn>\n",
                 ChatFormat.GEMMA4 to "<turn|>\n").getOrDefault(f, "<|im_end|>\n")), "$f: ${p2.text.substring(p2.stable)}")
             assertEquals(f.render(r3), p3.text)
+            // When the dialogue window moves on (the oldest turns leave), the instructions still start the prompt.
+            val moved = f.prompt(r3.copy(messages = r3.messages.drop(2)))
+            assertTrue(p3.head in 1..p3.stable && moved.text.startsWith(p3.text.take(p3.head)), "$f: head ${p3.head}")
+            assertTrue(p3.text.take(p3.head).contains("Ты — Искра."), "$f: the instructions are in the head")
         }
     }
 

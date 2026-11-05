@@ -6,8 +6,12 @@
 //
 // Models with recurrent layers (Qwen3.5 is a hybrid: gated delta net + attention) cannot cut their state back to an
 // earlier position, so any difference near the end of the prompt would mean reading the whole dialogue again. For them
-// the bridge saves a checkpoint (a copy of the state) where the caller says the next prompt will still agree — the end
-// of the dialogue before the newest message — and goes back to it.
+// the bridge saves checkpoints (copies of the state) where the caller says the next prompt will still agree — the end
+// of the instructions, and the end of the dialogue before the newest message — and goes back to the longest that fits.
+//
+// When the dialogue window moves on (the oldest turns leave the prompt), models whose cache positions can be shifted
+// (attention with ordinary RoPE: Gemma, Qwen2.5/3) keep the turns that stayed: they are moved into place in the cache
+// instead of being read again.
 #include <jni.h>
 
 #include <algorithm>
@@ -46,7 +50,9 @@ struct Session {
     int n_batch = 256;
     int n_threads = 4;
     bool can_cut = true;              // false: recurrent layers, the state can only go back to a checkpoint
-    Checkpoint checkpoint;
+    bool can_shift = false;           // cache positions can be moved (turns that stay when older ones leave)
+    Checkpoint checkpoint;            // the end of the dialogue before the newest message
+    Checkpoint head_checkpoint;       // the end of the instructions
     int last_prompt = 0;              // tokens in the last prompt
     int last_reused = 0;              // of them, taken from the cache instead of computed
 };
@@ -171,8 +177,7 @@ void forget_cache(Session * s) {
     s->cached.clear();
 }
 
-void save_checkpoint(Session * s) {
-    Checkpoint & c = s->checkpoint;
+void save_checkpoint(Session * s, Checkpoint & c) {
     const size_t n = llama_state_seq_get_size(s->ctx, 0);
     c.state.resize(n);
     if (n == 0 || llama_state_seq_get_data(s->ctx, c.state.data(), n, 0) != n) {
@@ -183,20 +188,55 @@ void save_checkpoint(Session * s) {
 }
 
 // Is the checkpoint the start of toks, with at least one token after it (the last token is always decoded anew)?
-bool checkpoint_fits(const Session * s, const std::vector<llama_token> & toks) {
-    const auto & c = s->checkpoint.toks;
-    return !c.empty() && c.size() < toks.size() && std::equal(c.begin(), c.end(), toks.begin());
+bool checkpoint_fits(const Checkpoint & c, const std::vector<llama_token> & toks) {
+    return !c.toks.empty() && c.toks.size() < toks.size() && std::equal(c.toks.begin(), c.toks.end(), toks.begin());
 }
 
-bool restore_checkpoint(Session * s) {
-    const Checkpoint & c = s->checkpoint;
+// The longest checkpoint that starts toks, or null.
+Checkpoint * best_checkpoint(Session * s, const std::vector<llama_token> & toks) {
+    Checkpoint * best = nullptr;
+    for (Checkpoint * c : {&s->checkpoint, &s->head_checkpoint}) {
+        if (checkpoint_fits(*c, toks) && (best == nullptr || c->toks.size() > best->toks.size())) best = c;
+    }
+    return best;
+}
+
+bool restore_checkpoint(Session * s, Checkpoint & c) {
     if (llama_state_seq_set_data(s->ctx, c.state.data(), c.state.size(), 0) == 0) {
-        s->checkpoint = Checkpoint();
+        c = Checkpoint();
         forget_cache(s);
         return false;
     }
     s->cached = c.toks;
     return true;
+}
+
+// After the common prefix [0, keep): pieces of the old cache that the new prompt repeats further on (the turns that
+// stayed when older ones left the dialogue window) are moved into place; what lay between them is dropped. Returns how
+// many tokens of the new prompt the cache now holds. Only for models whose positions can be shifted.
+size_t reuse_shifted(Session * s, const std::vector<llama_token> & toks, size_t keep) {
+    llama_memory_t mem = llama_get_memory(s->ctx);
+    const size_t min_piece = 24;              // shorter matches are coincidences, not turns
+    const size_t limit = toks.size() - 1;     // the last token is always decoded anew
+    size_t head_c = keep, head_p = keep;      // positions in the old cache and in the new prompt
+    while (head_c < s->cached.size() && head_p < limit) {
+        size_t n = 0;
+        while (head_c + n < s->cached.size() && head_p + n < limit && s->cached[head_c + n] == toks[head_p + n]) n++;
+        if (n < min_piece) {
+            head_c++;
+            continue;
+        }
+        if (head_c > head_p) {
+            if (!llama_memory_seq_rm(mem, 0, static_cast<llama_pos>(head_p), static_cast<llama_pos>(head_c))) break;
+            llama_memory_seq_add(mem, 0, static_cast<llama_pos>(head_c), static_cast<llama_pos>(head_c + n),
+                                 -static_cast<llama_pos>(head_c - head_p));
+        }
+        for (size_t i = 0; i < n; i++) s->cached[head_p + i] = s->cached[head_c + i];
+        head_c += n;
+        head_p += n;
+        keep = head_p;
+    }
+    return keep;
 }
 
 }  // namespace
@@ -237,12 +277,13 @@ Java_ru_iskra_core_llm_local_LlamaNative_load(JNIEnv * env, jclass, jstring jpat
     s->n_ctx = static_cast<int>(llama_n_ctx(ctx));
     s->n_threads = n_threads;
     s->can_cut = !llama_model_is_recurrent(model) && !llama_model_is_hybrid(model);
+    s->can_shift = s->can_cut && llama_memory_can_shift(llama_get_memory(ctx));
     return reinterpret_cast<jlong>(s);
 }
 
 JNIEXPORT jstring JNICALL
-Java_ru_iskra_core_llm_local_LlamaNative_generate(JNIEnv * env, jclass, jlong handle, jstring jprompt, jint stable,
-                                                 jint max_tokens, jfloat temp, jfloat top_p, jfloat min_p,
+Java_ru_iskra_core_llm_local_LlamaNative_generate(JNIEnv * env, jclass, jlong handle, jstring jprompt, jint head,
+                                                 jint stable, jint max_tokens, jfloat temp, jfloat top_p, jfloat min_p,
                                                  jfloat repeat_penalty, jobject sink) {
     auto * s = reinterpret_cast<Session *>(handle);
     if (s == nullptr) return to_jstring(env, "");
@@ -261,23 +302,28 @@ Java_ru_iskra_core_llm_local_LlamaNative_generate(JNIEnv * env, jclass, jlong ha
         return nullptr;
     }
 
-    // Where the next prompt will most likely still agree with this one (a checkpoint goes there), in tokens.
-    size_t mark = 0;
-    if (!s->can_cut && stable > 0) {
-        const std::vector<llama_token> head = tokenize(s->vocab, to_utf8(env, jprompt, stable));
-        while (mark < head.size() && mark < toks.size() && head[mark] == toks[mark]) mark++;
-    }
+    // Where later prompts will most likely still agree with this one (checkpoints go there), in tokens.
+    auto token_mark = [&](jint chars) -> size_t {
+        if (s->can_cut || chars <= 0) return 0;
+        const std::vector<llama_token> part = tokenize(s->vocab, to_utf8(env, jprompt, chars));
+        size_t m = 0;
+        while (m < part.size() && m < toks.size() && part[m] == toks[m]) m++;
+        return m;
+    };
+    const size_t mark_head = token_mark(head);
+    const size_t mark = token_mark(stable);
 
     // Keep the longest common prefix with what the context already holds; at least one token is decoded anew.
     size_t keep = 0;
     while (keep < s->cached.size() && keep < toks.size() && s->cached[keep] == toks[keep]) keep++;
     if (keep == toks.size()) keep--;
-    const bool fits = checkpoint_fits(s, toks);
-    if (fits && s->checkpoint.toks.size() > keep) {
-        keep = restore_checkpoint(s) ? s->cached.size() : 0;
+    if (s->can_shift && keep < s->cached.size()) keep = reuse_shifted(s, toks, keep);
+    Checkpoint * fit = s->can_cut ? nullptr : best_checkpoint(s, toks);
+    if (fit != nullptr && fit->toks.size() > keep) {
+        keep = restore_checkpoint(s, *fit) ? s->cached.size() : 0;
     } else if (!llama_memory_seq_rm(llama_get_memory(s->ctx), 0, static_cast<llama_pos>(keep), -1)) {
-        // Recurrent layers can't be cut back to [keep]: go back to the checkpoint, or read everything again.
-        if (fits && restore_checkpoint(s)) {
+        // Recurrent layers can't be cut back to [keep]: go back to a checkpoint, or read everything again.
+        if (fit != nullptr && restore_checkpoint(s, *fit)) {
             keep = s->cached.size();
         } else {
             forget_cache(s);
@@ -289,9 +335,11 @@ Java_ru_iskra_core_llm_local_LlamaNative_generate(JNIEnv * env, jclass, jlong ha
     s->last_reused = static_cast<int>(keep);
 
     for (size_t i = keep; i < toks.size();) {
-        if (i == mark && mark > 0 && s->checkpoint.toks != s->cached) save_checkpoint(s);
+        if (i == mark_head && mark_head > 0 && s->head_checkpoint.toks != s->cached) save_checkpoint(s, s->head_checkpoint);
+        if (i == mark && mark > 0 && s->checkpoint.toks != s->cached) save_checkpoint(s, s->checkpoint);
         size_t end = std::min(i + static_cast<size_t>(s->n_batch), toks.size());
-        if (mark > i && mark < end) end = mark;  // stop at the mark to save the state there
+        if (mark_head > i && mark_head < end) end = mark_head;  // stop at the marks to save the state there
+        if (mark > i && mark < end) end = mark;
         const int n = static_cast<int>(end - i);
         if (!decode(s, toks.data() + i, n, static_cast<int>(i), end == toks.size())) {
             forget_cache(s);  // aborted or failed half-way: the cache may be partial
@@ -366,7 +414,10 @@ Java_ru_iskra_core_llm_local_LlamaNative_saveSession(JNIEnv * env, jclass, jlong
     auto * s = reinterpret_cast<Session *>(handle);
     if (s == nullptr) return JNI_FALSE;
     std::lock_guard<std::mutex> guard(s->busy);
-    if (!s->can_cut && (s->checkpoint.toks.empty() || !restore_checkpoint(s))) return JNI_FALSE;
+    if (!s->can_cut) {
+        Checkpoint & c = s->checkpoint.toks.empty() ? s->head_checkpoint : s->checkpoint;
+        if (c.toks.empty() || !restore_checkpoint(s, c)) return JNI_FALSE;
+    }
     if (s->cached.empty()) return JNI_FALSE;
     const std::string path = to_utf8(env, jpath);
     const std::string tmp = path + ".tmp";
@@ -392,7 +443,7 @@ Java_ru_iskra_core_llm_local_LlamaNative_loadSession(JNIEnv * env, jclass, jlong
     }
     toks.resize(n);
     s->cached = toks;
-    if (!s->can_cut) save_checkpoint(s);  // what was saved is the checkpoint
+    if (!s->can_cut) save_checkpoint(s, s->checkpoint);  // what was saved is the checkpoint
     return static_cast<jint>(n);
 }
 
