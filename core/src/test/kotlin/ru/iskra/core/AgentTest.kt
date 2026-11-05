@@ -120,8 +120,9 @@ class AgentTest {
         a.handle("запомни: у меня кот Барсик")
         val p = FakeProvider(mutableListOf({ LlmResponse("[curious] Как Барсик?", emptyList()) }))
         agent(p).handle("покорми кота напомни")
-        assertTrue(p.requests[0].system.contains("<память_о_владельце>"))
-        assertTrue(p.requests[0].system.contains("Барсик"))
+        assertTrue(p.requests[0].fullSystem.contains("<память_о_владельце>"))
+        assertFalse(p.requests[0].system.contains("Барсик"))   // memory is in the per-message part, not the cached prefix
+        assertTrue(p.requests[0].situation.contains("Барсик"))
     }
 
     @Test fun llmErrorGivesFriendlyMessage() = runTest {

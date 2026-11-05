@@ -67,7 +67,7 @@ class AnthropicProvider(
         put("model", model)
         put("max_tokens", request.maxTokens)
         put("temperature", request.temperature)
-        put("system", request.system)
+        put("system", request.fullSystem)
         put("messages", encodeMessages(request.messages))
         if (request.tools.isNotEmpty()) put("tools", buildJsonArray {
             for (t in request.tools) add(buildJsonObject {

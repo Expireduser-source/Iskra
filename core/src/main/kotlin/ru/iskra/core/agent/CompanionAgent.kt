@@ -72,6 +72,8 @@ class CompanionAgent(
     private val random: Random = Random.Default,
     private val composer: PromptComposer = PromptComposer(),
     private val deviceContext: () -> String = { "" },
+    /** Upcoming reminders for the prompt ("сегодня в 18:30 — позвонить маме"). */
+    private val upcoming: () -> List<String> = { emptyList() },
     private val historyTurns: Int = 16,
     private val maxToolRounds: Int = 4,
     private val summarizeAfterTurns: Int = 60,
@@ -279,11 +281,9 @@ class CompanionAgent(
 
     private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?): AgentReply {
         val now = clock()
-        val memories = memory.relevant(text, limit = 8, nowMs = now)
-        val system = composer.system(
-            persona.localized(), state.mood, state.style, memories, now,
-            toolsAvailable = tools.specs().isNotEmpty(), deviceContext = deviceContext(),
-        )
+        val system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
+        val situation = composer.situation(state.mood, memory.context(text, now), now, deviceContext(),
+            runCatching { upcoming() }.getOrDefault(emptyList()))
         val messages = ArrayList<ChatMessage>()
         for (t in conversation.recent(historyTurns)) messages += when (t.role) {
             Turn.Role.USER -> ChatMessage.User(t.text)
@@ -300,7 +300,7 @@ class CompanionAgent(
         try {
             repeat(maxToolRounds) { round ->
                 val offerTools = round < maxToolRounds - 1
-                val request = LlmRequest(system = system, messages = messages, tools = if (offerTools) tools.specs() else emptyList())
+                val request = LlmRequest(system = system, messages = messages, tools = if (offerTools) tools.specs() else emptyList(), situation = situation)
                 val response = if (sink == null) provider.complete(request) else {
                     val stream = ReplyStream(sink, state.mood.dominantEmotion())
                     provider.stream(request) { stream.feed(it) }.also { stream.finish() }

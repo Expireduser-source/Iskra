@@ -138,6 +138,10 @@ object ReminderParser {
     }
 }
 
+/** Upcoming reminders for the prompt: "сегодня в 18:30 — позвонить маме" (the next [max] within [withinMs]). */
+fun upcomingReminders(store: ReminderStore, nowMs: Long, zone: ZoneId, withinMs: Long = 36 * 3_600_000L, max: Int = 3): List<String> =
+    store.pending().filter { it.atMs in nowMs..(nowMs + withinMs) }.take(max).map { "${whenText(it.atMs, nowMs, zone)} — ${it.text}" }
+
 /** How to say when: «в 18:30», «завтра в 09:00», «через 10 мин (в 14:35)». */
 internal fun whenText(atMs: Long, nowMs: Long, zone: ZoneId): String {
     val at = LocalDateTime.ofInstant(Instant.ofEpochMilli(atMs), zone)

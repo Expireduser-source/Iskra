@@ -82,7 +82,7 @@ class OpenAiCompatibleProvider(
         put(if (useMaxCompletionTokens) "max_completion_tokens" else "max_tokens", request.maxTokens)
         put("temperature", request.temperature)
         put("messages", buildJsonArray {
-            add(buildJsonObject { put("role", "system"); put("content", request.system) })
+            add(buildJsonObject { put("role", "system"); put("content", request.fullSystem) })
             for (m in request.messages) add(encode(m))
         })
         if (request.tools.isNotEmpty()) {

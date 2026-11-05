@@ -51,16 +51,8 @@ class InMemoryMemoryStore : MemoryStore {
     }
 }
 
-/** Very light Russian/English normalisation: lowercase, split, strip common inflection endings. */
+/** Russian/English normalisation for memory: lowercase, split, drop stop words, stem, add synonym concepts. */
 object TextNorm {
-    private val endings = listOf(
-        "иями", "ями", "ами", "ого", "его", "ому", "ему", "ыми", "ими", "ость", "ости",
-        "ов", "ев", "ей", "ий", "ый", "ой", "ая", "яя", "ое", "ее", "ые", "ие", "ам", "ям", "ах", "ях",
-        "ом", "ем", "ую", "юю", "ть", "ла", "ли", "ло", "ся", "сь",
-        "а", "я", "о", "е", "ы", "и", "у", "ю", "ь",
-        // English (Latin endings never touch Russian words and vice versa)
-        "ing", "ed", "es", "s",
-    )
     private val stop = setOf(
         "это", "как", "что", "так", "для", "меня", "мне", "тебя", "тебе", "был", "была", "было", "есть",
         "the", "and", "you", "она", "они", "оно", "его", "еще", "ещё", "уже", "очень", "только", "когда",
@@ -68,19 +60,20 @@ object TextNorm {
         "that", "this", "with", "have", "has", "was", "were", "are", "for", "not", "but", "what", "when", "where",
         "how", "your", "about", "from", "will", "would", "can", "could", "just", "very", "also", "they", "she",
         "her", "him", "his", "its", "our", "all", "any", "mine", "there", "their",
+        "мою", "моей", "моего", "моих", "свою", "своей", "владелец", "владельца", "владельцу", "owner", "owner's",
     )
 
-    fun tokens(text: String): List<String> =
-        text.lowercase().replace('ё', 'е')
-            .split(Regex("[^\\p{L}\\p{N}]+"))
-            .filter { it.length >= 3 && it !in stop }
-            .map(::stem)
-
-    fun stem(word: String): String {
-        if (word.length <= 4) return word
-        for (e in endings) if (word.endsWith(e) && word.length - e.length >= 3) return word.dropLast(e.length)
-        return word
+    /** Stems plus concept tokens ("#dog") for the words that have them. */
+    fun tokens(text: String): List<String> {
+        val stems = words(text).map(::stem)
+        return stems + stems.flatMap { Concepts.of(it) }.distinct()
     }
+
+    private fun words(text: String) = text.lowercase().replace('ё', 'е')
+        .split(Regex("[^\\p{L}\\p{N}]+"))
+        .filter { it.length >= 3 && it !in stop }
+
+    fun stem(word: String): String = Stemmer.stem(word)
 }
 
 /**
@@ -114,6 +107,16 @@ class LexicalRetriever : MemoryRetriever {
     }
 }
 
+/** Memory for one prompt, in three parts (see [MemoryManager.context]). */
+data class MemoryContext(
+    val profile: List<MemoryItem> = emptyList(),
+    val related: List<MemoryItem> = emptyList(),
+    val recent: List<MemoryItem> = emptyList(),
+) {
+    val all: List<MemoryItem> get() = profile + related + recent
+    fun isEmpty() = profile.isEmpty() && related.isEmpty() && recent.isEmpty()
+}
+
 class MemoryManager(
     private val store: MemoryStore,
     private val retriever: MemoryRetriever = LexicalRetriever(),
@@ -142,6 +145,21 @@ class MemoryManager(
             store.delete(victim.id)
         }
         return AddResult.Added(store.insert(kind, clean, source, importance.coerceIn(1, 5), nowMs))
+    }
+
+    /**
+     * What goes into the prompt: who the owner is (the most important facts, always), what relates to this
+     * message, and the latest conversation summaries (continuity across days).
+     */
+    fun context(query: String, nowMs: Long, profileLimit: Int = 5, relatedLimit: Int = 6, recentLimit: Int = 2): MemoryContext {
+        val all = store.all()
+        val profile = all.filter { it.kind != MemoryKind.EPISODE && it.importance >= 4 }
+            .sortedWith(compareByDescending<MemoryItem> { it.importance }.thenByDescending { it.createdAtMs }).take(profileLimit)
+        val recent = all.filter { it.kind == MemoryKind.EPISODE }.sortedByDescending { it.createdAtMs }.take(recentLimit)
+        val used = (profile + recent).map { it.id }.toSet()
+        val related = retriever.retrieve(query, all.filter { it.id !in used }, relatedLimit, nowMs)
+        store.touch((profile + related + recent).map { it.id }, nowMs)
+        return MemoryContext(profile, related, recent.sortedBy { it.createdAtMs })
     }
 
     fun relevant(query: String, limit: Int, nowMs: Long): List<MemoryItem> {

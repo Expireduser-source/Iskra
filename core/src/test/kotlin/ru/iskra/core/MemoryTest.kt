@@ -46,3 +46,41 @@ class MemoryTest {
         assertEquals(setOf("Факт первый важный", "Новый факт про горы"), m.all().map { it.text }.toSet())
     }
 }
+
+class MemoryRecallTest {
+    private val m = ru.iskra.core.memory.MemoryManager(ru.iskra.core.memory.InMemoryMemoryStore())
+    private fun add(text: String, importance: Int = 3, kind: ru.iskra.core.memory.MemoryKind = ru.iskra.core.memory.MemoryKind.FACT, at: Long = 0) =
+        m.add(text, kind, ru.iskra.core.memory.MemorySource.USER_EXPLICIT, importance, at)
+
+    @kotlin.test.Test fun russianStemsMeet() {
+        val s = ru.iskra.core.memory.Stemmer::stem
+        // Snowball keeps "живет" whole; the "live" concept joins them for search.
+        kotlin.test.assertEquals(ru.iskra.core.memory.Concepts.of(s("живу")), ru.iskra.core.memory.Concepts.of(s("живёт")))
+        kotlin.test.assertEquals(s("работаю"), s("работает"))
+        kotlin.test.assertEquals(s("красивая"), s("красивый"))
+        kotlin.test.assertEquals(s("running"), s("runs"))
+        kotlin.test.assertEquals(s("puppies"), s("puppy"))
+    }
+
+    @kotlin.test.Test fun synonymsAndOtherLanguageFindTheFact() {
+        add("У владельца пёс Рекс")
+        add("Владелец работает дизайнером")
+        add("Владелец любит кофе без сахара")
+        fun top(q: String) = m.context(q, 0).related.first().text
+        kotlin.test.assertEquals("У владельца пёс Рекс", top("как зовут мою собаку?"))
+        kotlin.test.assertEquals("У владельца пёс Рекс", top("what's my dog's name"))
+        kotlin.test.assertEquals("Владелец работает дизайнером", top("что у меня с работой"))
+        kotlin.test.assertEquals("Владелец любит кофе без сахара", top("свари мне эспрессо"))
+    }
+
+    @kotlin.test.Test fun profileAndRecentConversationsAlwaysCome() {
+        add("Владельца зовут Аня", importance = 5)
+        repeat(12) { add("Факт номер $it про марки и почту", importance = 2) }
+        add("Говорили про поездку в Казань", kind = ru.iskra.core.memory.MemoryKind.EPISODE, at = 10)
+        add("Обсуждали новый ноутбук", kind = ru.iskra.core.memory.MemoryKind.EPISODE, at = 20)
+        val c = m.context("какая погода", 100)
+        kotlin.test.assertEquals(listOf("Владельца зовут Аня"), c.profile.map { it.text })
+        kotlin.test.assertEquals(listOf("Говорили про поездку в Казань", "Обсуждали новый ноутбук"), c.recent.map { it.text })
+        kotlin.test.assertTrue(c.related.size <= 6)
+    }
+}

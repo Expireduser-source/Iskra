@@ -52,7 +52,7 @@ class InMemoryUsageStore : UsageStore {
 object TokenEstimate {
     fun of(text: String): Int = (text.length + 2) / 3
 
-    fun of(request: LlmRequest): Int = of(request.system) + request.messages.sumOf { m ->
+    fun of(request: LlmRequest): Int = of(request.fullSystem) + request.messages.sumOf { m ->
         when (m) {
             is ChatMessage.User -> of(m.text)
             is ChatMessage.Assistant -> of(m.text) + m.toolCalls.size * 20

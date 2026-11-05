@@ -21,12 +21,20 @@ data class ToolSpec(
 data class ToolCall(val id: String, val name: String, val arguments: JsonObject)
 
 data class LlmRequest(
+    /** The stable part of the instructions (persona, rules, tools): the same from message to message. */
     val system: String,
     val messages: List<ChatMessage>,
     val tools: List<ToolSpec> = emptyList(),
     val maxTokens: Int = 600,
     val temperature: Double = 0.8,
-)
+    /**
+     * What changes every message (time, mood, memory for this message, reminders). Cloud providers append it to the
+     * system prompt; an on-device model reads it with the last message so its cache of the dialogue stays valid.
+     */
+    val situation: String = "",
+) {
+    val fullSystem: String get() = if (situation.isBlank()) system else system + "\n\n" + situation
+}
 
 data class LlmResponse(
     val text: String,

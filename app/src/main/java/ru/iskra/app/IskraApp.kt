@@ -30,6 +30,7 @@ import ru.iskra.core.skills.PhraseBank
 import ru.iskra.core.skills.SetReminderTool
 import ru.iskra.core.skills.WeatherClient
 import ru.iskra.core.skills.WeatherTool
+import ru.iskra.core.skills.upcomingReminders
 import ru.iskra.core.brain.CurrencyClient
 import ru.iskra.core.brain.CurrencyTool
 import ru.iskra.core.brain.WikipediaClient
@@ -145,6 +146,7 @@ class IskraApp : Application() {
                 tr("Служба управления телефоном (спец. возможности): ", "Phone control service (accessibility): ") +
                     if (CompanionAccessibilityService.isConnected()) tr("включена.", "on.") else tr("выключена — системная навигация недоступна.", "off — system navigation unavailable.")
             },
+            upcoming = { upcomingReminders(reminders, System.currentTimeMillis(), java.time.ZoneId.systemDefault()) },
         )
         speaker = Speaker(
             this,
