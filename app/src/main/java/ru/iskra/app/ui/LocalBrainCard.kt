@@ -97,6 +97,10 @@ fun LocalBrainCard() {
                         Text(tr("Отвечать ею, когда нет облака", "Answer with it when there's no cloud"), Modifier.weight(1f), fontSize = 14.sp)
                         Switch(checked = enabled, onCheckedChange = { enabled = it; LocalBrain.setEnabled(it) }, modifier = Modifier.testTag("local_brain_enabled"))
                     }
+                    if (LocalBrain.isLegacy(s.model)) Text(
+                        tr("Появилась модель лучше — ${LocalBrain.suggested().title}: она заметно умнее по-русски. Удали эту и скачай новую.",
+                            "A better model is available — ${LocalBrain.suggested().title}: noticeably smarter. Delete this one and download the new one."),
+                        fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     speed?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     Row {
                         TextButton(enabled = speed != CHECKING, onClick = {

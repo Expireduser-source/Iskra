@@ -238,13 +238,9 @@ def local_brain_check(s, api):
 # Models to compare in the evaluation: the catalog's and candidates for it (a missing repo or file is skipped).
 EVAL_CANDIDATES = [
     # (name, repo, file patterns in order of preference, chat format if the file's own template can't tell)
-    ("gemma-3-1b", "ggml-org/gemma-3-1b-it-GGUF", [r"(?i)q4_k_m\.gguf$"], "GEMMA"),
-    ("qwen3-1.7b", "ggml-org/Qwen3-1.7B-GGUF", [r"(?i)q4_k_m\.gguf$", r"(?i)q8_0\.gguf$"], "CHATML_NO_THINK"),
-    ("qwen3.5-2b", "unsloth/Qwen3.5-2B-GGUF", [r"(?i)qwen3\.5-2b-q4_k_m\.gguf$", r"(?i)q4_k_m\.gguf$"], "CHATML_NO_THINK"),
-    ("gemma-4-e2b-mobile", "unsloth/gemma-4-E2B-it-qat-mobile-GGUF", [r"(?i)q4_0\.gguf$", r"(?i)q4_k_m\.gguf$", r"(?i)iq4\w*\.gguf$"], "GEMMA4"),
-    ("gemma-3-4b", "ggml-org/gemma-3-4b-it-GGUF", [r"(?i)q4_k_m\.gguf$"], "GEMMA"),
-    ("qwen3.5-4b", "unsloth/Qwen3.5-4B-GGUF", [r"(?i)qwen3\.5-4b-q4_k_m\.gguf$", r"(?i)q4_k_m\.gguf$"], "CHATML_NO_THINK"),
-    ("qwen2.5-1.5b", "Qwen/Qwen2.5-1.5B-Instruct-GGUF", [r"qwen2\.5-1\.5b-instruct-q4_k_m\.gguf$"], "CHATML"),
+    ("gemma-3-1b", "ggml-org/gemma-3-1b-it-GGUF", [r"(?i)gemma-3-1b-it-q4_k_m\.gguf$"], "GEMMA"),
+    ("qwen3.5-2b", "unsloth/Qwen3.5-2B-GGUF", [r"(?i)qwen3\.5-2b-q4_k_m\.gguf$"], "CHATML_NO_THINK"),
+    ("qwen3.5-4b", "unsloth/Qwen3.5-4B-GGUF", [r"(?i)qwen3\.5-4b-q4_k_m\.gguf$"], "CHATML_NO_THINK"),
 ]
 
 

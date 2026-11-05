@@ -28,7 +28,7 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
   (“remind me tomorrow at 9 to call mom”), notes (“note: buy milk”), exact sums (“what's 15% of 2300”), units (“5 miles
   to km”), dates (“how many days until New Year”), coins and dice, small talk, the flashlight, volume, apps, settings,
   and “Surprise me” — tiny games with the world around you. Online without any account: weather and exchange rates.
-- **A brain on the phone:** download a small model once (Qwen, 0.4–2.5 GB, chosen for your phone's memory) and talk
+- **A brain on the phone:** download a small model once (Gemma 3 1B or Qwen3.5, 0.8–2.7 GB, chosen for your phone's memory) and talk
   **with no internet at all** — nothing you say leaves the phone. It also steps in when the cloud is unreachable.
 - **A real conversation:** connect a **free brain with one tap** (OpenRouter — sign in with Google or e-mail, nothing to
   copy; a busy free model quietly hands over to another) or use your own key from DeepSeek, OpenAI, Anthropic Claude or
@@ -101,5 +101,5 @@ iskra/
 The code is free software under the [GNU General Public License v3](LICENSE). The character artwork (sprites and rig
 layers in `app/src/main/res/drawable-nodpi` and `app/src/main/assets/rig`) © the project owner, all rights reserved.
 Dependencies: Kotlin, kotlinx, OkHttp, AndroidX/Compose, Material Icons (Apache-2.0), Vosk and its models (Apache-2.0),
-JNA (Apache-2.0/LGPL-2.1), llama.cpp and ggml (MIT); Qwen models are downloaded separately (Apache-2.0). Weather data:
+JNA (Apache-2.0/LGPL-2.1), llama.cpp and ggml (MIT); the Gemma and Qwen models are downloaded separately under their authors' licenses (Gemma Terms of Use; Apache-2.0). Weather data:
 [Open-Meteo](https://open-meteo.com) (CC BY 4.0). Facts: Wikipedia (CC BY-SA). Rates By [Exchange Rate API](https://www.exchangerate-api.com).

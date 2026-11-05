@@ -60,10 +60,10 @@ fun AboutSection() {
     ), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text(tr(
         "Внутри: Kotlin, kotlinx, OkHttp, AndroidX и Jetpack Compose, Material Icons (Apache-2.0); Vosk и его модели (Apache-2.0); " +
-            "JNA (Apache-2.0 / LGPL-2.1); llama.cpp и ggml (MIT). Модели Qwen скачиваются отдельно (Apache-2.0). " +
+            "JNA (Apache-2.0 / LGPL-2.1); llama.cpp и ggml (MIT). Модели Gemma и Qwen скачиваются отдельно, по лицензиям авторов (Gemma Terms of Use, Apache-2.0). " +
             "Погода: Open-Meteo.com (данные по лицензии CC BY 4.0). Факты: Википедия (CC BY-SA). Курсы: Rates By Exchange Rate API.",
         "Inside: Kotlin, kotlinx, OkHttp, AndroidX and Jetpack Compose, Material Icons (Apache-2.0); Vosk and its models (Apache-2.0); " +
-            "JNA (Apache-2.0 / LGPL-2.1); llama.cpp and ggml (MIT). Qwen models are downloaded separately (Apache-2.0). " +
+            "JNA (Apache-2.0 / LGPL-2.1); llama.cpp and ggml (MIT). The Gemma and Qwen models are downloaded separately, under their authors' licenses (Gemma Terms of Use, Apache-2.0). " +
             "Weather: Open-Meteo.com (data under CC BY 4.0). Facts: Wikipedia (CC BY-SA). Rates By Exchange Rate API.",
     ), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     FlowRow {

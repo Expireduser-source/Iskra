@@ -24,7 +24,7 @@ all of it. Backup files are created only when you ask (a file you choose) and ne
 |---|---|---|
 | Conversation with a cloud model («brain») | the service you choose: OpenRouter, DeepSeek, OpenAI, Anthropic or your own server | your message, recent turns of the chat, memory notes relevant to it, her mood and the time; the API key you entered |
 | Free brain through OpenRouter | openrouter.ai | sign-in happens on their site in your browser; the app receives your personal key. When the chosen free model is busy, the same message may go to another free model there. **Free models may store conversations and use them for training** — don't share passwords or private details with them |
-| Brain on the phone | huggingface.co (download only) | a file download (0.4–2.5 GB). After that the model runs on the phone itself: **nothing you say to it leaves the phone** |
+| Brain on the phone | huggingface.co (download only) | a file download (0.8–2.7 GB). After that the model runs on the phone itself: **nothing you say to it leaves the phone** |
 | Fact lookups by the cloud model | wikipedia.org | the few search words the model chose (e.g. “Eiffel Tower height”); never the chat or memory |
 | Exchange rates | open.er-api.com (ExchangeRate-API) | the currency code (e.g. USD); nothing about you |
 | Cloud voice | Yandex SpeechKit, ElevenLabs, OpenAI or your server | only the text of Iskra's reply |
@@ -72,7 +72,7 @@ Changes to this policy are published in this file in the repository. Questions: 
 |---|---|---|
 | Разговор с облачной моделью («мозг») | выбранный тобой сервис: OpenRouter, DeepSeek, OpenAI, Anthropic или свой сервер | твоё сообщение, последние реплики переписки, подходящие заметки памяти, её настроение и время; введённый тобой ключ API |
 | Бесплатный «мозг» через OpenRouter | openrouter.ai | вход происходит на их сайте в браузере; приложение получает твой личный ключ. Если выбранная бесплатная модель занята, то же сообщение может уйти другой бесплатной модели там же. **Бесплатные модели могут сохранять переписку и учиться на ней** — не пиши им пароли и личное |
-| «Мозг на телефоне» | huggingface.co (только скачивание) | скачивание файла (0,4–2,5 ГБ). Дальше модель работает на самом телефоне: **ничего из сказанного ей не уходит с телефона** |
+| «Мозг на телефоне» | huggingface.co (только скачивание) | скачивание файла (0,8–2,7 ГБ). Дальше модель работает на самом телефоне: **ничего из сказанного ей не уходит с телефона** |
 | Поиск фактов облачной моделью | wikipedia.org | несколько слов запроса, которые выбрала модель (например, «высота Эйфелевой башни»); переписка и память — никогда |
 | Курсы валют | open.er-api.com (ExchangeRate-API) | код валюты (например, USD); ничего о тебе |
 | Облачный голос | Yandex SpeechKit, ElevenLabs, OpenAI или твой сервер | только текст ответа Искры |

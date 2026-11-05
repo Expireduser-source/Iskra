@@ -4,6 +4,7 @@ import org.junit.Assume.assumeTrue
 import ru.iskra.core.llm.ChatMessage
 import ru.iskra.core.llm.LlmRequest
 import ru.iskra.core.llm.local.ChatFormat
+import ru.iskra.core.llm.local.detect
 import ru.iskra.core.llm.local.NativeLlamaEngine
 import kotlin.concurrent.thread
 import kotlin.test.Test
@@ -24,8 +25,10 @@ class NativeLlamaTest {
     fun llamaCppThroughTheBridge() {
         assumeTrue("ISKRA_LLAMA_LIB / ISKRA_LLAMA_MODEL not set", lib != null && model != null)
         System.load(lib!!)
+        // The real file's header: the chat template is read past ~150k vocabulary strings.
+        assertEquals(ChatFormat.CHATML, ChatFormat.detect(ru.iskra.core.llm.local.Gguf.chatTemplate(java.io.File(model!!))))
         assertNull(NativeLlamaEngine.open("/nonexistent.gguf", 512, 2))
-        val e = NativeLlamaEngine.open(model!!, 512, 2)!!
+        val e = NativeLlamaEngine.open(model, 512, 2)!!
         e.use {
             assertTrue(e.info.contains("ctx 512"), e.info)
             val prompt = ChatFormat.CHATML.render(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Привет! Как дела? 🐱"))))

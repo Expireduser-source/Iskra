@@ -342,14 +342,25 @@ class CompanionAgent(
         val now = clock()
         // A small model on the phone gets a short prompt, no tools and less history: every token costs it time.
         val small = provider.onDevice
-        val system = if (small) composer.compact(persona.localized(), state.style)
-        else composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
-        val situation = if (small) composer.compactSituation(memory.context(text, now, profileLimit = 3, relatedLimit = 3, recentLimit = 1), now)
-        else composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()) + todayNotes(now))
+        val system: String
+        val situation: String
+        if (small) {
+            // Steady facts go with the instructions (cached); only memories matching this message come next to it.
+            val mem = memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true)
+            system = composer.compact(persona.localized(), state.style) + "\n\n" + composer.compactProfile(mem, now)
+            situation = composer.compactSituation(mem)
+        } else {
+            system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
+            situation = composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()) + todayNotes(now))
+        }
         val messages = ArrayList<ChatMessage>()
-        for (t in conversation.recent(if (small) minOf(historyTurns, 8) else historyTurns)) messages += when (t.role) {
+        // A small model's window of the dialogue moves in steps, not by one turn per message: its first turn stays put for
+        // several messages, so the cached beginning stays valid. 6–13 turns, about the same as before on average.
+        val window = if (small) conversation.count().let { n -> n - maxOf(0, (n - 6) / 8 * 8) } else historyTurns
+        for (t in conversation.recent(window)) messages += when (t.role) {
             Turn.Role.USER -> ChatMessage.User(t.text)
-            Turn.Role.ASSISTANT -> ChatMessage.Assistant(t.text)
+            // A small model sees its earlier replies as it wrote them (mood tag included), so its cache matches them.
+            Turn.Role.ASSISTANT -> ChatMessage.Assistant(if (small && t.emotion != null) "[${t.emotion.name.lowercase()}] ${t.text}" else t.text)
         }
         // Providers require the dialogue to start with a user turn.
         while (messages.isNotEmpty() && messages.first() !is ChatMessage.User) messages.removeAt(0)

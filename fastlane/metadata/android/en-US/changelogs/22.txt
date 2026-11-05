@@ -1,0 +1,5 @@
+• A smarter brain on the phone: models chosen on real conversations — Gemma 3 1B, Qwen3.5 2B and 4B
+• Faster replies: the start of the conversation isn't recomputed for every message
+• Remembers your studies, work and pets; honestly says she's a program
+• "Check the speed" tells which model suits your phone
+• Your own model file: the dialogue format is detected by itself

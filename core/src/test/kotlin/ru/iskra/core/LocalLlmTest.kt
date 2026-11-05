@@ -12,6 +12,7 @@ import ru.iskra.core.llm.LlmProvider
 import ru.iskra.core.llm.LlmRequest
 import ru.iskra.core.llm.LlmResponse
 import ru.iskra.core.llm.local.ChatFormat
+import ru.iskra.core.llm.local.detect
 import ru.iskra.core.llm.local.LlamaEngine
 import ru.iskra.core.llm.local.LocalLlmProvider
 import ru.iskra.core.memory.InMemoryMemoryStore
@@ -94,6 +95,47 @@ class LocalLlmTest {
         val asked = request.copy(messages = listOf(ChatMessage.User("Как сказать «кошка» по-китайски? 猫?")))
         val cn = LocalLlmProvider({ FakeEngine("Это 猫 (māo).") }, ChatFormat.CHATML, "local:test")
         assertEquals("Это 猫 (māo).", cn.complete(asked).text)
+    }
+
+    @Test
+    fun theNextMessageReusesTheWholeCachedDialogue() = withLang(Lang.RU) {
+        runTest {
+            val engine = FakeEngine("[happy] Мрр, привет!")
+            val a = agent(null, LocalLlmProvider({ engine }, ChatFormat.CHATML, "local:test"))
+            a.handle("меня зовут Аня")
+            a.handle("как дела?")
+            a.handle("что посоветуешь почитать?")
+            val (p2, p3) = engine.prompts[1] to engine.prompts[2]
+            // Everything the model saw (and wrote) last time is the start of the next prompt: only the new message is read.
+            val before = p2 + "[happy] Мрр, привет!"
+            assertTrue(p3.startsWith(before), "the cache breaks at ${before.commonPrefixWith(p3).length} of ${before.length}")
+            assertTrue(p2.contains("Человека зовут Аня"))
+            // A long talk: the window of the dialogue moves in steps, so most messages still reuse the cache.
+            repeat(12) { a.handle("ещё вопрос номер $it?") }
+            val kept = engine.prompts.zipWithNext().count { (prev, next) -> next.startsWith(prev + "[happy] Мрр, привет!") }
+            assertTrue(kept >= 9, "the cache held in $kept of ${engine.prompts.size - 1} messages")
+        }
+    }
+
+    @Test
+    fun formatFromTheModelFilesOwnTemplate() {
+        // A minimal GGUF header: magic, version, 0 tensors, 2 key-values (a number, then the chat template).
+        fun gguf(template: String): ByteArray {
+            val b = java.io.ByteArrayOutputStream()
+            fun le32(v: Int) { for (i in 0 until 4) b.write((v shr (8 * i)) and 0xff) }
+            fun le64(v: Long) { for (i in 0 until 8) b.write(((v shr (8 * i)) and 0xff).toInt()) }
+            fun str(s: String) { val x = s.toByteArray(); le64(x.size.toLong()); b.write(x) }
+            b.write("GGUF".toByteArray()); le32(3); le64(0); le64(2)
+            str("general.alignment"); le32(4); le32(32)
+            str("tokenizer.chat_template"); le32(8); str(template)
+            return b.toByteArray()
+        }
+        fun detect(t: String) = ChatFormat.detect(ru.iskra.core.llm.local.Gguf.chatTemplate(gguf(t).inputStream()))
+        assertEquals(ChatFormat.GEMMA, detect("{{'<start_of_turn>model\n'}}"))
+        assertEquals(ChatFormat.GEMMA4, detect("{{- '<|turn>model\n' -}}"))
+        assertEquals(ChatFormat.CHATML_NO_THINK, detect("<|im_start|>assistant {% if enable_thinking %}"))
+        assertEquals(ChatFormat.CHATML, detect("<|im_start|>assistant"))
+        assertEquals(ChatFormat.CHATML, ChatFormat.detect(null))
     }
 
     @Test

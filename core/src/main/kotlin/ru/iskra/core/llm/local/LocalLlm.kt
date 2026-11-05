@@ -74,6 +74,8 @@ enum class ChatFormat {
     /** Gemma 4: <|turn>system/user/model … <turn|>, and an empty thought channel so it answers straight away. */
     GEMMA4;
 
+    companion object
+
     /** Renders the dialogue; the per-message situation goes right before the last message, so the rest stays cached. */
     fun render(request: LlmRequest): String {
         val turns = request.messages.mapNotNull {

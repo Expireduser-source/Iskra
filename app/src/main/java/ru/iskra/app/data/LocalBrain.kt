@@ -25,6 +25,8 @@ import ru.iskra.core.llm.LlmProvider
 import ru.iskra.core.llm.LlmRequest
 import ru.iskra.core.llm.local.ChatFormat
 import ru.iskra.core.llm.local.GenStats
+import ru.iskra.core.llm.local.Gguf
+import ru.iskra.core.llm.local.detect
 import ru.iskra.core.llm.local.LlamaEngine
 import ru.iskra.core.llm.local.LocalLlmProvider
 import ru.iskra.core.llm.local.NativeLlamaEngine
@@ -57,21 +59,31 @@ object LocalBrain {
         val note: String get() = tr(ru, en)
     }
 
-    /** Qwen models: Apache-2.0, official GGUF files on Hugging Face, good Russian and English for their size. */
+    /**
+     * Chosen on real conversations in Russian and English (CI evaluation, docs/reports/2026-11-05-0.12.1.md): Gemma 3 1B
+     * talks the most naturally for its size, Qwen3.5 2B and 4B are smarter and slower. Official or well-known GGUF files.
+     */
     val models = listOf(
-        Model("qwen2.5-0.5b", "Qwen2.5 0.5B", "qwen2.5-0.5b-instruct-q4_k_m.gguf",
-            "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf", 491, 3,
-            ChatFormat.CHATML, "Лёгкий: быстрый на любом телефоне, но отвечает просто.", "Light: fast on any phone, but answers simply.",
-            "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"),
-        Model("qwen2.5-1.5b", "Qwen2.5 1.5B", "qwen2.5-1.5b-instruct-q4_k_m.gguf",
-            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf", 1117, 6,
-            ChatFormat.CHATML, "Обычный: заметно умнее, нужен телефон с 6 ГБ памяти.", "Standard: noticeably smarter, needs a phone with 6 GB of memory.",
-            "6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e"),
-        Model("qwen3-4b", "Qwen3 4B", "Qwen3-4B-Q4_K_M.gguf",
-            "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf", 2497, 10,
-            ChatFormat.CHATML_NO_THINK, "Сильный: для флагманов с 10+ ГБ памяти, отвечает медленнее.", "Strong: for flagships with 10+ GB of memory, slower to answer.",
-            "7485fe6f11af29433bc51cab58009521f205840f5b4ae3a32fa7f92e8534fdf5"),
+        Model("gemma-3-1b", "Gemma 3 1B", "gemma-3-1b-it-Q4_K_M.gguf",
+            "https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf", 806, 4,
+            ChatFormat.GEMMA, "Лёгкий: живой русский и английский, отвечает быстро.", "Light: lively Russian and English, answers quickly."),
+        Model("qwen3.5-2b", "Qwen3.5 2B", "Qwen3.5-2B-Q4_K_M.gguf",
+            "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf", 1280, 6,
+            ChatFormat.CHATML_NO_THINK, "Обычный: умнее и грамотнее, нужен телефон с 6 ГБ памяти.", "Standard: smarter, needs a phone with 6 GB of memory."),
+        Model("qwen3.5-4b", "Qwen3.5 4B", "Qwen3.5-4B-Q4_K_M.gguf",
+            "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf", 2740, 10,
+            ChatFormat.CHATML_NO_THINK, "Сильный: лучшие ответы, но заметно медленнее; для флагманов с 10+ ГБ памяти.",
+            "Strong: the best answers, but noticeably slower; for flagships with 10+ GB of memory."),
     )
+
+    /** Models of 0.12.0: still recognized if downloaded, with a hint that a better one exists. */
+    private val legacy = listOf(
+        Model("qwen2.5-0.5b", "Qwen2.5 0.5B", "qwen2.5-0.5b-instruct-q4_k_m.gguf", "", 491, 3, ChatFormat.CHATML, "", ""),
+        Model("qwen2.5-1.5b", "Qwen2.5 1.5B", "qwen2.5-1.5b-instruct-q4_k_m.gguf", "", 1117, 6, ChatFormat.CHATML, "", ""),
+        Model("qwen3-4b", "Qwen3 4B", "Qwen3-4B-Q4_K_M.gguf", "", 2497, 10, ChatFormat.CHATML_NO_THINK, "", ""),
+    )
+
+    fun isLegacy(m: Model) = legacy.any { it.id == m.id }
 
     /** A GGUF file put into the folder by hand (or by the CI check): any ChatML model works. */
     private val custom = Model("custom", tr("Свой файл", "Own file"), "custom.gguf", "", 0, 0, ChatFormat.CHATML, "", "")
@@ -101,7 +113,7 @@ object LocalBrain {
 
     /** The model already on the phone, if any. */
     private fun installed(): State.Ready? {
-        val saved = prefs().getString(KEY_MODEL, null)?.let { id -> models.firstOrNull { it.id == id } }
+        val saved = prefs().getString(KEY_MODEL, null)?.let { id -> (models + legacy).firstOrNull { it.id == id } }
         val ready = saved?.takeIf { fileOf(it).isFile } ?: custom.takeIf { fileOf(it).isFile }
         return ready?.let { State.Ready(it, fileOf(it).length()) }
     }
@@ -218,7 +230,7 @@ object LocalBrain {
         File(dir, model.file).delete()
         if (!part.renameTo(target)) throw IllegalStateException(tr("не удалось сохранить файл", "couldn't save the file"))
         // Only one model is kept: switching frees the space of the previous one.
-        models.filter { it.id != model.id }.forEach { File(dir, it.file).delete(); File(dir, it.file + ".part").delete() }
+        (models + legacy).filter { it.id != model.id }.forEach { File(dir, it.file).delete(); File(dir, it.file + ".part").delete() }
         prefs().edit().putString(KEY_MODEL, model.id).apply()
         unload()
         _state.value = State.Ready(model, target.length())
@@ -260,7 +272,15 @@ object LocalBrain {
         val st = state.value as? State.Ready ?: return null
         if (!enabled()) return null
         provider?.takeIf { it.first == st.model.id }?.let { return it.second }
-        return LocalLlmProvider(::engine, st.model.format, "local:${st.model.id}", onStats = ::logStats).also { provider = st.model.id to it }
+        return LocalLlmProvider(::engine, formatOf(st.model), "local:${st.model.id}", onStats = ::logStats).also { provider = st.model.id to it }
+    }
+
+    private val formats = HashMap<String, ChatFormat>()
+
+    /** The dialogue format from the model file's own chat template (a hand-placed file can be any model), else the catalog's. */
+    private fun formatOf(m: Model): ChatFormat = synchronized(formats) {
+        val f = fileOf(m)
+        formats.getOrPut(f.path + ":" + f.length()) { ChatFormat.detect(Gguf.chatTemplate(f), m.format) }
     }
 
     /** Every reply's speed goes to the journal: the numbers that tell which model suits this phone. */
@@ -280,7 +300,7 @@ object LocalBrain {
     suspend fun speedCheck(): SpeedCheck? {
         val st = state.value as? State.Ready ?: return null
         val e = engine() ?: return null
-        val prompt = st.model.format.render(LlmRequest(
+        val prompt = formatOf(st.model).render(LlmRequest(
             system = tr("Ты — Искра, кошкодевочка в телефоне. Отвечай тепло и коротко.", "You are Iskra, a cat-girl in the phone. Answer warmly and briefly."),
             messages = listOf(ChatMessage.User(tr("Расскажи о себе в двух предложениях.", "Tell me about yourself in two sentences."))),
         ))

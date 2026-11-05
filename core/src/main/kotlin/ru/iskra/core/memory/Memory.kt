@@ -83,11 +83,20 @@ object TextNorm {
  */
 interface MemoryRetriever {
     fun retrieve(query: String, items: List<MemoryItem>, limit: Int, nowMs: Long): List<MemoryItem>
+    /** Only items that share words (or synonym concepts) with [query]; none at all if nothing matches. */
+    fun matching(query: String, items: List<MemoryItem>, limit: Int, nowMs: Long): List<MemoryItem> = retrieve(query, items, limit, nowMs)
 }
 
 class LexicalRetriever : MemoryRetriever {
-    override fun retrieve(query: String, items: List<MemoryItem>, limit: Int, nowMs: Long): List<MemoryItem> {
-        if (items.isEmpty() || limit <= 0) return emptyList()
+    override fun retrieve(query: String, items: List<MemoryItem>, limit: Int, nowMs: Long): List<MemoryItem> =
+        scored(query, items, nowMs).take(limit).map { it.first }
+
+    override fun matching(query: String, items: List<MemoryItem>, limit: Int, nowMs: Long): List<MemoryItem> =
+        scored(query, items, nowMs).filter { it.third }.take(limit).map { it.first }
+
+    /** Items with their score, best first; the flag says whether any word matched. */
+    private fun scored(query: String, items: List<MemoryItem>, nowMs: Long): List<Triple<MemoryItem, Double, Boolean>> {
+        if (items.isEmpty()) return emptyList()
         val q = TextNorm.tokens(query).toSet()
         val docs = items.map { it to TextNorm.tokens(it.text).toSet() }
         val df = HashMap<String, Int>()
@@ -100,10 +109,9 @@ class LexicalRetriever : MemoryRetriever {
             val recency = exp(-ageDays / 30.0)
             val prior = 0.15 * item.importance + 0.2 * recency +
                 (if (item.kind == MemoryKind.PREFERENCE) 0.1 else 0.0)
-            item to (if (lexical > 0) 2.0 * lexical + prior else prior * 0.5)
+            Triple(item, if (lexical > 0) 2.0 * lexical + prior else prior * 0.5, lexical > 0)
         }
-        // Always include very important memories (owner's name etc.), then the best matches.
-        return scored.sortedByDescending { it.second }.take(limit).map { it.first }
+        return scored.sortedByDescending { it.second }
     }
 }
 
@@ -151,13 +159,18 @@ class MemoryManager(
      * What goes into the prompt: who the owner is (the most important facts, always), what relates to this
      * message, and the latest conversation summaries (continuity across days).
      */
-    fun context(query: String, nowMs: Long, profileLimit: Int = 5, relatedLimit: Int = 6, recentLimit: Int = 2): MemoryContext {
+    /**
+     * [onlyMatching]: "related" holds only memories that share words with [query] (for the model on the phone, whose
+     * dialogue cache breaks wherever the prompt changes).
+     */
+    fun context(query: String, nowMs: Long, profileLimit: Int = 5, relatedLimit: Int = 6, recentLimit: Int = 2, onlyMatching: Boolean = false): MemoryContext {
         val all = store.all()
         val profile = all.filter { it.kind != MemoryKind.EPISODE && it.importance >= 4 }
             .sortedWith(compareByDescending<MemoryItem> { it.importance }.thenByDescending { it.createdAtMs }).take(profileLimit)
         val recent = all.filter { it.kind == MemoryKind.EPISODE }.sortedByDescending { it.createdAtMs }.take(recentLimit)
         val used = (profile + recent).map { it.id }.toSet()
-        val related = retriever.retrieve(query, all.filter { it.id !in used }, relatedLimit, nowMs)
+        val rest = all.filter { it.id !in used }
+        val related = if (onlyMatching) retriever.matching(query, rest, relatedLimit, nowMs) else retriever.retrieve(query, rest, relatedLimit, nowMs)
         store.touch((profile + related + recent).map { it.id }, nowMs)
         return MemoryContext(profile, related, recent.sortedBy { it.createdAtMs })
     }
