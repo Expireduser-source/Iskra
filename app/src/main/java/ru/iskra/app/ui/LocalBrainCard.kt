@@ -21,6 +21,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +49,8 @@ fun LocalBrainCard() {
     var choice by remember { mutableStateOf(runCatching { LocalBrain.suggested() }.getOrNull() ?: LocalBrain.models.first()) }
     var confirm by remember { mutableStateOf(false) }
     var enabled by remember { mutableStateOf(LocalBrain.enabled()) }
+    var speed by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     Card(Modifier.fillMaxWidth().testTag("local_brain")) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -93,7 +97,14 @@ fun LocalBrainCard() {
                         Text(tr("Отвечать ею, когда нет облака", "Answer with it when there's no cloud"), Modifier.weight(1f), fontSize = 14.sp)
                         Switch(checked = enabled, onCheckedChange = { enabled = it; LocalBrain.setEnabled(it) }, modifier = Modifier.testTag("local_brain_enabled"))
                     }
-                    TextButton(onClick = { LocalBrain.delete() }) { Text(tr("Удалить модель (освободит ${mb(s.bytes)})", "Delete the model (frees ${mb(s.bytes)})")) }
+                    speed?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Row {
+                        TextButton(enabled = speed != CHECKING, onClick = {
+                            speed = CHECKING
+                            scope.launch { speed = runCatching { LocalBrain.speedCheck()?.text }.getOrNull() ?: tr("Не получилось загрузить модель.", "Couldn't load the model.") }
+                        }, modifier = Modifier.testTag("local_brain_speed")) { Text(tr("Проверить скорость", "Check the speed")) }
+                        TextButton(onClick = { speed = null; LocalBrain.delete() }) { Text(tr("Удалить (${mb(s.bytes)})", "Delete (${mb(s.bytes)})")) }
+                    }
                 }
             }
         }
@@ -107,6 +118,8 @@ fun LocalBrainCard() {
         dismissButton = { TextButton(onClick = { confirm = false }) { Text(tr("Подожду Wi-Fi", "I'll wait for Wi-Fi")) } },
     )
 }
+
+private val CHECKING: String get() = tr("Проверяю скорость… (первый раз модель загружается в память)", "Checking the speed… (the first time the model loads into memory)")
 
 private fun mb(bytes: Long): String = if (bytes >= 1_000_000_000) String.format(Locale.getDefault(), tr("%.1f ГБ", "%.1f GB"), bytes / 1e9)
 else tr("${bytes / 1_000_000} МБ", "${bytes / 1_000_000} MB")

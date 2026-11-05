@@ -235,6 +235,141 @@ def local_brain_check(s, api):
         annotate("error", f"On-phone model, API {api}", f"no reply in 4 minutes; {loaded or 'the model was not loaded'}")
 
 
+# Models to compare in the evaluation: the catalog's and candidates for it (a missing repo or file is skipped).
+EVAL_CANDIDATES = [
+    ("qwen2.5-0.5b", "Qwen/Qwen2.5-0.5B-Instruct-GGUF", r"qwen2\.5-0\.5b-instruct-q4_k_m\.gguf$", "CHATML"),
+    ("qwen2.5-1.5b", "Qwen/Qwen2.5-1.5B-Instruct-GGUF", r"qwen2\.5-1\.5b-instruct-q4_k_m\.gguf$", "CHATML"),
+    ("qwen3-1.7b", "unsloth/Qwen3-1.7B-GGUF", r"(?i)qwen3-1\.7b-q4_k_m\.gguf$", "CHATML_NO_THINK"),
+    ("gemma-3-1b", "ggml-org/gemma-3-1b-it-GGUF", r"(?i)gemma-3-1b-it-q4_k_m\.gguf$", "GEMMA"),
+    ("gemma-3-1b", "unsloth/gemma-3-1b-it-GGUF", r"(?i)gemma-3-1b-it-q4_k_m\.gguf$", "GEMMA"),
+    ("qwen3-4b", "Qwen/Qwen3-4B-GGUF", r"(?i)qwen3-4b-q4_k_m\.gguf$", "CHATML_NO_THINK"),
+]
+SMALL_FAMILIES = re.compile(r"(?i)(gemma-?[34]|qwen3|qwen-?3\.5|qwen4|lfm2|phi-?4-?mini|smollm|ministral|llama-?3\.2|granite)")
+
+
+def hf_json(url):
+    import json
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "Iskra-CI"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.load(r)
+
+
+def model_eval(out):
+    """
+    The on-phone models judged on a real conversation: the app's own pipeline (agent, compact prompt, dialogue cache,
+    JNI, llama.cpp) on this computer, for every candidate model. Transcripts and timings go to out/eval.
+    """
+    import hashlib
+    import shutil
+    import tarfile
+    import urllib.request
+
+    t_start = time.time()
+    ev = os.path.join(out, "eval")
+    os.makedirs(ev, exist_ok=True)
+    # 1. What small GGUF models exist now (for choosing the catalog; just a list).
+    found = []
+    for author in ("ggml-org", "unsloth", "Qwen", "bartowski"):
+        try:
+            for m in hf_json(f"https://huggingface.co/api/models?author={author}&search=GGUF&sort=downloads&direction=-1&limit=300"):
+                mid = m.get("id", "")
+                if SMALL_FAMILIES.search(mid):
+                    found.append(f"{m.get('downloads', 0):>10}  {m.get('lastModified', '')[:10]}  {mid}")
+        except Exception as e:  # noqa: BLE001
+            found.append(f"({author}: {e})")
+    with open(os.path.join(ev, "hf-small-models.txt"), "w") as f:
+        f.write("\n".join(found))
+    print("\n".join(found[:80]), flush=True)
+
+    # 2. The bridge for this computer, from the same pinned llama.cpp sources as the app.
+    gradle = open("app/build.gradle.kts", encoding="utf-8").read()
+    version = re.search(r'val llamaVersion = "([^"]+)"', gradle).group(1)
+    url = re.search(r'val llamaArchiveUrl = "([^"]+)"', gradle).group(1).replace("$llamaVersion", version)
+    sha = re.search(r'val llamaArchiveSha256 = "([0-9a-f]{64})"', gradle).group(1)
+    work = "/tmp/iskra-eval"
+    os.makedirs(work, exist_ok=True)
+    archive = os.path.join(work, "llama.tar.gz")
+    urllib.request.urlretrieve(url, archive)
+    if hashlib.sha256(open(archive, "rb").read()).hexdigest() != sha:
+        annotate("error", "Model evaluation", "llama.cpp sources: SHA-256 mismatch")
+        return
+    src = os.path.join(work, "llama.cpp")
+    skip = {"models", "docs", "media", "examples", "tools", "tests", "gguf-py", "scripts", "pocs", "benches", "app", "skills",
+            "ci", "requirements", "grammars", ".github", ".devops"}
+    with tarfile.open(archive) as t:
+        for m in t:
+            i = m.name.find("/vendor/llama.cpp/")
+            rel = m.name[i + len("/vendor/llama.cpp/"):] if i >= 0 else ""
+            if not rel or not m.isfile() or rel.split("/")[0] in skip:
+                continue
+            parts = rel.split("/")
+            if len(parts) >= 3 and parts[0] == "ggml" and parts[1] == "src" and parts[2].startswith("ggml-") and parts[2] not in ("ggml-cpu",) \
+                    and os.path.splitext(parts[2])[1] == "":
+                continue
+            dest = os.path.join(src, rel)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            with t.extractfile(m) as fi, open(dest, "wb") as fo:
+                fo.write(fi.read())
+    build = os.path.join(work, "build")
+    for cmd in (["cmake", "-S", "app/src/main/cpp", "-B", build, "-DCMAKE_BUILD_TYPE=Release", f"-DLLAMA_SRC={src}", "-DISKRA_HOST_NATIVE=ON"],
+                ["cmake", "--build", build, "--target", "iskra_llama", "-j", "4"]):
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=1200)
+        if r.returncode != 0:
+            annotate("error", "Model evaluation", f"{' '.join(cmd[:3])}: {r.stdout[-1500:]} {r.stderr[-1500:]}")
+            return
+    lib = os.path.join(build, "libiskra_llama.so")
+    print(f"bridge built in {time.time() - t_start:.0f} s", flush=True)
+
+    # 3. Every candidate: download, talk, delete (disk space).
+    env = dict(os.environ, ISKRA_CORE_ONLY="1", ISKRA_LLAMA_LIB=lib, ISKRA_EVAL_OUT=ev, ISKRA_EVAL_THREADS="4")
+    for k in ("JAVA_HOME_17_X64", "JAVA_HOME_21_X64"):
+        if os.environ.get(k):
+            env["JAVA_HOME"] = os.environ[k]
+            break
+    summary = []
+    done = set()
+    for name, repo, pattern, fmt in EVAL_CANDIDATES:
+        if name in done:
+            continue
+        if time.time() - t_start > 16 * 60:
+            summary.append(f"| {name} | — | skipped: out of time | | |")
+            continue
+        try:
+            files = [s_["rfilename"] for s_ in hf_json(f"https://huggingface.co/api/models/{repo}").get("siblings", [])]
+        except Exception as e:  # noqa: BLE001
+            print(f"{repo}: {e}", flush=True)
+            continue
+        file = next((f for f in files if re.search(pattern, f)), None)
+        if not file:
+            print(f"{repo}: no file like {pattern}", flush=True)
+            continue
+        path = os.path.join(work, "model.gguf")
+        t = time.time()
+        try:
+            urllib.request.urlretrieve(f"https://huggingface.co/{repo}/resolve/main/{file}", path)
+        except Exception as e:  # noqa: BLE001
+            print(f"{repo}/{file}: {e}", flush=True)
+            continue
+        print(f"{name}: {repo}/{file}, {os.path.getsize(path) // 1_000_000} MB in {time.time() - t:.0f} s", flush=True)
+        env["ISKRA_EVAL_MODELS"] = f"{name}|{path}|{fmt}"
+        r = subprocess.run(["./gradlew", "-q", ":core:test", "--tests", "ru.iskra.core.LocalModelEval", "--rerun"],
+                           env=env, capture_output=True, text=True, timeout=1800)
+        if r.returncode != 0:
+            annotate("warning", f"Model evaluation {name}", (r.stdout + r.stderr)[-2000:])
+        sp = os.path.join(ev, "summary.md")
+        if os.path.exists(sp):
+            summary += [l for l in open(sp).read().splitlines() if l.startswith(f"| {name} ")]
+            os.remove(sp)
+        done.add(name)
+        os.remove(path)
+    table = "| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) |\n|---|---|---|---|---|\n" + "\n".join(summary)
+    with open(os.path.join(ev, "summary.md"), "w") as f:
+        f.write(table + "\n")
+    print(table, flush=True)
+    annotate("notice", "On-phone model evaluation (CI computer, 4 threads)", table)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--apk", required=True)
@@ -348,6 +483,13 @@ def main():
     # The model on the phone (x86_64 emulators from Android 11; one download per job).
     if a.api >= 30 and a.lang in ("", "en"):
         local_brain_check(s, a.api)
+
+    # The models judged on a real conversation (one job is enough; it doesn't need the emulator).
+    if a.lang == "ru":
+        try:
+            model_eval(a.out)
+        except Exception as e:  # noqa: BLE001 — the evaluation never fails the check
+            annotate("warning", "Model evaluation", f"{type(e).__name__}: {e}")
 
     crashes = s.crashes()
     alive = s.alive()

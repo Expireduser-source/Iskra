@@ -119,11 +119,18 @@ enum class ChatFormat {
  * The model on the phone as an [LlmProvider]: no tools, a short prompt, a dialogue cache kept between messages.
  * [engine] loads the model on first use (seconds) and may return null if it can't.
  */
+/** How one generation went: for the journal and the speed check. Pieces are about one token each. */
+data class GenStats(val promptChars: Int, val firstPieceMs: Long, val pieces: Int, val chars: Int, val totalMs: Long) {
+    /** Pieces per second after the first one (the reading of the prompt is over by then). */
+    val piecesPerSecond: Double get() = if (pieces > 1 && totalMs > firstPieceMs) (pieces - 1) * 1000.0 / (totalMs - firstPieceMs) else 0.0
+}
+
 class LocalLlmProvider(
     private val engine: suspend () -> LlamaEngine?,
     private val format: ChatFormat,
     override val id: String,
     private val maxTokens: Int = 320,
+    private val onStats: ((GenStats) -> Unit)? = null,
 ) : LlmProvider {
     override val onDevice: Boolean get() = true
     private val lock = Mutex()
@@ -136,12 +143,17 @@ class LocalLlmProvider(
         val prompt = format.render(fit(request, e.contextSize - budget))
         val think = ThinkFilter()
         val raw = StringBuilder()
+        val t0 = System.nanoTime()
+        var firstMs = -1L
+        var pieces = 0
         val text = withContext(Dispatchers.IO) {
             val scope = currentCoroutineContext()
             suspendCancellableCoroutine<String> { cont ->
                 cont.invokeOnCancellation { e.cancel() }
                 val result = try {
                     e.generate(prompt, budget, request.temperature.toFloat().coerceIn(0.1f, 1.2f)) { piece ->
+                        if (firstMs < 0) firstMs = (System.nanoTime() - t0) / 1_000_000
+                        pieces++
                         raw.append(piece)
                         val stop = format.stops.firstOrNull { raw.contains(it) }
                         if (stop != null) return@generate false
@@ -157,6 +169,7 @@ class LocalLlmProvider(
             }
         }
         val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
+        onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000))
         LlmResponse(ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text), emptyList())
     }
 

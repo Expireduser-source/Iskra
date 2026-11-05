@@ -20,8 +20,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import ru.iskra.app.diag.Diag
 import ru.iskra.core.i18n.tr
+import ru.iskra.core.llm.ChatMessage
 import ru.iskra.core.llm.LlmProvider
+import ru.iskra.core.llm.LlmRequest
 import ru.iskra.core.llm.local.ChatFormat
+import ru.iskra.core.llm.local.GenStats
 import ru.iskra.core.llm.local.LlamaEngine
 import ru.iskra.core.llm.local.LocalLlmProvider
 import ru.iskra.core.llm.local.NativeLlamaEngine
@@ -257,7 +260,50 @@ object LocalBrain {
         val st = state.value as? State.Ready ?: return null
         if (!enabled()) return null
         provider?.takeIf { it.first == st.model.id }?.let { return it.second }
-        return LocalLlmProvider(::engine, st.model.format, "local:${st.model.id}").also { provider = st.model.id to it }
+        return LocalLlmProvider(::engine, st.model.format, "local:${st.model.id}", onStats = ::logStats).also { provider = st.model.id to it }
+    }
+
+    /** Every reply's speed goes to the journal: the numbers that tell which model suits this phone. */
+    private fun logStats(g: GenStats) {
+        Diag.i("local", tr("Ответ модели на телефоне: первые слова через ${g.firstPieceMs} мс, ${g.pieces} частей за ${g.totalMs} мс " +
+            "(${"%.1f".format(java.util.Locale.ROOT, g.piecesPerSecond)} в секунду), запрос ${g.promptChars} символов",
+            "On-phone model reply: first words after ${g.firstPieceMs} ms, ${g.pieces} pieces in ${g.totalMs} ms " +
+                "(${"%.1f".format(java.util.Locale.ROOT, g.piecesPerSecond)} per second), prompt ${g.promptChars} characters"))
+    }
+
+    class SpeedCheck(val firstWordsMs: Long, val wordsPerSecond: Double, val slow: Boolean, val text: String)
+
+    /**
+     * «Проверить скорость»: a short fixed question, timed. Tells how soon the first words come and how fast the rest
+     * follows, and suggests the light model when this one is too slow for this phone.
+     */
+    suspend fun speedCheck(): SpeedCheck? {
+        val st = state.value as? State.Ready ?: return null
+        val e = engine() ?: return null
+        val prompt = st.model.format.render(LlmRequest(
+            system = tr("Ты — Искра, кошкодевочка в телефоне. Отвечай тепло и коротко.", "You are Iskra, a cat-girl in the phone. Answer warmly and briefly."),
+            messages = listOf(ChatMessage.User(tr("Расскажи о себе в двух предложениях.", "Tell me about yourself in two sentences."))),
+        ))
+        val t0 = System.nanoTime()
+        var first = -1L
+        val out = withContext(Dispatchers.IO) {
+            e.generate(prompt, 64, 0.6f) { if (first < 0) first = (System.nanoTime() - t0) / 1_000_000; true }
+        }
+        val total = (System.nanoTime() - t0) / 1_000_000
+        val words = out.split(Regex("\\s+")).count { w -> w.any { it.isLetter() } }
+        val wps = if (words > 1 && total > first) (words - 1) * 1000.0 / (total - first) else 0.0
+        val slow = wps < 1.5 || first > 15_000
+        val verdict = when {
+            wps >= 3 && first < 8_000 -> tr("быстро", "fast")
+            !slow -> tr("нормально", "fine")
+            else -> tr("медленно", "slow")
+        }
+        val lighter = models.indexOfFirst { it.id == st.model.id } > 0
+        val text = tr("Первые слова через ${"%.1f".format(java.util.Locale.getDefault(), first / 1000.0)} с, дальше ≈ ${"%.1f".format(java.util.Locale.getDefault(), wps)} слова в секунду — $verdict.",
+            "First words after ${"%.1f".format(java.util.Locale.getDefault(), first / 1000.0)} s, then ≈ ${"%.1f".format(java.util.Locale.getDefault(), wps)} words a second — $verdict.") +
+            if (slow && lighter) tr(" Для этого телефона лучше модель полегче: удали эту и скачай «Лёгкий».", " A lighter model suits this phone better: delete this one and download “Light”.") else ""
+        Diag.i("local", tr("Проверка скорости (${st.model.id}): ", "Speed check (${st.model.id}): ") + text)
+        return SpeedCheck(first, wps, slow, text)
     }
 
     private suspend fun engine(): LlamaEngine? {
