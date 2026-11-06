@@ -275,7 +275,9 @@ EVAL_CANDIDATES = [
     ("gemma-4-e4b", "ggml-org/gemma-4-E4B-it-GGUF", [r"(?i)^gemma-4-E4B-it-Q4_0\.gguf$"], "GEMMA4"),
     # Quantization-aware trained by Google for 4-bit (Q4_0): usually closer to the full model at the same size.
     ("gemma-3-1b-qat", "ggml-org/gemma-3-1b-it-qat-GGUF", [r"(?i)q4_0\.gguf$"], "GEMMA"),
-    # The smart model before 0.12.8, for a comparison on the same code.
+    # An own file of the Llama 3 family (0.13.0 writes the dialogue its way, not as ChatML): the format on real weights.
+    ("llama-3.2-1b", "bartowski/Llama-3.2-1B-Instruct-GGUF", [r"(?i)^Llama-3\.2-1B-Instruct-Q4_K_M\.gguf$"], "LLAMA3"),
+    # The smart model before 0.12.8, for a comparison on the same code (last: the first one skipped when time runs out).
     ("gemma-3-4b-qat", "ggml-org/gemma-3-4b-it-qat-GGUF", [r"(?i)q4_0\.gguf$"], "GEMMA"),
 ]
 
