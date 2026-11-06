@@ -74,8 +74,8 @@ object LocalBrain {
             "Light: answers quickly on any phone, but is simpler and sometimes gets confused."),
         Model("gemma-4-e2b", "Gemma 4 E2B", "gemma-4-E2B-it-Q4_0.gguf",
             "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_0.gguf", 2842, 6,
-            ChatFormat.GEMMA4, "Умная: новая модель Google для телефонов — естественно говорит по-русски, понимает с полуслова и отвечает коротко. Нужно 6 ГБ памяти.",
-            "Smart: Google's new model made for phones — natural Russian, gets what you mean, answers briefly. Needs 6 GB of memory."),
+            ChatFormat.GEMMA4, "Умная: новая модель Google для телефонов — много знает, хорошо говорит по-русски и отвечает коротко. Нужно 6 ГБ памяти.",
+            "Smart: Google's new model made for phones — knows a lot, speaks Russian well and answers briefly. Needs 6 GB of memory."),
         Model("gemma-4-e4b", "Gemma 4 E4B", "gemma-4-E4B-it-Q4_0.gguf",
             "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_0.gguf", 4591, 10,
             ChatFormat.GEMMA4, "Самая умная: лучшие ответы, но вдвое медленнее умной и весит 4,6 ГБ. Для мощных телефонов от 10 ГБ памяти.",
@@ -161,13 +161,22 @@ object LocalBrain {
 
     /** For a model from an earlier catalog: why the suggested one is better. */
     fun whyBetter(old: Model): String = when {
-        old.id == "gemma-3-1b" && suggested().id == "gemma-3-1b-qat" -> tr(
+        old.id == "gemma-3-1b" -> tr(
             "та же модель, но обученная Google для такого сжатия: быстрее и меньше",
             "the same model, trained by Google for this compression: faster and smaller")
-        old.id == "gemma-3-4b-qat" && suggested().id == "gemma-4-e2b" -> tr(
-            "новое поколение, сделанное для телефонов: отвечает вдвое быстрее и умнее",
-            "the new generation made for phones: answers twice as fast and is smarter")
+        old.id == "gemma-3-4b-qat" -> tr(
+            "новое поколение, сделанное для телефонов: отвечает вдвое быстрее и больше знает",
+            "the new generation made for phones: answers twice as fast and knows more")
         else -> tr("быстрее отвечает и естественнее говорит по-русски", "answers faster and speaks Russian more naturally")
+    }
+
+    /**
+     * What replaces a model from an earlier catalog: one of the same class (light for light, smart for smart) — not this
+     * phone's pick, which on two fast cores is the light one and would be a step down for an owner of a smart model.
+     */
+    fun replacement(old: Model): Model = when (old.id) {
+        "gemma-3-1b", "qwen2.5-0.5b", "qwen2.5-1.5b" -> models.first()
+        else -> models.first { it.id == "gemma-4-e2b" }
     }
 
     private fun unsupportedReason(): String? {

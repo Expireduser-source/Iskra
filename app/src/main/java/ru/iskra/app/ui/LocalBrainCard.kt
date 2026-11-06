@@ -103,8 +103,10 @@ fun LocalBrainCard() {
                         Switch(checked = enabled, onCheckedChange = { enabled = it; LocalBrain.setEnabled(it) }, modifier = Modifier.testTag("local_brain_enabled"))
                     }
                     if (LocalBrain.isLegacy(s.model)) Text(
-                        tr("Есть модель лучше — ${LocalBrain.suggested().title} (${mb(LocalBrain.suggested().approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Удали эту и скачай новую.",
-                            "A better model is available — ${LocalBrain.suggested().title} (${mb(LocalBrain.suggested().approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Delete this one and download the new one."),
+                        LocalBrain.replacement(s.model).let { r ->
+                            tr("Есть модель лучше — ${r.title} (${mb(r.approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Удали эту и скачай новую.",
+                                "A better model is available — ${r.title} (${mb(r.approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Delete this one and download the new one.")
+                        },
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                     if (tuning) Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(Modifier.weight(1f))
