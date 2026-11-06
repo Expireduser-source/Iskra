@@ -371,7 +371,14 @@ class CompanionAgent(
      */
     private fun settlePlans(text: String, reply: String, due: PlanTalk.Known?, nowMs: Long) {
         val today = localDate(nowMs)
+        // The turn before this message: if she asked «как прошёл экзамен?», the owner's short answer is kept with the plan.
+        val asked = conversation.recent(3).let { t -> if (t.size == 3 && t[0].role == Turn.Role.ASSISTANT) t[0].text else null }
         for (k in PlanTalk.known(memory.all())) {
+            if (k.done && k.outcome == null && asked != null && PlanTalk.mentions(k.plan, asked) && asked.contains('?') &&
+                !k.plan.date.isAfter(today) && text.length <= 160 && !text.trimEnd().endsWith("?") && (PlanTalk.verdict(text) || PlanTalk.mentions(k.plan, text))) {
+                memory.update(k.item.copy(text = PlanTalk.withOutcomeText(k, text)))
+                continue
+            }
             if (k.done || k.plan.date.isAfter(today)) continue
             val told = PlanTalk.mentions(k.plan, text) && (k.plan.date.isBefore(today) || PlanTalk.outcome(text))
             val asked = due?.item?.id == k.item.id && PlanTalk.mentions(k.plan, reply)

@@ -521,3 +521,28 @@ class AgreementTest {
         }
     }
 }
+
+/** «Как прошёл экзамен?» → «Сдала на пятёрку!»: the answer stays with the plan. */
+class OutcomeTest {
+    private fun ms(y: Int, m: Int, d: Int, h: Int) = java.time.LocalDateTime.of(y, m, d, h, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    @Test fun theAnswerIsKeptWithThePlan() = withLang(Lang.RU) {
+        runBlocking {
+            var now = ms(2026, 11, 6, 10)
+            val memory = MemoryManager(InMemoryMemoryStore())
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, clock = { now }, random = Random(1))
+            a.handle("Завтра у меня экзамен по анатомии")
+            now = ms(2026, 11, 8, 12)
+            assertTrue(a.handle("привет").text.contains("как прошёл экзамен по анатомии?"))
+            a.handle("Сдала на пятёрку!")
+            assertEquals("7 ноября 2026 у владельца было: экзамен по анатомии (владелец: «Сдала на пятёрку!»)", memory.all().single().text)
+            val k = PlanTalk.known(memory.all()).single()
+            assertEquals("экзамен по анатомии", k.plan.what); assertEquals("Сдала на пятёрку!", k.outcome); assertTrue(k.done)
+            assertTrue(PlanTalk.verdict("нормально, четвёрка") && !PlanTalk.verdict("поставь будильник на 7"))
+            // Only the answer right after the question.
+            a.handle("а ещё я купила кофе")
+            assertEquals("Сдала на пятёрку!", PlanTalk.known(memory.all()).single().outcome)
+        }
+    }
+}

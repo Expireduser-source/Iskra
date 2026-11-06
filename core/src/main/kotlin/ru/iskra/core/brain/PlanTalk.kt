@@ -29,8 +29,20 @@ object PlanTalk {
         fun isEmpty() = plans.isEmpty() && cancelled.isEmpty()
     }
 
-    /** A plan read back from memory; [done]: she already asked how it went, or the owner told. */
-    data class Known(val item: MemoryItem, val plan: Plan, val done: Boolean)
+    /**
+     * A plan read back from memory; [done]: she already asked how it went, or the owner told; [outcome]: what the owner
+     * answered to «как прошло?», in their words («Сдала на пятёрку!»).
+     */
+    data class Known(val item: MemoryItem, val plan: Plan, val done: Boolean, val outcome: String? = null)
+
+    /** «… у владельца было: экзамен по анатомии (владелец: «Сдала на пятёрку!»)» — the answer kept with the plan. */
+    private val withOutcome = Regex("""^(.+?) \((?:владелец|the owner): «(.+)»\)$""")
+
+    /** The done plan with the owner's answer: «7 ноября 2026 у владельца было: экзамен (владелец: «Сдала на пятёрку!»)». */
+    fun withOutcomeText(k: Known, said: String): String {
+        val words = said.trim().replace(Regex("""\s+"""), " ").replace("«", "\"").replace("»", "\"").let { if (it.length > 90) it.take(88).trimEnd() + "…" else it }
+        return k.plan.doneText + if (k.plan.ru) " (владелец: «$words»)" else " (the owner: «$words»)"
+    }
 
     private class Event(forms: String, val lemma: String, val kind: Kind, val gender: Char = 'm') {
         val re = Regex("""(?iu)(?<![\p{L}\p{N}])(?:$forms)(?![\p{L}\p{N}])""")
@@ -393,8 +405,10 @@ object PlanTalk {
             ?: doneEn.find(item.text)?.let { m -> read(item, m.groupValues[3], enMonth(m.groupValues[1]), m.groupValues[2], m.groupValues[4], false, true) }
     }.sortedBy { it.plan.date }
 
-    private fun read(item: MemoryItem, year: String, month: Int, day: String, what: String, ru: Boolean, done: Boolean): Known? {
+    private fun read(item: MemoryItem, year: String, month: Int, day: String, said: String, ru: Boolean, done: Boolean): Known? {
         val date = runCatching { LocalDate.of(year.toInt(), month, day.toInt()) }.getOrNull() ?: return null
+        val outcome = withOutcome.find(said)?.groupValues?.get(2)
+        val what = withOutcome.find(said)?.groupValues?.get(1) ?: said
         val e = (if (ru) ruEvents else enEvents).filter { it.re.containsMatchIn(what) }.minByOrNull { it.re.find(what)!!.range.first }
         val kind = when {
             what.startsWith("поездка") || what.startsWith("trip") -> Kind.TRIP
@@ -403,7 +417,7 @@ object PlanTalk {
             else -> e?.kind ?: Kind.OTHER
         }
         val gender = if (what.startsWith("поездка")) 'f' else e?.gender ?: 'm'
-        return Known(item, Plan(date, what, kind, gender, ru), done)
+        return Known(item, Plan(date, what, kind, gender, ru), done, outcome)
     }
 
     // ---- Talking about them -----------------------------------------------------------------------------------
@@ -420,6 +434,11 @@ object PlanTalk {
 
     /** The owner says how it went («сдал на пять», "it went great"). */
     fun outcome(text: String): Boolean = pastRu.containsMatchIn(text) || pastEn.containsMatchIn(text)
+
+    private val verdict = Regex("""(?iu)(?<!\p{L})(?:отлично|хорошо|нормально|неплохо|плохо|ужасно|супер|класс\p{L}*|круто|здорово|так\s+себе|прекрасно|чудесно|кошмар|провал|пят[её]рк\p{L}*|четв[её]рк\p{L}*|тр[её]йк\p{L}*|двойк\p{L}*|great|good|fine|bad|awful|terrible|ok|okay|amazing|perfect|so-so)(?!\p{L})""")
+
+    /** An answer to «как прошло?»: how it went, not a new request («поставь будильник»). */
+    fun verdict(text: String): Boolean = outcome(text) || verdict.containsMatchIn(text)
 
     /**
      * The plan to ask about now: one that was 1–3 days ago, or an exam or a doctor today after 19:00, not asked yet.
