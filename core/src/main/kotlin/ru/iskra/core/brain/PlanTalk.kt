@@ -83,6 +83,9 @@ object PlanTalk {
         Event("перел[её]т|перел[её]та|рейс|рейса", "перелёт", Kind.TRIP),
         Event("переезд|переезда|переезде", "переезд", Kind.OTHER),
         Event("встреча|встречу|встрече", "встреча", Kind.OTHER, 'f'),
+        Event("совещание|совещания|совещании", "совещание", Kind.OTHER, 'n'),
+        Event("планёрка|планерка|планёрку|планерку|планёрке|планерке", "планёрка", Kind.OTHER, 'f'),
+        Event("созвон|созвона|созвоне", "созвон", Kind.OTHER),
         Event("тренировка|тренировку|тренировке", "тренировка", Kind.OTHER, 'f'),
     )
 
@@ -120,7 +123,7 @@ object PlanTalk {
     private val dayPatterns: List<Pair<Regex, (MatchResult, LocalDate) -> LocalDate?>> = listOf(
         Regex("""(?iu)(?<!\p{L})послезавтра(?!\p{L})|(?<!\p{L})(?:the\s+)?day\s+after\s+tomorrow(?!\p{L})""") to { _, t -> t.plusDays(2) },
         Regex("""(?iu)(?<!\p{L})(?:завтра|tomorrow)(?!\p{L})""") to { _, t -> t.plusDays(1) },
-        Regex("""(?iu)(?<!\p{L})(?:сегодня|today|tonight|this\s+(?:morning|afternoon|evening))(?!\p{L})""") to { _, t -> t },
+        Regex("""(?iu)(?<!\p{L})(?:сегодня|сейчас|today|tonight|this\s+(?:morning|afternoon|evening))(?!\p{L})""") to { _, t -> t },
         Regex("""(?iu)(?<!\p{L})(?:в|во|на|к)\s+(?:эт(?:от|у|о)\s+|следующ(?:ий|ую|ее)\s+|ближайш(?:ий|ую|ее)\s+)?(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)(?!\p{L})""") to { m, t ->
             next(t, weekdaysRu.indexOf(m.groupValues[1].lowercase()))
         },
@@ -167,11 +170,15 @@ object PlanTalk {
         return date.takeIf { !it.isBefore(today) && ChronoUnit.DAYS.between(today, it) <= 125 }
     }
 
+    /** «иду к врачу», «еду на собеседование» with no day named: today. */
+    private val goingNow = Regex("""(?iu)^(?:я\s+)?(?:уже\s+)?(?:иду|еду|лечу|бегу|направляюсь)(?!\p{L})""")
+
     /** The coming day a sentence names («завтра», «в пятницу», «12 ноября», "on Friday") and where it is said, or null. */
     fun day(text: String, today: LocalDate): Pair<LocalDate, IntRange>? {
         val digits = NumberWords.digitize(text)
         return dayPatterns.mapNotNull { (re, f) -> re.find(digits)?.let { m -> f(m, today)?.let { it to m.range } } }
             .minByOrNull { it.second.first }
+            ?: goingNow.find(digits)?.let { today to it.range }
     }
 
     /** «7 ноября 2026» / "November 7, 2026". */
@@ -312,6 +319,9 @@ object PlanTalk {
         "наконец", "опять", "снова", "будет", "будут", "есть", "тоже", "ещё", "еще", "всё", "все", "вот", "там", "тут", "это", "этот", "эта",
         "его", "её", "ее", "их", "мой", "моя", "моё", "мое", "мои", "свой", "своя", "который", "которая", "которое", "иду", "идём", "идем")
     private val timeWord = Regex("""(?iu)^(?:понедельник\p{L}*|вторник\p{L}*|сред[уаеы]|четверг\p{L}*|пятниц\p{L}*|суббот\p{L}*|воскресень\p{L}*|выходн\p{L}*|утр\p{L}*|вечер\p{L}*|д[её]н\p{L}*|дня|ноч\p{L}*|обед\p{L}*|полдень|полночь|следующ\p{L}*|ближайш\p{L}*|начал\p{L}*|конц\p{L}*|январ\p{L}*|феврал\p{L}*|март\p{L}*|апрел\p{L}*|ма[йяе]|июн\p{L}*|июл\p{L}*|август\p{L}*|сентябр\p{L}*|октябр\p{L}*|ноябр\p{L}*|декабр\p{L}*|числ\p{L}*|час\p{L}*|недел\p{L}*|\d.*)$""")
+    /** Words that end the event's name: «встреча с клиентом перенесена», «экзамен по физике будет». */
+    private val verbish = Regex("""(?iu)^(?:перенес\p{L}*|отмен\p{L}*|будет|будут|был\p{L}*|прош\p{L}*|пройд\p{L}*|состо\p{L}*|начн\p{L}*|начина\p{L}*|закончи\p{L}*|назнач\p{L}*|\p{L}+(?:ется|ются|ится|атся|ятся|ет|ут|ют|ит|ат|ят|ла|ли|ло|на|но|ны))$""")
+
     private val genitiveTail = setOf("диплома", "курсовой", "курсовика", "курсача", "проекта", "диссертации", "магистерской", "отчёта", "отчета",
         "мамы", "папы", "брата", "сестры", "друга", "подруги", "сына", "дочки", "дочери", "жены", "мужа", "бабушки", "дедушки")
 
@@ -319,7 +329,7 @@ object PlanTalk {
     private fun complementRu(rest: String): String {
         val words = Regex("""[\p{L}\p{N}][\p{L}\p{N}-]*|[^\p{L}\p{N}\s]""").findAll(rest).map { it.value }.toList()
         if (words.isEmpty()) return ""
-        fun ok(w: String) = w.first().isLetter() && w.lowercase() !in ruStop && w.lowercase() !in ruPreps && !timeWord.matches(w)
+        fun ok(w: String) = w.first().isLetter() && w.lowercase() !in ruStop && w.lowercase() !in ruPreps && !timeWord.matches(w) && !verbish.matches(w)
         val first = words[0]
         if (first.lowercase() in ruPreps) {
             val taken = words.drop(1).takeWhile { ok(it) }.take(2)

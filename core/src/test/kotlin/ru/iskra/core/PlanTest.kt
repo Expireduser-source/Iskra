@@ -392,3 +392,22 @@ class TheirBirthdayTest {
         }
     }
 }
+
+/** Everyday phrases that once went wrong. */
+class EverydayPhrasesTest {
+    private val today = LocalDate.of(2026, 11, 6)
+
+    @Test fun regressions() {
+        // «не» inside «Мне» is not a negation.
+        assertEquals(ru.iskra.core.brain.CareTalk.Kind.LOW, ru.iskra.core.brain.CareTalk.heard("Мне грустно"))
+        assertEquals(ru.iskra.core.brain.CareTalk.Kind.LOW, ru.iskra.core.brain.CareTalk.heard("Сегодня был тяжёлый день на работе"))
+        assertNull(ru.iskra.core.brain.CareTalk.heard("мне не грустно"))
+        assertEquals("Маму владельца зовут Елена Петровна", MemoryTalk.fact("Мою маму зовут Елена Петровна", today)?.text)
+        PlanTalk.hear("Встреча с клиентом перенесена на четверг", today).let { assertEquals("встреча с клиентом", it.plans.single().what) }
+        assertEquals(today, PlanTalk.hear("Иду к врачу", today).plans.single().date)
+        assertEquals(LocalDate.of(2026, 11, 7), PlanTalk.hear("I'm going to a party on Saturday", today).plans.single().date)
+        assertEquals("совещание", PlanTalk.hear("Совещание завтра в 10", today).plans.single().what)
+        for (t in listOf("Поставь будильник на завтра в 7", "Как думаешь, завтра будет дождь?", "Завтра на работу рано вставать", "Мне 100 рублей не хватает", "I like you"))
+            assertTrue(PlanTalk.hear(t, today).plans.isEmpty() && MemoryTalk.fact(t, today) == null, t)
+    }
+}

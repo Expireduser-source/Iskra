@@ -329,8 +329,8 @@ object MemoryTalk {
     // Family: «мою сестру зовут Аня», «у меня есть брат Петя», "my sister's name is Anna".
     private const val REL_NOM = "мама|мать|папа|отец|сестра|сестр[её]нка|брат|братик|дочь|дочка|сын|жена|муж|девушка|парень|бабушка|дедушка|дед|подруга|друг"
     private const val REL_ACC = "маму|мать|папу|отца|сестру|сестр[её]нку|брата|братика|дочь|дочку|сына|жену|мужа|девушку|парня|бабушку|дедушку|деда|подругу|друга"
-    private val familyAcc = Regex("""(?iu)^(?:а\s+)?(?:мою|моего)\s+((?:старш|младш|лучш)\p{L}+\s+)?($REL_ACC)\s+зовут\s+(\p{L}[\p{L}-]{1,20})[.!]*$""")
-    private val familyNom = Regex("""(?iu)^(?:а\s+)?у\s+меня\s+(?:есть\s+)?((?:старш|младш|лучш)\p{L}+\s+)?($REL_NOM)(?:\s*,)?\s+(по\s+имени\s+|(?:его|её|ее)\s+зовут\s+|зовут\s+)?(\p{L}[\p{L}-]{1,20})[.!]*$""")
+    private val familyAcc = Regex("""(?iu)^(?:а\s+)?(?:мою|моего)\s+((?:старш|младш|лучш)\p{L}+\s+)?($REL_ACC)\s+зовут\s+(\p{L}[\p{L}-]{1,20}(?:\s+\p{L}[\p{L}-]{1,20})?)[.!]*$""")
+    private val familyNom = Regex("""(?iu)^(?:а\s+)?у\s+меня\s+(?:есть\s+)?((?:старш|младш|лучш)\p{L}+\s+)?($REL_NOM)(?:\s*,)?\s+(по\s+имени\s+|(?:его|её|ее)\s+зовут\s+|зовут\s+)?(\p{L}[\p{L}-]{1,20}(?:\s+\p{Lu}[\p{L}-]{1,20})?)[.!]*$""")
     private const val REL_EN = "mom|mum|mother|dad|father|sister|brother|daughter|son|wife|husband|girlfriend|boyfriend|grandma|grandmother|grandpa|grandfather|best\\s+friend|friend"
     private val familyEn = Regex("""(?iu)^(?:my\s+((?:older|younger|little|big)\s+)?($REL_EN)(?:'s\s+name\s+is|\s+is\s+(?:named|called))|i\s+have\s+an?\s+((?:older|younger|little|big)\s+)?($REL_EN)\s+(?:named|called))\s+(\p{L}[\p{L}-]{1,20})[.!]*$""")
     private val accOf = mapOf("мама" to "маму", "мать" to "маму", "папа" to "папу", "отец" to "папу", "сестра" to "сестру", "сестрёнка" to "сестрёнку",
@@ -473,7 +473,7 @@ object MemoryTalk {
     private fun family(t: String): Fact? {
         familyAcc.find(t)?.let { m ->
             val who = (m.groupValues[1] + m.groupValues[2]).lowercase().let { accOf[it] ?: it }
-            val name = cap(m.groupValues[3])
+            val name = m.groupValues[3].split(Regex("""\s+""")).joinToString(" ") { cap(it) }
             return Fact("${who.replaceFirstChar { it.uppercase() }} владельца зовут $name", 3, "Запомнила: ${yours(who)} $who зовут $name.")
         }
         familyNom.find(t)?.let { m ->
@@ -481,7 +481,10 @@ object MemoryTalk {
             val rel = m.groupValues[2].lowercase()
             val mod = m.groupValues[1].trim().lowercase().takeIf { it.isNotEmpty() }?.let { modAcc(it, rel) }
             val who = listOfNotNull(mod, accOf[rel] ?: rel).joinToString(" ")
-            val name = cap(m.groupValues[4])
+            // (?i) lets \p{Lu} match any letter: a second word counts only when it is really capitalised («Елена Петровна»).
+            val words = m.groupValues[4].split(Regex("""\s+"""))
+            if (words.size > 1 && !words[1].first().isUpperCase()) return null
+            val name = words.joinToString(" ") { cap(it) }
             return Fact("${who.replaceFirstChar { it.uppercase() }} владельца зовут $name", 3, "Запомнила: ${yours(who)} $who зовут $name.")
         }
         familyEn.find(t)?.let { m ->

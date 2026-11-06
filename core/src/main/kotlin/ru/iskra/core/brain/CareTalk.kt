@@ -15,8 +15,8 @@ object CareTalk {
 
     data class Care(val kind: Kind, val ru: Boolean)
 
-    private val low = Regex("""(?iu)(?<!\p{L})(?<!не\s)(?:грустно|тоскливо|одиноко|печально|паршиво|хреново|плохо\s+на\s+душе|тяжело\s+на\s+душе|на\s+душе\s+кошки\s+скребут|мне\s+(?:(?!не\s)\p{L}+\s+)?плохо|мне\s+(?:(?!не\s)\p{L}+\s+)?тяжело|депресси\p{L}*)(?!\p{L})""")
-    private val sick = Regex("""(?iu)(?<!\p{L})(?<!не\s)(?:заболел|заболела|простыл|простыла|простудился|простудилась|болею|приболел|приболела|температур\p{L}*|простуда|грипп|ковид|отравился|отравилась|болит\s+(?:голова|горло|живот|зуб|спина|ухо)|(?:голова|горло|живот|зуб|спина|ухо)\s+болит)(?!\p{L})""")
+    private val low = Regex("""(?iu)(?<!\p{L})(?:грустно|тоскливо|одиноко|печально|паршиво|хреново|плохо\s+на\s+душе|тяжело\s+на\s+душе|на\s+душе\s+кошки\s+скребут|(?:тяж[её]лый|ужасный|плохой|отвратительный|кошмарный)\s+день|мне\s+(?:(?!не\s)\p{L}+\s+)?плохо|мне\s+(?:(?!не\s)\p{L}+\s+)?тяжело|депресси\p{L}*)(?!\p{L})""")
+    private val sick = Regex("""(?iu)(?<!\p{L})(?:заболел|заболела|простыл|простыла|простудился|простудилась|болею|приболел|приболела|температур\p{L}*|простуда|грипп|ковид|отравился|отравилась|болит\s+(?:голова|горло|живот|зуб|спина|ухо)|(?:голова|горло|живот|зуб|спина|ухо)\s+болит)(?!\p{L})""")
     private val quarrel = Regex("""(?iu)(?<!\p{L})(?:поругал(?:ся|ась|ись)|поссорил(?:ся|ась|ись)|разругал(?:ся|ась|ись)|расстал(?:ся|ась|ись))(?!\p{L})""")
     private val lowEn = Regex("""(?iu)(?<!\p{L})i(?:'m|\s+am|\s+feel|\s+'m\s+feeling|'m\s+feeling|\s+am\s+feeling)\s+(?:so\s+|really\s+|very\s+|kind\s+of\s+|a\s+bit\s+)?(?:sad|down|lonely|depressed|awful|terrible|miserable|blue|low)(?!\p{L})""")
     private val sickEn = Regex("""(?iu)(?<!\p{L})(?:i(?:'m|\s+am)\s+(?:so\s+|really\s+)?(?:sick|ill|unwell)|i\s+(?:have|got|caught)\s+(?:a\s+|the\s+)?(?:cold|fever|flu|headache|sore\s+throat|covid|stomach\s+bug))(?!\p{L})""")
@@ -24,11 +24,16 @@ object CareTalk {
     /** Later that day: it passed. */
     private val better = Regex("""(?iu)(?<!\p{L})(?:уже\s+)?(?:лучше|получше|прошло|полегчало|отпустило|выздоровел\p{L}*|помирил\p{L}*|всё\s+хорошо|все\s+хорошо|всё\s+нормально|все\s+нормально|better|fine\s+now|okay\s+now|ok\s+now|made\s+up|all\s+good)(?!\p{L})""")
 
+    /** «не» as a word right before: «мне не грустно», «я не болею» (but «Мне грустно» — «не» there is part of «мне»). */
+    private val negated = Regex("""(?iu)(?<!\p{L})(?:не|not|n't)\s+$""")
+
+    private fun said(re: Regex, text: String) = re.findAll(text).any { !negated.containsMatchIn(text.substring(0, it.range.first)) }
+
     /** What a message says about how the owner is, or null. */
     fun heard(text: String): Kind? = when {
-        sick.containsMatchIn(text) || sickEn.containsMatchIn(text) -> Kind.SICK
-        quarrel.containsMatchIn(text) || quarrelEn.containsMatchIn(text) -> Kind.QUARREL
-        low.containsMatchIn(text) || lowEn.containsMatchIn(text) -> Kind.LOW
+        said(sick, text) || said(sickEn, text) -> Kind.SICK
+        said(quarrel, text) || said(quarrelEn, text) -> Kind.QUARREL
+        said(low, text) || said(lowEn, text) -> Kind.LOW
         else -> null
     }
 
