@@ -83,10 +83,13 @@ class LocalModelEval {
                     }
                     val provider = LocalLlmProvider({ recording }, ChatFormat.valueOf(format), "local:$name", onStats = { stats += it })
                     var clockMs = System.currentTimeMillis()
+                    val memory = MemoryManager(InMemoryMemoryStore())
                     val agent = CompanionAgent(
-                        persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                        persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(),
                         stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
                         providerFactory = { null }, localFactory = { provider }, clock = { clockMs },
+                        // The night recap below compresses the first half of this conversation (the app waits for 60 turns).
+                        summarizeAfterTurns = 20,
                     )
                     doc.append("\n## ${lang.name}\n")
                     for (q in script) {
@@ -109,6 +112,11 @@ class LocalModelEval {
                             if (c.code < 32 || c.code >= 0x2E80) "\\u%04x".format(c.code) else c.toString() }.joinToString("") + "`"
                         doc.append("\n**Q:** $q\n\n**A** [${r.emotion.name.lowercase()}] ($how$note): ${r.text}\n")
                     }
+                    // What the night job would keep: a recap of the oldest turns, made by this model.
+                    val t1 = System.nanoTime()
+                    val recaps = runCatching { runBlocking { agent.summarizeOnPhone(maxChunks = 1) } }.getOrElse { -1 }
+                    val episodes = memory.all().filter { it.kind == ru.iskra.core.memory.MemoryKind.EPISODE }.joinToString(" | ") { it.text }
+                    doc.append("\n**Night recap** (%.1f s, saved: %s): %s\n".format(java.util.Locale.ROOT, (System.nanoTime() - t1) / 1e9, recaps, episodes.ifEmpty { "—" }))
                     fun median(xs: List<Double>) = xs.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
                     summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.0f |\n".format(java.util.Locale.ROOT,
                         median(stats.map { it.firstPieceMs / 1000.0 }), median(stats.map { it.totalMs / 1000.0 }), median(stats.map { it.piecesPerSecond }),
