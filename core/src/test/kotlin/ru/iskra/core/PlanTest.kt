@@ -452,3 +452,44 @@ class AcquaintanceTest {
         }
     }
 }
+
+/** «Завтра в 10 собеседование» → «Напомнить за час — в 09:00?» → «да» sets the reminder. */
+class ReminderOfferTest {
+    private class FakeReminders : ru.iskra.core.tools.Tool {
+        val calls = mutableListOf<kotlinx.serialization.json.JsonObject>()
+        override val spec = ru.iskra.core.skills.SkillSchemas.setReminder
+        override val risk = ru.iskra.core.tools.Risk.SAFE
+        override fun describe(args: kotlinx.serialization.json.JsonObject) = "напоминание"
+        override suspend fun execute(args: kotlinx.serialization.json.JsonObject): ru.iskra.core.tools.ToolOutcome {
+            calls += args; return ru.iskra.core.tools.ToolOutcome(true, "напомню завтра в 09:00")
+        }
+    }
+    private fun ms(y: Int, m: Int, d: Int, h: Int) = java.time.LocalDateTime.of(y, m, d, h, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    @Test fun timesAreHeard() {
+        assertEquals(java.time.LocalTime.of(10, 0), PlanTalk.time("завтра в 10 собеседование"))
+        assertEquals(java.time.LocalTime.of(19, 30), PlanTalk.time("концерт в 7:30 вечера"))
+        assertEquals(java.time.LocalTime.of(17, 0), PlanTalk.time("встреча в 5"))
+        assertEquals(java.time.LocalTime.of(14, 0), PlanTalk.time("interview at 2 pm"))
+        assertNull(PlanTalk.time("через 3 дня экзамен"))
+        assertNull(PlanTalk.time("в 2026 году"))
+    }
+
+    @Test fun offersAndSetsTheReminder() = withLang(Lang.RU) {
+        runBlocking {
+            val reminders = FakeReminders()
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(reminders)), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, clock = { ms(2026, 11, 6, 12) }, random = Random(1))
+            assertEquals("Запомнила: завтра — собеседование. Держу за тебя лапки! Напомнить за час — в 09:00?", a.handle("Завтра в 10 у меня собеседование").text)
+            a.handle("да")
+            assertEquals("2026-11-07T09:00", reminders.calls.single()["at"].toString().trim('"'))
+            assertEquals("собеседование", reminders.calls.single()["text"].toString().trim('"'))
+            // «нет» — no reminder; and «да» long after the offer means nothing.
+            a.handle("В понедельник в 15:00 стоматолог, иду к стоматологу")
+            assertEquals("Хорошо, без напоминания.", a.handle("нет").text)
+            a.handle("да")
+            assertEquals(1, reminders.calls.size)
+        }
+    }
+}

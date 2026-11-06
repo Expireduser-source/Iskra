@@ -4,6 +4,7 @@ import ru.iskra.core.memory.MemoryItem
 import ru.iskra.core.memory.Stemmer
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.temporal.ChronoUnit
 
 /**
@@ -16,7 +17,7 @@ object PlanTalk {
     enum class Kind { TRIAL, HEALTH, FUN, TRIP, OTHER }
 
     /** [what] begins with the event in the nominative: «экзамен по физике», «визит к стоматологу», "physics exam". */
-    data class Plan(val date: LocalDate, val what: String, val kind: Kind, val gender: Char, val ru: Boolean) {
+    data class Plan(val date: LocalDate, val what: String, val kind: Kind, val gender: Char, val ru: Boolean, val time: LocalTime? = null) {
         /** How memory keeps it: «Планы владельца на 7 ноября 2026: экзамен по физике». */
         val memoryText: String get() = if (ru) "Планы владельца на ${dateText(date, true)}: $what" else "The owner's plans for ${dateText(date, false)}: $what"
         /** After she asked how it went (or the owner told): «7 ноября 2026 у владельца было: экзамен по физике». */
@@ -181,6 +182,26 @@ object PlanTalk {
             ?: goingNow.find(digits)?.let { today to it.range }
     }
 
+    private val timeRu = Regex("""(?iu)(?<![\p{L}\p{N}])(?:в|к)\s+(\d{1,2})(?:[:.](\d{2}))?(?:\s*(утра|дня|вечера|ночи))?(?![\p{L}\p{N}])|(?<!\p{L})(?:в|к)\s+полдень(?!\p{L})""")
+    private val timeEn = Regex("""(?iu)(?<![\p{L}\p{N}])at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?![\p{L}\p{N}])|(?<!\p{L})at\s+noon(?!\p{L})""")
+
+    /** «в 10», «в 10:30», «в 7 вечера», «к полудню», "at 10 am": when the event starts, if said. «в 5» alone is 17:00. */
+    fun time(text: String): LocalTime? {
+        val t = NumberWords.digitize(text)
+        val m = timeRu.find(t) ?: timeEn.find(t) ?: return null
+        if (m.value.contains("полдень") || m.value.contains("noon")) return LocalTime.NOON
+        var h = m.groupValues[1].toIntOrNull() ?: return null
+        val min = m.groupValues[2].toIntOrNull() ?: 0
+        if (h > 23 || min > 59) return null
+        when (m.groupValues[3].lowercase()) {
+            "вечера", "pm", "p.m." -> if (h < 12) h += 12
+            "дня" -> if (h < 12 && h <= 6) h += 12
+            "утра", "ночи", "am", "a.m." -> if (h == 12) h = 0
+            else -> if (h in 1..7) h += 12
+        }
+        return LocalTime.of(h, min)
+    }
+
     /** «7 ноября 2026» / "November 7, 2026". */
     fun dateText(d: LocalDate, ru: Boolean): String = if (ru) "${d.dayOfMonth} ${monthsGen[d.monthValue - 1]} ${d.year}" else "${monthsEn[d.monthValue - 1]} ${d.dayOfMonth}, ${d.year}"
 
@@ -237,21 +258,21 @@ object PlanTalk {
             if (cancel != null || (ru && notRu.containsMatchIn(s.substring(0, at.first)))) {
                 cancelled += head(what)
                 val moved = cancel != null && (if (ru) movedRu else movedEn).containsMatchIn(s)
-                if (moved && day != null && day.second.first > cancel!!.range.first) plans += Plan(day.first, what, kind, gender, ru)
+                if (moved && day != null && day.second.first > cancel!!.range.first) plans += Plan(day.first, what, kind, gender, ru, time(s))
                 continue
             }
             if (day == null || (if (ru) pastRu else pastEn).containsMatchIn(s)) continue
             if (day.second.first > at.last + 60) continue // a day said far after the event is about something else
             if (!ru) {
                 if (otherEn.containsMatchIn(s)) continue
-                plans += Plan(day.first, what, kind, gender, false)
+                plans += Plan(day.first, what, kind, gender, false, time(s))
                 continue
             }
             val whose = (otherRu.find(s) ?: uOther.find(s.substring(0, at.first)))?.groupValues?.get(1)?.lowercase()
             if (whose != null && whose in pronouns) continue
             val full = if (whose == null || what.contains(" у ")) what else "$what у ${owners[whose] ?: whose}"
             if (full.startsWith("день рождения у ")) continue // someone's birthday is kept as a yearly date (MemoryTalk), not a one-off plan
-            plans += Plan(day.first, full, kind, gender, true)
+            plans += Plan(day.first, full, kind, gender, true, time(s))
         }
         return Heard(plans.distinctBy { it.what.lowercase() to it.date }, cancelled.distinct())
     }
@@ -465,6 +486,20 @@ object PlanTalk {
             Kind.FUN, Kind.TRIP -> "Mrr, sounds great!"
             Kind.OTHER -> "Tell me how it goes?"
         }
+    }
+
+    /** When to remind before a plan with a time: an hour before, or 15 minutes when that's already past; null if too late. */
+    fun remindAt(p: Plan, now: java.time.LocalDateTime): java.time.LocalDateTime? {
+        val start = java.time.LocalDateTime.of(p.date, p.time ?: return null)
+        return listOf(start.minusHours(1), start.minusMinutes(15)).firstOrNull { it.isAfter(now.plusMinutes(5)) }
+    }
+
+    /** «Напомнить за час — в 09:00?» */
+    fun offer(p: Plan, at: java.time.LocalDateTime): String {
+        val hm = "%02d:%02d".format(at.hour, at.minute)
+        val hourBefore = at.plusHours(1).toLocalTime() == p.time
+        return if (p.ru) (if (hourBefore) "Напомнить за час — в $hm?" else "Напомнить в $hm?")
+        else (if (hourBefore) "Shall I remind you an hour before, at $hm?" else "Shall I remind you at $hm?")
     }
 
     fun crossedOut(what: List<String>, ru: Boolean): String =

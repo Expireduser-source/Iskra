@@ -163,7 +163,7 @@ class CompanionAgent(
         val onPhone = if (cloud == null) localFactory() else null
         val provider = cloud ?: onPhone
         val local = handleLocally(text, provider != null, provider?.onDevice == true)
-        val reply = local ?: when {
+        val answered = local ?: when {
             provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
             // The model on the phone failed (memory ran out, a damaged file): an honest answer without a model; the reason goes to the journal.
@@ -182,6 +182,16 @@ class CompanionAgent(
                 // The owner's daily limit: no cloud until midnight (the meter refuses anyway, this just skips it).
                 if (r.errorKind == LlmException.Kind.LIMIT) cloudPause = nextMidnight() to LlmException.Kind.LIMIT
             }
+        }
+        // The model on the phone has no tools: after its reply about a plan with a time she offers the reminder herself.
+        val offerLine = madeOffer
+        madeOffer = null
+        val reply = if (offerLine != null && local == null && provider?.onDevice == true && answered.errorKind == null && answered.text.isNotBlank()) {
+            sink?.sentence(offerLine, answered.emotion)
+            answered.copy(text = answered.text.trimEnd() + " " + offerLine)
+        } else {
+            if (offerLine != null && local == null) offer = null // the cloud has its own tool for it; nothing was offered
+            answered
         }
 
         // Persist outcome.
@@ -292,6 +302,26 @@ class CompanionAgent(
     private fun localDate(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
     private fun localHour(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).hour
 
+    /** A reminder she offered for a plan with a time, waiting for «да» in the very next message: what and when. */
+    @Volatile private var offer: Pair<String, java.time.LocalDateTime>? = null
+    /** The offer made in this turn, to say after the reply of the model on the phone. */
+    @Volatile private var madeOffer: String? = null
+    private val yes = Regex("""(?iu)^(?:да|давай|ага|угу|конечно|ок|окей|хорошо|пожалуйста|напомни|да,?\s+(?:давай|напомни|пожалуйста)|yes|yeah|yep|sure|ok|okay|please|do\s+it)[.!]*$""")
+    private val no = Regex("""(?iu)^(?:нет|не\s+надо|не\s+нужно|неа|не|no|nope|no\s+thanks|don't)[.!,]*(?:\s+спасибо)?$""")
+
+    /** «да» right after «Напомнить за час — в 09:00?»: the reminder is set; «нет» — not. null: not an answer to an offer. */
+    private suspend fun answerOffer(text: String, llmAvailable: Boolean): AgentReply? {
+        val pending = offer ?: return null
+        offer = null
+        if (no.matches(text.trim())) return AgentReply(tr("Хорошо, без напоминания.", "Okay, no reminder."), Emotion.NEUTRAL)
+        if (!yes.matches(text.trim())) return null
+        val args = kotlinx.serialization.json.buildJsonObject {
+            put("text", kotlinx.serialization.json.JsonPrimitive(pending.first))
+            put("at", kotlinx.serialization.json.JsonPrimitive(pending.second.toString().take(16)))
+        }
+        return command(CommandParser.Parsed.Tool(ru.iskra.core.skills.SkillNames.SET_REMINDER, args), llmAvailable)
+    }
+
     /**
      * Plans mentioned in [text]: called-off ones are crossed out, new ones kept (the same event on another day moves it).
      * Returns what to say without a model.
@@ -311,13 +341,16 @@ class CompanionAgent(
             // «Собеседование перенесли на среду»: the moved plan keeps what was known of it («собеседование в Яндекс»).
             val p = crossed.firstOrNull { PlanTalk.head(it) == PlanTalk.head(heardPlan.what) && it.length > heardPlan.what.length && it.startsWith(heardPlan.what) }
                 ?.let { heardPlan.copy(what = it) } ?: heardPlan
+            // «Завтра в 10 собеседование»: offer a reminder an hour before (answered by «да» in the next message).
+            val remind = PlanTalk.remindAt(p, java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(nowMs), java.time.ZoneId.systemDefault()))
+            val offered = remind?.let { at -> offer = p.what to at; PlanTalk.offer(p, at).also { madeOffer = it } }
             when (val r = memory.add(p.memoryText, MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, nowMs)) {
-                is MemoryManager.AddResult.Added -> said += PlanTalk.noted(p, today)
+                is MemoryManager.AddResult.Added -> said += listOfNotNull(PlanTalk.noted(p, today), offered).joinToString(" ")
                 is MemoryManager.AddResult.Duplicate -> {
                     // «экзамен по физике» again on another day: the same event moved (or a new one) — keep the new date.
                     val old = PlanTalk.known(listOf(r.existing)).firstOrNull()
-                    if (old != null && old.plan.date != p.date) { memory.update(r.existing.copy(text = p.memoryText)); said += PlanTalk.noted(p, today) }
-                    else if (old != null) said += PlanTalk.noted(p, today)
+                    if (old != null && old.plan.date != p.date) memory.update(r.existing.copy(text = p.memoryText))
+                    if (old != null) said += listOfNotNull(PlanTalk.noted(p, today), offered).joinToString(" ")
                 }
                 is MemoryManager.AddResult.Rejected -> {}
             }
@@ -422,6 +455,7 @@ class CompanionAgent(
      */
     private suspend fun handleLocally(text: String, llmAvailable: Boolean, smallModel: Boolean = false): AgentReply? {
         brain.crisis(text)?.let { return AgentReply(it.text, it.emotion) }
+        answerOffer(text, llmAvailable)?.let { return it }
         if (smallModel) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         MemoryTalk.forgetQuery(text)?.let { return forget(it) }
