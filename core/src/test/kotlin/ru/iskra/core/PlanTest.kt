@@ -248,3 +248,51 @@ class PlanTest {
         }
     }
 }
+
+/** «Вчера мне было грустно» → today's first words are «как ты?», from the chat alone. */
+class CareTest {
+    private val zone = ZoneId.systemDefault()
+    private fun ms(y: Int, m: Int, d: Int, h: Int) = java.time.LocalDateTime.of(y, m, d, h, 0).atZone(zone).toInstant().toEpochMilli()
+    private fun user(text: String, at: Long) = Turn(Turn.Role.USER, text, at)
+
+    @Test fun hearsHowTheOwnerIs() {
+        assertEquals(ru.iskra.core.brain.CareTalk.Kind.LOW, ru.iskra.core.brain.CareTalk.heard("Мне сегодня так грустно"))
+        assertEquals(ru.iskra.core.brain.CareTalk.Kind.SICK, ru.iskra.core.brain.CareTalk.heard("кажется, я заболела, температура 38"))
+        assertEquals(ru.iskra.core.brain.CareTalk.Kind.QUARREL, ru.iskra.core.brain.CareTalk.heard("Поругался с другом"))
+        assertEquals(ru.iskra.core.brain.CareTalk.Kind.LOW, ru.iskra.core.brain.CareTalk.heard("I feel so lonely"))
+        assertEquals(ru.iskra.core.brain.CareTalk.Kind.SICK, ru.iskra.core.brain.CareTalk.heard("I caught a cold"))
+        for (t in listOf("мне не грустно", "мне не плохо", "фильм грустный", "плохо работает интернет", "I'm fine"))
+            assertNull(ru.iskra.core.brain.CareTalk.heard(t), t)
+    }
+
+    @Test fun asksTheNextDayOnce() {
+        val today = LocalDate.of(2026, 11, 7)
+        val sad = listOf(user("Мне сегодня грустно", ms(2026, 11, 6, 20)))
+        assertEquals("Как ты сегодня? Вчера тебе было нелегко — надеюсь, сегодня светлее. Мрр.",
+            ru.iskra.core.brain.CareTalk.pending(sad, today, zone)?.let { ru.iskra.core.brain.CareTalk.ask(it) })
+        // Said later that day that it passed; or already talked today; or it was two days ago.
+        assertNull(ru.iskra.core.brain.CareTalk.pending(sad + user("уже лучше, спасибо", ms(2026, 11, 6, 22)), today, zone))
+        assertNull(ru.iskra.core.brain.CareTalk.pending(sad + user("привет", ms(2026, 11, 7, 9)), today, zone))
+        assertNull(ru.iskra.core.brain.CareTalk.pending(sad, today.plusDays(1), zone))
+    }
+
+    @Test fun offlineAndProactive() = withLang(Lang.RU) {
+        runBlocking {
+            var now = ms(2026, 11, 6, 20)
+            val convo = InMemoryConversationStore()
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = convo, stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, clock = { now }, random = Random(1))
+            a.handle("кажется, я заболел")
+            now = ms(2026, 11, 7, 10)
+            assertTrue(a.handle("привет").text.endsWith("Как самочувствие? Мрр, выздоравливай скорее — я за тебя переживаю."))
+            assertFalse(a.handle("привет").text.contains("самочувствие"))
+            // The next time: she asks on her own, and the question is in the dialogue.
+            now = ms(2026, 11, 7, 21)
+            a.handle("опять поссорился с братом")
+            now = ms(2026, 11, 8, 9)
+            assertEquals("Как ты? Помирились после вчерашнего? Мрр, надеюсь, всё наладилось.", a.planLine(CompanionAgent.PlanMoment.ANY))
+            assertEquals(Turn.Role.ASSISTANT, convo.recent(1).single().role)
+            assertNull(a.planLine(CompanionAgent.PlanMoment.ANY))
+        }
+    }
+}

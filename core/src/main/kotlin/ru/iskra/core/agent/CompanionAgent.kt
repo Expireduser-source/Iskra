@@ -2,6 +2,7 @@ package ru.iskra.core.agent
 
 import ru.iskra.core.i18n.tr
 import ru.iskra.core.brain.CalculateTool
+import ru.iskra.core.brain.CareTalk
 import ru.iskra.core.brain.DateInfoTool
 import ru.iskra.core.brain.ForgetTool
 import ru.iskra.core.brain.MemoryTalk
@@ -245,6 +246,7 @@ class CompanionAgent(
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
         val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
         notes += PlanTalk.notes(PlanTalk.known(all), today, localHour(nowMs), fresh, tr(true, false))
+        CareTalk.pending(conversation.recent(80), today)?.let { notes += CareTalk.note(it, tr(true, false)) }
         return notes
     }
 
@@ -313,7 +315,10 @@ class CompanionAgent(
         when (moment) {
             PlanMoment.MORNING -> known.filter { !it.done && it.plan.date == today }.take(2).takeIf { it.isNotEmpty() }?.joinToString(" ") { PlanTalk.wish(it.plan) }
             PlanMoment.EVENING -> known.filter { it.plan.date == today.plusDays(1) }.take(2).takeIf { it.isNotEmpty() }?.joinToString(" ") { PlanTalk.eve(it.plan) }
-            PlanMoment.ANY -> PlanTalk.due(known, today, localHour(now))?.let { k ->
+            // Yesterday was hard (sad, ill, a quarrel): «как ты?» comes before any plan.
+            PlanMoment.ANY -> CareTalk.pending(conversation.recent(80), today)?.let { c ->
+                CareTalk.ask(c).also { conversation.append(Turn(Turn.Role.ASSISTANT, it, now, Emotion.SHY)) }
+            } ?: PlanTalk.due(known, today, localHour(now))?.let { k ->
                 val line = PlanTalk.ask(k.plan)
                 conversation.append(Turn(Turn.Role.ASSISTANT, line, now, Emotion.CURIOUS))
                 memory.update(k.item.copy(text = k.plan.doneText))
@@ -379,9 +384,10 @@ class CompanionAgent(
         brain.utility(withBirthday(text), now)?.let { return AgentReply(it.text, it.emotion) }
         if (!llmAvailable) {
             brain.chat(text, now, currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))?.let { a ->
-                // Small talk without a model still remembers to ask how the exam went (once).
-                val ask = PlanTalk.due(PlanTalk.known(memory.all()), today, now.hour)?.takeIf { !PlanTalk.mentions(it.plan, text) }
-                return AgentReply(if (ask != null) a.text + " " + PlanTalk.byTheWay(ask.plan) else a.text, a.emotion)
+                // Small talk without a model still asks how the owner is after a hard day, or how the exam went (once).
+                val care = CareTalk.pending(conversation.recent(80), today)?.let { CareTalk.ask(it) }
+                val ask = care ?: PlanTalk.due(PlanTalk.known(memory.all()), today, now.hour)?.takeIf { !PlanTalk.mentions(it.plan, text) }?.let { PlanTalk.byTheWay(it.plan) }
+                return AgentReply(if (ask != null) a.text + " " + ask else a.text, a.emotion)
             }
         }
         return null

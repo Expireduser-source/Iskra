@@ -34,7 +34,9 @@ class LocalModelEval {
         "Расскажи очень короткую сказку про кота-космонавта.",
         "Объясни простыми словами, что такое фотосинтез.",
         "Мне сегодня грустно, поддержи меня.",
-        "@+2d", // two days later: the exam was yesterday, she should ask how it went
+        "@+1d", // the next day: yesterday was sad (she should ask how I am), the exam is today
+        "Доброе утро!",
+        "@+1d", // and the day after: she should ask how the exam went
         "Привет, я вернулась!",
         "Сдала на пятёрку!",
         "Как меня зовут и на кого я учусь?",
