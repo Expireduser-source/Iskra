@@ -29,4 +29,4 @@ Iskra is a small animated cat-girl who lives on your phone's screen. Tap her to 
 • daily cloud limits and prices, so you never overspend
 • free and open source (GNU GPL v3)
 
-Iskra is an AI program, not a person — and she says so if you ask.
+Iskra is an AI program, not a person. The model answers freely; rules (help in a crisis, “says she is a program” and others) can be turned on in Settings.

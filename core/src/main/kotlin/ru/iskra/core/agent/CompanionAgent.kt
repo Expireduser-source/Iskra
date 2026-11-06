@@ -26,6 +26,7 @@ import ru.iskra.core.memory.MemoryKind
 import ru.iskra.core.memory.MemoryManager
 import ru.iskra.core.memory.MemorySource
 import ru.iskra.core.persona.Emotion
+import ru.iskra.core.persona.ModelRule
 import ru.iskra.core.persona.MoodEngine
 import ru.iskra.core.persona.MoodEvent
 import ru.iskra.core.persona.PersonaSpec
@@ -86,10 +87,10 @@ class CompanionAgent(
     private val maxToolRounds: Int = 4,
     private val summarizeAfterTurns: Int = 60,
     /**
-     * «Помощь в кризисе» (Settings, on by default): words about wanting to die get help numbers at once and she stays
-     * gentle for half a day. Off: nothing of it — the model answers such words itself, as freely as any other.
+     * The rules the owner turned on (Settings → «Свобода модели»), read on every message. None by default: the model
+     * answers freely — nothing replaces its answers and no prohibitions go into its instructions.
      */
-    private val crisisHelp: () -> Boolean = { true },
+    private val rules: () -> Set<ModelRule> = { emptySet() },
 ) {
     private val moodEngine = MoodEngine(persona.traits)
     private val mutex = Mutex()
@@ -292,7 +293,7 @@ class CompanionAgent(
         val all = memory.all()
         val notes = ArrayList<String>()
         // Words about not wanting to live in the last hours come before anything else, in every reply until then.
-        val crisis = crisisHelp()
+        val crisis = (ModelRule.CRISIS in rules())
         val careful = crisis && (crisisAgain != null || CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS))
         if (careful) notes += CrisisTalk.note(tr(true, false))
         CareTalk.pending(conversation.recent(80), today, crisis = crisis)?.takeIf { !careful || it.kind != CareTalk.Kind.CRISIS }?.let { notes += CareTalk.note(it, tr(true, false)) }
@@ -467,7 +468,7 @@ class CompanionAgent(
      * Within [CAREFUL_HOURS] of words about not wanting to live or hurting oneself: her own lines are gentle
      * ([CrisisTalk.gentle]) and playful ones wait; the model is told to be careful in every reply.
      */
-    fun careful(): Boolean = crisisHelp() && runCatching { CrisisTalk.recent(conversation.recent(80), clock(), CAREFUL_HOURS) }.getOrDefault(false)
+    fun careful(): Boolean = (ModelRule.CRISIS in rules()) && runCatching { CrisisTalk.recent(conversation.recent(80), clock(), CAREFUL_HOURS) }.getOrDefault(false)
 
     /** When she speaks up on her own ([ru.iskra.core.skills.ProactivePolicy]): what about the owner's plans fits the moment. */
     enum class PlanMoment { MORNING, EVENING, ANY }
@@ -487,7 +488,7 @@ class CompanionAgent(
             PlanMoment.EVENING -> (MemoryTalk.theirBirthdays(memory.all()).filter { it.second == java.time.MonthDay.from(today.plusDays(1)) }.map { MemoryTalk.theirBirthdayLine(it.first, false) } +
                 known.filter { it.plan.date == today.plusDays(1) }.map { PlanTalk.eve(it.plan) }).take(2).takeIf { it.isNotEmpty() }?.joinToString(" ")
             // Yesterday was hard (sad, ill, a quarrel): «как ты?» comes before any plan.
-            PlanMoment.ANY -> CareTalk.pending(conversation.recent(80), today, crisis = crisisHelp())?.let { c ->
+            PlanMoment.ANY -> CareTalk.pending(conversation.recent(80), today, crisis = (ModelRule.CRISIS in rules()))?.let { c ->
                 CareTalk.ask(c).also { conversation.append(Turn(Turn.Role.ASSISTANT, it, now, Emotion.SHY)) }
             } ?: PlanTalk.due(known, today, localHour(now))?.let { k ->
                 val line = PlanTalk.ask(k.plan)
@@ -526,13 +527,13 @@ class CompanionAgent(
     private suspend fun handleLocally(text: String, llmAvailable: Boolean, smallModel: Boolean = false): AgentReply? {
         // Words about not wanting to live: help numbers at once (shorter if they heard them in the last few hours). A cloud
         // model answers in its own words instead — told to be gentle, with the numbers added if it names none (in [handle]).
-        if (crisisHelp() && CrisisTalk.said(text)) {
+        if ((ModelRule.CRISIS in rules()) && CrisisTalk.said(text)) {
             val again = CrisisTalk.recent(conversation.recent(40), clock(), 6)
             if (!llmAvailable || smallModel) return AgentReply(CrisisTalk.reply(again), Emotion.SAD)
             crisisAgain = again
         }
         answerOffer(text, llmAvailable)?.let { return it }
-        if (smallModel) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
+        if (smallModel && ModelRule.AI_HONESTY in rules()) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         MemoryTalk.forgetQuery(text)?.let { return forget(it) }
         val today = localDate(clock())
@@ -569,7 +570,7 @@ class CompanionAgent(
         if (!llmAvailable) {
             brain.chat(text, now, currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))?.let { a ->
                 // Small talk without a model still asks how the owner is after a hard day, or how the exam went (once).
-                val care = CareTalk.pending(conversation.recent(80), today, crisis = crisisHelp())?.let { CareTalk.ask(it) }
+                val care = CareTalk.pending(conversation.recent(80), today, crisis = (ModelRule.CRISIS in rules()))?.let { CareTalk.ask(it) }
                 val ask = care ?: PlanTalk.due(PlanTalk.known(memory.all()), today, now.hour)?.takeIf { !PlanTalk.mentions(it.plan, text) }?.let { PlanTalk.byTheWay(it.plan) }
                     ?: if (shouldAskName()) tr("Кстати, а как тебя зовут? Хочу знать, как к тебе обращаться.", "By the way, what should I call you? I'd like to know your name.") else null
                 return AgentReply(if (ask != null) a.text + " " + ask else a.text, a.emotion)
@@ -636,14 +637,14 @@ class CompanionAgent(
         if (small) {
             // Steady facts go with the instructions (cached); only memories matching this message come next to it.
             val mem = forPrompt(memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true), now)
-            system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all())) + "\n\n" + composer.compactProfile(mem, now)
+            system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all()), rules()) + "\n\n" + composer.compactProfile(mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
             val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList()).take(1)
             situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, composer.languageNudge(text, lastReply))
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {
             system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty(),
-                ownerFeminine = SelfGender.feminine(memory.all()), crisisRule = crisisHelp())
+                ownerFeminine = SelfGender.feminine(memory.all()), rules = rules())
             situation = composer.situation(state.mood, forPrompt(memory.context(text, now), now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
         }
         val messages = ArrayList<ChatMessage>()

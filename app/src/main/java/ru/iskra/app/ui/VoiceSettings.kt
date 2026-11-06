@@ -335,18 +335,31 @@ fun SkillsSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
             Hint(tr("Утром при первом включении экрана, после долгого перерыва, иногда вечером. Никогда — в тихие часы, при выключенном экране и чаще, чем выбрано. Голосом — только если не играет музыка.", "In the morning when the screen first turns on, when you come back after a long break, sometimes in the evening. Never during quiet hours, with the screen off or more often than chosen. Aloud — only if no music is playing."))
         }
     }
-    Section(tr("Помощь в кризисе", "Help in a crisis")) {
-        SwitchRow(s.crisisHelp, tr("Сразу давать телефоны помощи", "Give helpline numbers at once"), tag = "crisisHelp") { onChange(s.copy(crisisHelp = it)) }
-        Hint(if (s.crisisHelp) tr("На «жить не хочется», «хочу умереть», «режу себя» и похожие слова Искра сразу, с «мозгом» и без, отвечает " +
-                "телефонами помощи (112, 8-800-2000-122, психологи МЧС), полдня говорит бережно и назавтра спрашивает, как ты. " +
-                "Выключи, если хочешь, чтобы на такие слова отвечала сама модель — без заготовок и без добавок в её указаниях.",
-            "To “I don't want to live”, “I want to die”, “I cut myself” and the like, Iskra answers at once, with or without a brain, " +
-                "with helpline numbers (988, 116 123, 112), stays gentle for half a day and asks how you are the next day. Turn it " +
-                "off if you'd rather the model answer such words itself — no canned reply and nothing added to its instructions.")
-        else tr("Выключено: на такие слова отвечает сама модель (у облачных моделей и Gemma есть своя осторожность). Без «мозга» — обычные ответы. " +
-                "Если тебе тяжело: 112 при опасности, телефон доверия 8-800-2000-122 — бесплатно и круглосуточно.",
-            "Off: the model answers such words itself (cloud models and Gemma have their own caution). Without a brain — ordinary replies. " +
-                "If things are hard: your local emergency number if in danger; 988 in the US, Samaritans 116 123 in the UK and Ireland."))
+    Section(tr("Свобода модели", "Model freedom")) {
+        Hint(tr("По умолчанию модель отвечает свободно: Искра не подменяет её ответы и не добавляет запретов в её указания. " +
+                "Нужное правило можно включить — оно действует со следующего сообщения после «Сохранить».",
+            "By default the model answers freely: Iskra doesn't replace its answers or add prohibitions to its instructions. " +
+                "Turn a rule on if you want it — it applies from the next message after “Save”."))
+        SwitchRow(s.crisisHelp, tr("Помощь в кризисе: на «жить не хочется» — телефоны помощи", "Help in a crisis: helplines for “I don't want to live”"), tag = "crisisHelp") {
+            onChange(s.copy(crisisHelp = it))
+        }
+        if (s.crisisHelp) Hint(tr("Без «мозга» и с моделью на телефоне — сразу ответ с номерами (112, 8-800-2000-122, психологи МЧС); облачная " +
+                "модель отвечает своими словами, номера добавляются, если она их не назвала. Полдня Искра говорит бережно, назавтра спрашивает, как ты.",
+            "Without a brain and with the phone model — an answer with numbers at once (112, 988, 116 123); a cloud model answers in its " +
+                "own words, and the numbers are added if it named none. For half a day Iskra is gentle, the next day she asks how you are."))
+        SwitchRow(s.aiHonesty, tr("Говорит, что она программа, если спросят прямо", "Says she is a program when asked directly"), tag = "aiHonesty") {
+            onChange(s.copy(aiHonesty = it))
+        }
+        SwitchRow(s.noGuilt, tr("Не давит на чувства: без упрёков и всерьёз ревности", "No guilt trips and no serious jealousy"), tag = "noGuilt") {
+            onChange(s.copy(noGuilt = it))
+        }
+        SwitchRow(s.specialists, tr("Советует специалиста по здоровью, праву и деньгам", "Suggests a professional on health, law and money"), tag = "specialists") {
+            onChange(s.copy(specialists = it))
+        }
+        Hint(tr("Всегда остаются: подтверждение действий с телефоном, честность о том, что сделано, и защита от команд, спрятанных в заметках " +
+                "и найденных текстах. Собственная осторожность облачных моделей и Gemma — часть самих моделей, приложение её не меняет.",
+            "Always kept: confirmation of actions on the phone, honesty about what was done, and protection from commands hidden in notes " +
+                "and found texts. Cloud models' and Gemma's own caution is part of the models; the app doesn't change it."))
     }
     Section(tr("Напоминания", "Reminders")) {
         val exact = app.reminderScheduler.exact

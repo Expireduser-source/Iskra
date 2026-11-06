@@ -41,7 +41,8 @@ object Backups {
         "avatarLook" to tr("Вид персонажа", "Character look"), "economicalEar" to tr("Экономный слух", "Economical hearing"),
         "weatherCity" to tr("Город для погоды", "Weather city"), "proactive" to tr("Сама заговаривает", "Speaks up on her own"), "quietFrom" to tr("Тихие часы с", "Quiet hours from"),
         "quietTo" to tr("Тихие часы до", "Quiet hours to"), "proactiveVoice" to tr("Заговаривает голосом", "Speaks aloud"),
-        "crisisHelp" to tr("Помощь в кризисе", "Help in a crisis"),
+        "crisisHelp" to tr("Помощь в кризисе", "Help in a crisis"), "aiHonesty" to tr("Говорит, что она программа", "Says she is a program"),
+        "noGuilt" to tr("Не давит на чувства", "No guilt trips"), "specialists" to tr("Советует специалиста", "Suggests a professional"),
     )
 
     /** Returns the number of memory items written. */

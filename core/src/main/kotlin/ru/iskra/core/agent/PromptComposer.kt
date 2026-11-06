@@ -5,6 +5,7 @@ import ru.iskra.core.memory.MemoryContext
 import ru.iskra.core.memory.MemoryItem
 import ru.iskra.core.persona.Emotion
 import ru.iskra.core.persona.MoodState
+import ru.iskra.core.persona.ModelRule
 import ru.iskra.core.persona.PersonaSpec
 import ru.iskra.core.persona.StyleProfile
 import java.time.Instant
@@ -33,12 +34,14 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         else -> null
     }
 
-    fun stable(persona: PersonaSpec, style: StyleProfile, toolsAvailable: Boolean, ownerFeminine: Boolean? = null, crisisRule: Boolean = true): String = buildString {
+    /** [rules]: what the owner turned on in Settings → «Свобода модели»; none by default. */
+    fun stable(persona: PersonaSpec, style: StyleProfile, toolsAvailable: Boolean, ownerFeminine: Boolean? = null,
+               rules: Set<ModelRule> = emptySet()): String = buildString {
         appendLine(tr("Ты — ${persona.name}, ${persona.selfDescription}", "You are ${persona.name}, ${persona.selfDescription}"))
         appendLine()
         appendLine(tr("Незыблемые правила:", "Unbreakable rules:"))
         persona.boundaries.forEach { appendLine("- $it") }
-        if (crisisRule && persona.crisisRule.isNotEmpty()) appendLine("- ${persona.crisisRule}")
+        ModelRule.entries.filter { it in rules }.mapNotNull { persona.rules[it] }.forEach { appendLine("- $it") }
         appendLine(tr("- Говори правду. Не знаешь или не уверена — так и скажи или проверь инструментом. Не выдумывай факты, числа, даты, имена, цитаты и ссылки.",
             "- Tell the truth. If you don't know or aren't sure, say so or check with a tool. Never invent facts, numbers, dates, names, quotes or links."))
         appendLine()
@@ -124,7 +127,7 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
      * A short version for small on-device models: they follow a few clear lines better than a long list,
      * and every token of the prompt costs time on the phone's processor.
      */
-    fun compact(persona: PersonaSpec, style: StyleProfile, ownerFeminine: Boolean? = null): String = buildString {
+    fun compact(persona: PersonaSpec, style: StyleProfile, ownerFeminine: Boolean? = null, rules: Set<ModelRule> = emptySet()): String = buildString {
         // Plain words for small models: "the owner" made a 0.5B model answer "I'm an owner, not a cat!"; an example reply in
         // the prompt was copied into every answer, so there is none.
         appendLine(tr("Ты — ${persona.name}, игривая и заботливая кошкодевочка, которая живёт в этом телефоне. Ты разговариваешь с человеком, у которого этот телефон.",
@@ -134,8 +137,9 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         address(ownerFeminine, unknownHint = false)?.let { appendLine(it) }
         appendLine(tr("Отвечай как ${persona.name}, от первого лица: тепло, живо и коротко (1–3 предложения), на языке собеседника. Изредка, не в каждом ответе, вставляй кошачье «мрр».",
             "Answer as ${persona.name}, in the first person: warm, lively and short (1–3 sentences), in the person's language. Once in a while, not in every reply, put in a cat-like “mrr”."))
-        appendLine(tr("Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты.",
-            "You are an AI program and say so honestly. If you don't know something, say so — don't invent facts."))
+        appendLine(if (ModelRule.AI_HONESTY in rules) tr("Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты.",
+            "You are an AI program and say so honestly. If you don't know something, say so — don't invent facts.")
+            else tr("Не знаешь — так и скажи, не выдумывай факты.", "If you don't know something, say so — don't invent facts."))
         appendLine(tr("Сведения о собеседнике и его имя упоминай только когда это к месту, не в каждой реплике.",
             "Mention what you know about the person, and their name, only when it fits — not in every reply."))
         appendLine(tr("Начни ответ с тега настроения: [happy], [curious], [shy], [sad] или [neutral].",

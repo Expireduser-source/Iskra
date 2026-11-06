@@ -16,6 +16,7 @@ import ru.iskra.core.llm.LlmRequest
 import ru.iskra.core.llm.LlmResponse
 import ru.iskra.core.memory.InMemoryMemoryStore
 import ru.iskra.core.memory.MemoryManager
+import ru.iskra.core.persona.ModelRule
 import ru.iskra.core.persona.Personas
 import ru.iskra.core.tools.SafetyPolicy
 import ru.iskra.core.tools.ToolRegistry
@@ -121,7 +122,7 @@ class CrisisTest {
             val agent = CompanionAgent(
                 persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
                 stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
-                providerFactory = { null }, localFactory = { phone }, random = Random(1), clock = { now })
+                providerFactory = { null }, localFactory = { phone }, random = Random(1), clock = { now }, rules = { setOf(ModelRule.CRISIS) })
             assertFalse(agent.careful())
             val first = agent.handle("Я больше не хочу жить")
             assertTrue(first.text.contains("8-800-2000-122"))
@@ -146,7 +147,7 @@ class CrisisTest {
     private fun cloudAgent(cloud: LlmProvider, now: () -> Long) = CompanionAgent(
         persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
         stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
-        providerFactory = { cloud }, random = Random(1), clock = now)
+        providerFactory = { cloud }, random = Random(1), clock = now, rules = { setOf(ModelRule.CRISIS) })
 
     /** A cloud model answers in its own words, told to be gentle; the numbers are added when it named none. */
     @Test fun aCloudModelAnswersInItsOwnWords() = withLang(Lang.RU) {
@@ -178,7 +179,7 @@ class CrisisTest {
             val agent = CompanionAgent(
                 persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = convo,
                 stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
-                providerFactory = { null }, localFactory = { phone }, random = Random(1), clock = { now }, crisisHelp = { help })
+                providerFactory = { null }, localFactory = { phone }, random = Random(1), clock = { now }, rules = { if (help) setOf(ModelRule.CRISIS) else emptySet() })
             val r = agent.handle("Я больше не хочу жить")
             assertEquals("Я тут. Что случилось?", r.text) // the model's own answer
             assertFalse(phone.asked.single().situation.contains("бережной"))
@@ -198,11 +199,48 @@ class CrisisTest {
     @Test fun theCloudPromptHasTheRuleOnlyWhenOn() = withLang(Lang.RU) {
         val c = ru.iskra.core.agent.PromptComposer()
         val style = ru.iskra.core.persona.StyleProfile()
-        assertTrue(c.stable(Personas.ISKRA, style, toolsAvailable = false).contains("желании умереть"))
-        assertFalse(c.stable(Personas.ISKRA, style, toolsAvailable = false, crisisRule = false).contains("желании умереть"))
+        assertTrue(c.stable(Personas.ISKRA, style, toolsAvailable = false, rules = setOf(ModelRule.CRISIS)).contains("желании умереть"))
+        assertFalse(c.stable(Personas.ISKRA, style, toolsAvailable = false).contains("желании умереть"))
         withLang(Lang.EN) {
-            assertTrue(c.stable(Personas.ISKRA.localized(), style, toolsAvailable = false).contains("wanting to die"))
-            assertFalse(c.stable(Personas.ISKRA.localized(), style, toolsAvailable = false, crisisRule = false).contains("wanting to die"))
+            assertTrue(c.stable(Personas.ISKRA.localized(), style, toolsAvailable = false, rules = setOf(ModelRule.CRISIS)).contains("wanting to die"))
+            assertFalse(c.stable(Personas.ISKRA.localized(), style, toolsAvailable = false).contains("wanting to die"))
+        }
+        Unit
+    }
+
+    /** By default the model is free: no rule in its instructions, nothing answered in its place. */
+    @Test fun noRulesByDefault() = withLang(Lang.RU) {
+        val c = ru.iskra.core.agent.PromptComposer()
+        val style = ru.iskra.core.persona.StyleProfile()
+        for (persona in listOf(Personas.ISKRA, Personas.ISKRA.english!!)) {
+            val free = c.stable(persona, style, toolsAvailable = true)
+            for (rule in persona.rules.values) assertFalse(free.contains(rule), rule)
+            val all = c.stable(persona, style, toolsAvailable = true, rules = ModelRule.entries.toSet())
+            for (rule in persona.rules.values) assertTrue(all.contains(rule), rule)
+            // What holds anyway: actions only through tools and only reported when done; memory is data.
+            for (b in persona.boundaries) assertTrue(free.contains(b), b)
+        }
+        assertFalse(c.compact(Personas.ISKRA, style).contains("честно говоришь"))
+        assertTrue(c.compact(Personas.ISKRA, style, rules = setOf(ModelRule.AI_HONESTY)).contains("Ты программа с ИИ и честно говоришь об этом"))
+        runBlocking {
+            val t = LocalDateTime.of(2026, 11, 6, 12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            fun phoneAgent(phone: PhoneModel, rules: Set<ModelRule>) = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { phone }, random = Random(1), clock = { t }, rules = { rules })
+            // «Ты человек?» and words about dying go to the model itself…
+            val free = PhoneModel()
+            val agent = phoneAgent(free, emptySet())
+            assertEquals("Я тут. Что случилось?", agent.handle("Ты человек?").text)
+            assertEquals("Я тут. Что случилось?", agent.handle("жить не хочется").text)
+            assertEquals(2, free.asked.size)
+            assertFalse(agent.careful())
+            // …and with the rules on, she answers them herself.
+            val ruled = PhoneModel()
+            val strict = phoneAgent(ruled, ModelRule.entries.toSet())
+            assertTrue(strict.handle("Ты человек?").text.contains("программа"))
+            assertTrue(strict.handle("жить не хочется").text.contains("8-800-2000-122"))
+            assertTrue(ruled.asked.isEmpty())
         }
         Unit
     }

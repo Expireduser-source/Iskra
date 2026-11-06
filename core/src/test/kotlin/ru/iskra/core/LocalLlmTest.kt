@@ -275,10 +275,10 @@ class LocalLlmTest {
         override suspend fun complete(request: LlmRequest): LlmResponse { calls++; throw LlmException("x", kind) }
     }
 
-    private fun agent(cloud: LlmProvider?, local: LlmProvider?) = CompanionAgent(
+    private fun agent(cloud: LlmProvider?, local: LlmProvider?, rules: Set<ru.iskra.core.persona.ModelRule> = emptySet()) = CompanionAgent(
         persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
         stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
-        providerFactory = { cloud }, localFactory = { local }, random = Random(1),
+        providerFactory = { cloud }, localFactory = { local }, random = Random(1), rules = { rules },
     )
 
     @Test
@@ -298,8 +298,13 @@ class LocalLlmTest {
             assertFalse(prompt.contains("владел"))                              // plain words for a small model
             assertFalse(prompt.contains("Инструменты"))                       // no tools for a small model
             assertTrue(a.handle("сколько будет 2+2").text.endsWith("= 4"))    // exact answers stay local
-            assertTrue(a.handle("ты человек?").text.contains("программа"))     // honesty is not left to a small model
             assertEquals(2, engine.prompts.size)                                // only the two real questions reached the model
+            // By default the model answers «ты человек?» itself; with «говорит, что она программа» on, a small model doesn't get it.
+            assertEquals("Жила-была кошка…", a.handle("ты человек?").text)
+            assertEquals(3, engine.prompts.size)
+            val strict = agent(null, LocalLlmProvider({ engine }, ChatFormat.CHATML, "local:test"), setOf(ru.iskra.core.persona.ModelRule.AI_HONESTY))
+            assertTrue(strict.handle("ты человек?").text.contains("программа"))
+            assertEquals(3, engine.prompts.size)
         }
     }
 

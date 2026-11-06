@@ -38,12 +38,11 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
   “Spark” and she listens — recognized fully on the phone.
 - **From any app:** share text to Iskra or select it and tap **“Ask Iskra”** — explain, summarize, translate, save as a
   note or a reminder. A Quick Settings tile and launcher shortcuts (Ask, Voice, Reminder, On screen).
-- **When it's really hard:** if you write that you don't want to live or want to hurt yourself, she answers at once with
-  people who can help: 112, Russia's free helpline 8-800-2000-122 and the МЧС psychologists, 988 in the US, Samaritans
-  116 123 in the UK and Ireland. A cloud brain answers in its own words, and the numbers are added only if it named none.
-  A tap on a number opens the dialer (the call is yours to make). For the rest of the day she is gentle instead of
-  playful, and the next day she asks how you are. Settings → “Help in a crisis” turns all of it off: then the model
-  answers such words itself, with nothing added.
+- **A free model, your rules:** by default the model answers freely — Iskra doesn't replace its answers or add
+  prohibitions to its instructions. Settings → “Model freedom” has rules you can turn on: help in a crisis (helplines
+  at once for “I don't want to live”: 112, Russia's 8-800-2000-122, 988 in the US, Samaritans 116 123; numbers open the
+  dialer with a tap), “says she is a program when asked directly”, “no guilt trips”, “suggests a professional on health,
+  law and money”. Confirmation of actions on the phone and protection from commands hidden in notes always stay.
 - **For every phone and person:** English and Russian (follows the phone), Android 8 to 16, tablets and foldables,
   guides for Xiaomi, Samsung, Huawei, Honor, OPPO, OnePlus, vivo, Tecno and others, TalkBack, large fonts, light and
   dark themes, calm motion, battery modes and daily cloud spending limits.
@@ -74,7 +73,7 @@ works offline; audio never leaves the phone. No ads, no analytics, no trackers.
   the APK is signed with the project's own key. Android protects such apps with “restricted settings”; the app explains it.
 - **She disappears after a while.** Some phones close background apps. The «Permissions» tab shows exactly what to switch
   on for your phone's maker.
-- **Is she a person?** No — Iskra is an AI program, and she says so if you ask.
+- **Is she a person?** No — Iskra is an AI program. Without a brain she says so herself; with one, the answer is the model's, unless you turn on “says she is a program” in Settings → “Model freedom”.
 
 ## Help the project
 ⭐ Star the repository, tell a friend (Settings → About → “Tell a friend” shows a QR code), report problems in

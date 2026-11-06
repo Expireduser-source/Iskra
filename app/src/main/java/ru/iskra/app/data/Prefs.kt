@@ -1,5 +1,6 @@
 package ru.iskra.app.data
 
+import ru.iskra.core.persona.ModelRule
 import ru.iskra.core.i18n.tr
 import ru.iskra.core.power.EconomyMode
 import ru.iskra.core.usage.UsageLimits
@@ -107,11 +108,20 @@ data class AppSettings(
     val quietTo: Int = 8,
     val proactiveVoice: Boolean = false,
     /**
-     * «Помощь в кризисе»: words about wanting to die get help numbers at once and she stays gentle for half a day.
-     * Off — the model answers them itself, with nothing added to its instructions.
+     * «Свобода модели»: rules the owner may give the model ([ModelRule]). All off by default — the model answers freely,
+     * nothing replaces its answers and no prohibitions go into its instructions.
      */
-    val crisisHelp: Boolean = true,
+    val crisisHelp: Boolean = false,
+    val aiHonesty: Boolean = false,
+    val noGuilt: Boolean = false,
+    val specialists: Boolean = false,
 ) {
+    val modelRules: Set<ModelRule> get() = buildSet {
+        if (crisisHelp) add(ModelRule.CRISIS)
+        if (aiHonesty) add(ModelRule.AI_HONESTY)
+        if (noGuilt) add(ModelRule.NO_GUILT)
+        if (specialists) add(ModelRule.SPECIALISTS)
+    }
     val voiceOrDefault get() = ttsVoice.ifBlank { ttsEngine.defaultVoice }
     val ttsModelOrDefault get() = ttsModel.ifBlank { ttsEngine.defaultModel }
     val wakeNameList get() = wakeNames.split(',', ';').map { it.trim() }.filter { it.length >= 3 }
@@ -156,11 +166,19 @@ class SettingsRepo(context: Context) {
         quietFrom = prefs.getInt("quietFrom", 23).coerceIn(0, 23),
         quietTo = prefs.getInt("quietTo", 8).coerceIn(0, 23),
         proactiveVoice = prefs.getBoolean("proactiveVoice", false),
-        crisisHelp = prefs.getBoolean("crisisHelp", true),
+        crisisHelp = prefs.getBoolean("crisisHelp", false),
+        aiHonesty = prefs.getBoolean("aiHonesty", false),
+        noGuilt = prefs.getBoolean("noGuilt", false),
+        specialists = prefs.getBoolean("specialists", false),
     )
 
-    /** Read on every message by the agent, so the switch works as soon as it is saved. */
-    fun crisisHelp(): Boolean = prefs.getBoolean("crisisHelp", true)
+    /** Read on every message by the agent, so a switch works as soon as it is saved. None by default. */
+    fun modelRules(): Set<ModelRule> = buildSet {
+        if (prefs.getBoolean("crisisHelp", false)) add(ModelRule.CRISIS)
+        if (prefs.getBoolean("aiHonesty", false)) add(ModelRule.AI_HONESTY)
+        if (prefs.getBoolean("noGuilt", false)) add(ModelRule.NO_GUILT)
+        if (prefs.getBoolean("specialists", false)) add(ModelRule.SPECIALISTS)
+    }
 
     /** Coordinates found for [AppSettings.weatherCity] (geocoded once, on «Найти»). */
     fun weatherPlace(): Place? {
@@ -192,7 +210,8 @@ class SettingsRepo(context: Context) {
         "priceInPerM" to s.priceInPerM, "priceOutPerM" to s.priceOutPerM, "priceTtsPerM" to s.priceTtsPerM, "currency" to s.currency,
         "avatarLook" to s.avatarLook.name, "economicalEar" to s.economicalEar,
         "weatherCity" to s.weatherCity, "proactive" to s.proactive.name, "quietFrom" to s.quietFrom, "quietTo" to s.quietTo,
-        "proactiveVoice" to s.proactiveVoice, "crisisHelp" to s.crisisHelp,
+        "proactiveVoice" to s.proactiveVoice, "crisisHelp" to s.crisisHelp, "aiHonesty" to s.aiHonesty, "noGuilt" to s.noGuilt,
+        "specialists" to s.specialists,
     )
 
     /** Applies known, well-typed values from a backup over [base]; unknown names and wrong types are ignored. */
@@ -238,6 +257,9 @@ class SettingsRepo(context: Context) {
             quietTo = int("quietTo")?.coerceIn(0, 23) ?: base.quietTo,
             proactiveVoice = bool("proactiveVoice") ?: base.proactiveVoice,
             crisisHelp = bool("crisisHelp") ?: base.crisisHelp,
+            aiHonesty = bool("aiHonesty") ?: base.aiHonesty,
+            noGuilt = bool("noGuilt") ?: base.noGuilt,
+            specialists = bool("specialists") ?: base.specialists,
         )
     }
 
@@ -277,6 +299,9 @@ class SettingsRepo(context: Context) {
             .putInt("quietTo", s.quietTo)
             .putBoolean("proactiveVoice", s.proactiveVoice)
             .putBoolean("crisisHelp", s.crisisHelp)
+            .putBoolean("aiHonesty", s.aiHonesty)
+            .putBoolean("noGuilt", s.noGuilt)
+            .putBoolean("specialists", s.specialists)
             .apply()
     }
 }
