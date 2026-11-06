@@ -709,7 +709,7 @@ class CompanionAgent(
                     )
                 }
                 if (parsed.text.isNotBlank()) said.append(parsed.text).append(' ')
-                messages += ChatMessage.Assistant(response.text, response.toolCalls)
+                messages += ChatMessage.Assistant(response.text, response.toolCalls, response.providerBlocks)
                 for (call in response.toolCalls) {
                     val record = policy.run(tools[call.name], call.name, call.arguments)
                     actions += record

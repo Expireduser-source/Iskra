@@ -63,11 +63,28 @@ class AnthropicProvider(
         return parser.result()
     }
 
+    /**
+     * The request as the model accepts it. Current Claude models refuse sampling parameters (Claude Haiku 5.5, the default,
+     * answers `temperature: 0.8` with a 400), so none is sent. Thinking is turned off where the model allows it — replies
+     * are short and often spoken, so speed matters more — and kept low where it can't be turned off. The stable part of
+     * the instructions is cached ([LlmRequest.system], tools before it); the per-message situation follows uncached.
+     */
     internal fun buildBody(request: LlmRequest): JsonObject = buildJsonObject {
         put("model", model)
         put("max_tokens", request.maxTokens)
-        put("temperature", request.temperature)
-        put("system", request.fullSystem)
+        put("system", buildJsonArray {
+            if (request.system.isNotBlank()) add(buildJsonObject {
+                put("type", "text"); put("text", request.system)
+                put("cache_control", buildJsonObject { put("type", "ephemeral") })
+            })
+            if (request.situation.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", request.situation) })
+        })
+        when (thinkingFor(model)) {
+            Thinking.OFF -> put("thinking", buildJsonObject { put("type", "disabled") })
+            Thinking.BETWEEN_TOOLS -> put("thinking", buildJsonObject { put("type", "between_tools") })
+            Thinking.LOW -> put("output_config", buildJsonObject { put("effort", "low") })
+            Thinking.DEFAULT -> Unit
+        }
         put("messages", encodeMessages(request.messages))
         if (request.tools.isNotEmpty()) put("tools", buildJsonArray {
             for (t in request.tools) add(buildJsonObject {
@@ -104,6 +121,8 @@ class AnthropicProvider(
                 add(buildJsonObject {
                     put("role", "assistant")
                     put("content", buildJsonArray {
+                        // Thinking blocks go back unchanged, before the text and the tool call they led to.
+                        m.providerBlocks.forEach { add(it) }
                         if (m.text.isNotBlank()) add(buildJsonObject { put("type", "text"); put("text", m.text) })
                         for (c in m.toolCalls) add(buildJsonObject {
                             put("type", "tool_use"); put("id", c.id); put("name", c.name); put("input", c.arguments)
@@ -121,9 +140,11 @@ class AnthropicProvider(
             val blocks = root["content"] as JsonArray
             val sb = StringBuilder()
             val calls = mutableListOf<ToolCall>()
+            val kept = mutableListOf<JsonObject>()
             for (b in blocks) {
                 val o = b.jsonObject
                 when (o["type"]?.jsonPrimitive?.contentOrNull) {
+                    "thinking", "redacted_thinking" -> kept += o
                     "text" -> sb.append(o["text"]?.jsonPrimitive?.contentOrNull.orEmpty())
                     "tool_use" -> calls += ToolCall(
                         id = o["id"]!!.jsonPrimitive.content,
@@ -133,19 +154,42 @@ class AnthropicProvider(
                 }
             }
             val usage = root["usage"] as? JsonObject
+            fun u(k: String) = usage?.get(k)?.jsonPrimitive?.intOrNull ?: 0
             return LlmResponse(
                 text = sb.toString(),
                 toolCalls = calls,
-                inputTokens = usage?.get("input_tokens")?.jsonPrimitive?.intOrNull ?: 0,
-                outputTokens = usage?.get("output_tokens")?.jsonPrimitive?.intOrNull ?: 0,
+                inputTokens = paidInput(u("input_tokens"), u("cache_creation_input_tokens"), u("cache_read_input_tokens")),
+                outputTokens = u("output_tokens"),
+                providerBlocks = kept,
             )
         } catch (e: Exception) {
             throw LlmException("Unexpected response shape", LlmException.Kind.BAD_RESPONSE, e)
         }
     }
 
-    private companion object {
+    internal enum class Thinking { OFF, BETWEEN_TOOLS, LOW, DEFAULT }
+
+    internal companion object {
         val JSON = "application/json; charset=utf-8".toMediaType()
+
+        /**
+         * How each Claude generation takes thinking: Claude Haiku 5.5, Claude Opus 5 and Claude Sonnet 5 think by default
+         * and accept `disabled`; Claude Sonnet 5.5 turns it off with `between_tools`; Claude Opus 5.5 and the Fable and
+         * Mythos models can't turn it off — low effort instead; older models don't think unless asked.
+         */
+        fun thinkingFor(model: String): Thinking {
+            val m = model.lowercase().removePrefix("anthropic.")
+            return when {
+                m.startsWith("claude-sonnet-5-5") -> Thinking.BETWEEN_TOOLS
+                m.startsWith("claude-opus-5-5") || m.startsWith("claude-fable") || m.startsWith("claude-mythos") -> Thinking.LOW
+                m.startsWith("claude-haiku-5-5") || m.startsWith("claude-sonnet-5") || m.startsWith("claude-opus-5") -> Thinking.OFF
+                else -> Thinking.DEFAULT
+            }
+        }
+
+        /** Input tokens as they are paid for: cache writes cost 1.25×, cache reads 0.1× of the input rate. */
+        fun paidInput(uncached: Int, cacheWrite: Int, cacheRead: Int): Int =
+            uncached + (cacheWrite * 1.25).toInt() + (cacheRead * 0.1).toInt()
     }
 }
 
@@ -154,11 +198,17 @@ class AnthropicProvider(
  * message_stop, ping, error). Pure, so it is tested without a network.
  */
 class AnthropicStreamParser {
-    private class Block(val type: String, val id: String?, val name: String?) { val json = StringBuilder() }
+    private class Block(val type: String, val id: String?, val name: String?, val start: JsonObject? = null) {
+        val json = StringBuilder()
+        val thinking = StringBuilder()
+        var signature: String? = null
+    }
 
     private val text = StringBuilder()
     private val blocks = sortedMapOf<Int, Block>()
     private var inputTokens = 0
+    private var cacheWrite = 0
+    private var cacheRead = 0
     private var outputTokens = 0
     var sawEvents = false; private set
     var done = false; private set
@@ -175,12 +225,16 @@ class AnthropicStreamParser {
         when (o.str("type")) {
             "message_start" -> ((o["message"] as? JsonObject)?.get("usage") as? JsonObject)?.let { u ->
                 inputTokens = u.int("input_tokens") ?: inputTokens
+                cacheWrite = u.int("cache_creation_input_tokens") ?: cacheWrite
+                cacheRead = u.int("cache_read_input_tokens") ?: cacheRead
                 outputTokens = u.int("output_tokens") ?: outputTokens
             }
             "content_block_start" -> {
                 val cb = o["content_block"] as? JsonObject ?: return null
                 val type = cb.str("type") ?: return null
-                blocks[o.int("index") ?: blocks.size] = Block(type, cb.str("id"), cb.str("name"))
+                blocks[o.int("index") ?: blocks.size] = Block(type, cb.str("id"), cb.str("name"), cb).also { b ->
+                    if (type == "thinking") { b.thinking.append(cb.str("thinking").orEmpty()); b.signature = cb.str("signature") }
+                }
                 if (type == "text") return cb.str("text")?.takeIf { it.isNotEmpty() }?.also { text.append(it) }
             }
             "content_block_delta" -> {
@@ -188,11 +242,15 @@ class AnthropicStreamParser {
                 when (d.str("type")) {
                     "text_delta" -> return d.str("text")?.takeIf { it.isNotEmpty() }?.also { text.append(it) }
                     "input_json_delta" -> blocks[o.int("index") ?: 0]?.json?.append(d.str("partial_json").orEmpty())
+                    "thinking_delta" -> blocks[o.int("index") ?: 0]?.thinking?.append(d.str("thinking").orEmpty())
+                    "signature_delta" -> blocks[o.int("index") ?: 0]?.let { it.signature = (it.signature.orEmpty() + d.str("signature").orEmpty()) }
                 }
             }
             "message_delta" -> (o["usage"] as? JsonObject)?.let { u ->
                 outputTokens = u.int("output_tokens") ?: outputTokens
                 inputTokens = u.int("input_tokens") ?: inputTokens
+                cacheWrite = u.int("cache_creation_input_tokens") ?: cacheWrite
+                cacheRead = u.int("cache_read_input_tokens") ?: cacheRead
             }
             "message_stop" -> done = true
             "error" -> {
@@ -220,8 +278,19 @@ class AnthropicStreamParser {
             else runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrElse { JsonObject(emptyMap()) }
             ToolCall(id = b.id ?: "toolu_${b.name}", name = b.name!!, arguments = args)
         },
-        inputTokens = inputTokens,
+        inputTokens = AnthropicProvider.paidInput(inputTokens, cacheWrite, cacheRead),
         outputTokens = outputTokens,
+        // Thinking blocks as they came, to send back with a tool call: thinking text and signature put together.
+        providerBlocks = blocks.values.mapNotNull { b ->
+            when (b.type) {
+                "thinking" -> buildJsonObject {
+                    put("type", "thinking"); put("thinking", b.thinking.toString())
+                    b.signature?.let { put("signature", it) }
+                }
+                "redacted_thinking" -> b.start
+                else -> null
+            }
+        },
     )
 
     private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull

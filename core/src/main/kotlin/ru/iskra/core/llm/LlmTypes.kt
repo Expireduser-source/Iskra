@@ -6,7 +6,12 @@ import kotlinx.serialization.json.JsonObject
 /** Provider-neutral chat message. Tool results are messages with role TOOL. */
 sealed interface ChatMessage {
     data class User(val text: String) : ChatMessage
-    data class Assistant(val text: String, val toolCalls: List<ToolCall> = emptyList()) : ChatMessage
+    /**
+     * [providerBlocks]: blocks the provider must get back unchanged with this turn — Claude's `thinking` blocks before a
+     * tool call; opaque to everything else.
+     */
+    data class Assistant(val text: String, val toolCalls: List<ToolCall> = emptyList(),
+                         val providerBlocks: List<kotlinx.serialization.json.JsonObject> = emptyList()) : ChatMessage
     data class ToolResult(val callId: String, val toolName: String, val content: String, val isError: Boolean = false) : ChatMessage
 }
 
@@ -39,8 +44,11 @@ data class LlmRequest(
 data class LlmResponse(
     val text: String,
     val toolCalls: List<ToolCall>,
+    /** Input as it is paid for: with a prompt cache, writes count 1.25× and reads 0.1× (Anthropic's rates). */
     val inputTokens: Int = 0,
     val outputTokens: Int = 0,
+    /** To send back with this turn if the model calls a tool ([ChatMessage.Assistant.providerBlocks]). */
+    val providerBlocks: List<kotlinx.serialization.json.JsonObject> = emptyList(),
 )
 
 /** Every model backend (cloud or on-device) implements this. */

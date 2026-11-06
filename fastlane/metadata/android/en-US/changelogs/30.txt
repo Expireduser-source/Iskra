@@ -1,3 +1,4 @@
-• Without a brain, Iskra answers "I missed you", "I'm scared", "I can't sleep", "I did it!" warmly, tells riddles and suggests a movie or dinner
-• The model answers freely; "Model freedom" in Settings has rules to turn on: help in a crisis (988, 116 123, 112 — tap to dial), "says she is a program" and more
-• With a phone model and no cloud, long chats are compressed into short recaps once a day on charge — Iskra remembers older talks
+• Claude (your own Anthropic key) answers again: new models refused our request; the prompt is cached — cheaper and faster
+• The model answers freely; rules (help in a crisis with helplines and more) are in "Model freedom"
+• Without a brain she answers "I missed you", "I'm scared", "I can't sleep" warmly and tells riddles
+• The phone model compresses old chats into short recaps once a day on charge

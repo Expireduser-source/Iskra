@@ -68,12 +68,63 @@ class ProviderTest {
         assertEquals("/v1/messages", recorded.path)
         assertEquals("key", recorded.getHeader("x-api-key"))
         val body = Json.parseToJsonElement(recorded.body.readUtf8()).jsonObject
-        assertEquals("sys", body["system"]!!.jsonPrimitive.content)
+        // The stable instructions are a cached block; no sampling parameter (Claude Haiku 5.5 answers one with a 400).
+        val system = body["system"]!!.jsonArray
+        assertEquals("sys", system[0].jsonObject["text"]!!.jsonPrimitive.content)
+        assertEquals("ephemeral", system[0].jsonObject["cache_control"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals(1, system.size)
+        assertFalse("temperature" in body)
+        assertEquals("disabled", body["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
         val msgs = body["messages"]!!.jsonArray
         // user, assistant(tool_use), user(tool_result)
         assertEquals(3, msgs.size)
         assertEquals("tool_result", msgs[2].jsonObject["content"]!!.jsonArray[0].jsonObject["type"]!!.jsonPrimitive.content)
         assertEquals("input_schema", body["tools"]!!.jsonArray[0].jsonObject.keys.first { it == "input_schema" })
+    }
+
+    @Test fun eachClaudeGenerationGetsWhatItAccepts() {
+        fun body(model: String) = AnthropicProvider("key", model).buildBody(req.copy(situation = "Сейчас 15:00"))
+        assertEquals("between_tools", body("claude-sonnet-5-5")["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("disabled", body("claude-opus-5")["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        assertEquals("disabled", body("claude-sonnet-5")["thinking"]!!.jsonObject["type"]!!.jsonPrimitive.content)
+        // Can't be turned off: low effort instead.
+        val opus = body("claude-opus-5-5")
+        assertFalse("thinking" in opus)
+        assertEquals("low", opus["output_config"]!!.jsonObject["effort"]!!.jsonPrimitive.content)
+        // Older models don't think unless asked; nothing is sent.
+        for (m in listOf("claude-haiku-4-5", "claude-sonnet-4-6", "claude-opus-4-8")) {
+            assertFalse("thinking" in body(m), m)
+            assertFalse("output_config" in body(m), m)
+        }
+        // The situation follows the cached instructions, uncached.
+        val system = body("claude-haiku-5-5")["system"]!!.jsonArray
+        assertEquals("Сейчас 15:00", system[1].jsonObject["text"]!!.jsonPrimitive.content)
+        assertFalse("cache_control" in system[1].jsonObject)
+        for (m in listOf("claude-haiku-5-5", "claude-opus-5-5", "claude-3-5-haiku-latest")) assertFalse("temperature" in body(m), m)
+    }
+
+    /** Thinking blocks before a tool call go back unchanged; cached input is counted as it is paid for. */
+    @Test fun thinkingBlocksAndCachedInput() = runTest {
+        server.enqueue(MockResponse().setBody("""
+            {"content":[{"type":"thinking","thinking":"","signature":"sig-1"},
+                        {"type":"tool_use","id":"t2","name":"set_timer","input":{"seconds":30}}],
+             "stop_reason":"tool_use",
+             "usage":{"input_tokens":100,"cache_creation_input_tokens":2000,"cache_read_input_tokens":0,"output_tokens":20}}
+        """.trimIndent()))
+        val p = AnthropicProvider("key", "claude-opus-5-5", baseUrl = server.url("/").toString())
+        val r = p.complete(req)
+        assertEquals(100 + 2500, r.inputTokens)
+        assertEquals("sig-1", r.providerBlocks.single()["signature"]!!.jsonPrimitive.content)
+        server.takeRequest()
+        // The next round sends the thinking block back before the tool call.
+        server.enqueue(MockResponse().setBody("""{"content":[{"type":"text","text":"[happy] Готово"}],
+            "usage":{"input_tokens":10,"cache_read_input_tokens":2000,"output_tokens":3}}"""))
+        val next = req.copy(messages = listOf(ChatMessage.User("таймер на 30 секунд"),
+            ChatMessage.Assistant(r.text, r.toolCalls, r.providerBlocks), ChatMessage.ToolResult("t2", "set_timer", "OK")))
+        assertEquals(10 + 200, p.complete(next).inputTokens)
+        val sent = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        val assistant = sent["messages"]!!.jsonArray[1].jsonObject["content"]!!.jsonArray
+        assertEquals(listOf("thinking", "tool_use"), assistant.map { it.jsonObject["type"]!!.jsonPrimitive.content })
     }
 
     @Test fun errorsAreClassifiedAndDoNotLeakKey() = runTest {

@@ -92,4 +92,28 @@ class AnthropicStreamTest {
         assertEquals(listOf("Целиком."), pieces)
         assertEquals(2, r.outputTokens)
     }
+
+    @Test fun thinkingIsAssembledAndCachedInputCounted() {
+        val p = AnthropicStreamParser()
+        listOf(
+            """data: {"type":"message_start","message":{"usage":{"input_tokens":50,"cache_read_input_tokens":3000,"output_tokens":1}}}""",
+            """data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}""",
+            """data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Хм, "}}""",
+            """data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"таймер."}}""",
+            """data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"abc"}}""",
+            """data: {"type":"content_block_start","index":1,"content_block":{"type":"redacted_thinking","data":"zzz"}}""",
+            """data: {"type":"content_block_start","index":2,"content_block":{"type":"tool_use","id":"t","name":"set_timer"}}""",
+            """data: {"type":"content_block_delta","index":2,"delta":{"type":"input_json_delta","partial_json":"{\"seconds\":5}"}}""",
+            """data: {"type":"message_delta","usage":{"output_tokens":40}}""",
+            """data: {"type":"message_stop"}""",
+        ).forEach { p.onLine(it) }
+        val r = p.result()
+        assertEquals(50 + 300, r.inputTokens)
+        assertEquals("", r.text) // thinking is not the answer
+        val (thinking, redacted) = r.providerBlocks
+        assertEquals("Хм, таймер.", thinking["thinking"]!!.jsonPrimitive.content)
+        assertEquals("abc", thinking["signature"]!!.jsonPrimitive.content)
+        assertEquals("zzz", redacted["data"]!!.jsonPrimitive.content)
+        assertEquals("set_timer", r.toolCalls.single().name)
+    }
 }
