@@ -170,6 +170,8 @@ class CompanionAgent(
         val onPhone = if (cloud == null) localFactory() else null
         val provider = cloud ?: onPhone
         crisisAgain = null
+        memoryBefore = runCatching { memory.all().map { it.id }.toSet() }.getOrNull()
+        messageText = text
         val local = handleLocally(text, provider != null, provider?.onDevice == true)
         val answered = local ?: when {
             provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
@@ -290,8 +292,11 @@ class CompanionAgent(
      */
     private fun todayNotes(nowMs: Long): List<String> {
         val today = localDate(nowMs)
-        val all = memory.all()
+        val all = memory.all().filter { knownBefore(it) }
         val notes = ArrayList<String>()
+        // «Как прошёл экзамен?» — «Сдала на пятёрку!»: whether it's good or bad news, before anything else.
+        val asked = conversation.recent(1).lastOrNull()?.takeIf { it.role == Turn.Role.ASSISTANT }?.text
+        PlanTalk.outcomeNote(PlanTalk.known(all), asked, messageText, tr(true, false))?.let { notes += it }
         // Words about not wanting to live in the last hours come before anything else, in every reply until then.
         val crisis = (ModelRule.CRISIS in rules())
         val careful = crisis && (crisisAgain != null || CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS))
@@ -345,7 +350,9 @@ class CompanionAgent(
     /** Plans in the prompt said relative to today («на завтра (7 ноября)»), not with the stored year. */
     private fun forPrompt(m: ru.iskra.core.memory.MemoryContext, nowMs: Long): ru.iskra.core.memory.MemoryContext {
         val today = localDate(nowMs)
-        fun f(items: List<ru.iskra.core.memory.MemoryItem>) = items.map { PlanTalk.forPrompt(it, today) }
+        // What this very message added is in the message itself; shown again as memory, the model answered «Я помню про
+        // твой экзамен!» to «Завтра у меня экзамен» (ARM evaluation, Gemma 4 E2B).
+        fun f(items: List<ru.iskra.core.memory.MemoryItem>) = items.filter { knownBefore(it) }.map { PlanTalk.forPrompt(it, today) }
         return m.copy(profile = f(m.profile), related = f(m.related), recent = f(m.recent))
     }
 
@@ -353,6 +360,14 @@ class CompanionAgent(
 
     /** How long after words about not wanting to live she stays gentle and the model is told to be careful. */
     private val CAREFUL_HOURS = 12
+
+    /** Memory entries there were before the message being answered (null: not answering one); what it added isn't shown back. */
+    @Volatile private var memoryBefore: Set<Long>? = null
+
+    private fun knownBefore(item: ru.iskra.core.memory.MemoryItem) = memoryBefore?.contains(item.id) ?: true
+
+    /** The message being answered, for notes that depend on it ([todayNotes]). */
+    @Volatile private var messageText = ""
 
     /** This message spoke of not wanting to live and a cloud model answers it (true: they heard the numbers in the last hours). */
     @Volatile private var crisisAgain: Boolean? = null
@@ -760,11 +775,15 @@ class CompanionAgent(
         val request = if (!provider.onDevice) LlmRequest(system = task, messages = listOf(ChatMessage.User(transcript)), maxTokens = 200, temperature = 0.2)
         else LlmRequest(
             system = tr("Ты пересказываешь переписки кратко и точно.", "You retell chats briefly and accurately."),
+            // Dated, so «завтра экзамен» becomes «экзамен 7 ноября» (E2B wrote «к экзамену … завтра» into a recap kept for weeks).
             messages = listOf(ChatMessage.User(tr(
-                "Отрывок переписки владельца телефона и ассистента «${persona.name}»:\n\n$transcript\n\nЗадание: $task " +
-                    "Не продолжай переписку: ответь только пересказом или словом НЕТ.",
-                "An excerpt of a chat between the phone's owner and the assistant “${persona.name}”:\n\n$transcript\n\nTask: $task " +
-                    "Don't continue the chat: answer only with the summary or the word NONE."))),
+                "Отрывок переписки владельца телефона и ассистента «${persona.name}» от ${day.dayOfMonth} ${MONTHS_GEN[day.monthValue - 1]} " +
+                    "(${day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale("ru"))}):\n\n$transcript\n\nЗадание: $task " +
+                    "Вместо «сегодня», «завтра», «вчера» пиши даты. Не продолжай переписку: ответь только пересказом или словом НЕТ.",
+                "An excerpt of a chat between the phone's owner and the assistant “${persona.name}” on " +
+                    "${day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)}, " +
+                    "${day.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} ${day.dayOfMonth}:\n\n$transcript\n\nTask: $task " +
+                    "Write dates instead of “today”, “tomorrow”, “yesterday”. Don't continue the chat: answer only with the summary or the word NONE."))),
             maxTokens = 200, temperature = 0.2,
         )
         val r = provider.complete(request)

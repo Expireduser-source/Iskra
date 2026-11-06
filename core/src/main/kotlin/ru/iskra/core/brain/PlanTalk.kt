@@ -472,6 +472,36 @@ object PlanTalk {
     /** An answer to «как прошло?»: how it went, not a new request («поставь будильник»). */
     fun verdict(text: String): Boolean = outcome(text) || verdict.containsMatchIn(text)
 
+    private val badNews = Regex("""(?iu)(?<!\p{L})(?:не\s+(?:сдал\p{L}*|прош(?:[её]л|ла|ло|ли)|получил\p{L}*|взяли|приняли|вышло|успел\p{L}*)|завалил\p{L}*|провал\p{L}*|""" +
+        """плохо|ужасно|кошмар\p{L}*|двойк\p{L}*|отказали|отменили|failed|didn'?t\s+(?:pass|get|make\s+it|go\s+well)|bad|awful|terrible|horrible)(?!\p{L})""")
+    private val goodNews = Regex("""(?iu)(?<!\p{L})(?:сдал\p{L}*|отлично|хорошо|супер|класс\p{L}*|круто|здорово|прекрасно|чудесно|пят[её]рк\p{L}*|""" +
+        """четв[её]рк\p{L}*|получил\p{L}*|взяли|приняли|прош(?:[её]л|ла|ло|ли)\s+(?:хорошо|отлично)|ура|passed|great|good|amazing|perfect|aced|got\s+(?:it|the\s+job|in))(?!\p{L})""")
+
+    /** How the owner's news sounds: 1 good, -1 bad, 0 can't tell («нормально», «так себе»). Bad wins: «не сдал» has «сдал». */
+    fun tone(text: String): Int = when {
+        badNews.containsMatchIn(text) -> -1
+        goodNews.containsMatchIn(text) -> 1
+        else -> 0
+    }
+
+    /**
+     * She asked how a plan went ([asked]) and this message tells it: a note for the model, so even a small one doesn't
+     * meet a top grade with «Ох, ну вот так…» (ARM evaluation, Gemma 3 1B). null when it isn't such an answer or the
+     * tone isn't clear.
+     */
+    fun outcomeNote(known: List<Known>, asked: String?, text: String, ru: Boolean): String? {
+        if (asked == null || !asked.contains('?') || text.trimEnd().endsWith("?") || text.length > 160 || !verdict(text)) return null
+        if (known.none { mentions(it.plan, asked) }) return null
+        val quote = text.trim().replace(Regex("""\s+"""), " ").take(80)
+        return when (tone(text)) {
+            1 -> if (ru) "владелец рассказал, как прошло: «$quote» — это хорошая новость, порадуйся вместе с ним"
+                else "the owner told how it went: «$quote» — that's good news, be happy for them"
+            -1 -> if (ru) "владелец рассказал, как прошло: «$quote» — это огорчение, поддержи его"
+                else "the owner told how it went: «$quote» — that's a disappointment, comfort them"
+            else -> null
+        }
+    }
+
     /**
      * The plan to ask about now: one that was 1–3 days ago, or an exam or a doctor today after 19:00, not asked yet.
      * The latest first.

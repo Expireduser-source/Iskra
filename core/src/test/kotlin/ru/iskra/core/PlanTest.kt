@@ -314,6 +314,19 @@ class GenderTest {
         assertNull(g.decide(listOf("я устала", "я рада", "я устал")))     // disagreeing
     }
 
+    /** «Сдала на пятёрку!» says it as well as «я сдала» (ARM evaluation: E2B then called her «ты такой милый»). */
+    @Test fun aSentenceThatBeginsWithTheVerb() {
+        val g = ru.iskra.core.brain.SelfGender
+        for (t in listOf("Сдала на пятёрку!", "Устала.", "Устала", "Вернулась домой", "Привет! Пришла с работы.", "Была у врача, всё хорошо", "Проснулась только что"))
+            assertEquals('f', g.of(t), t)
+        for (t in listOf("Сдал на пятёрку!", "Вернулся!", "Пришёл домой", "Устал."))
+            assertEquals('m', g.of(t), t)
+        // Not about the owner: a subject of its own, a question to her, a noun or a name.
+        for (t in listOf("Пришла посылка", "Устала?", "Акула на пляже!", "Павел на работе", "Школа.", "Сказала мама, что поздно", "Стул на кухне сломался"))
+            assertNull(g.of(t), t)
+        assertEquals('f', g.decide(listOf("Привет, я вернулась!", "Сдала на пятёрку!")))
+    }
+
     @Test fun theModelIsToldHowToAddress() = withLang(Lang.RU) {
         runBlocking {
             val memory = MemoryManager(InMemoryMemoryStore())
@@ -674,7 +687,8 @@ class PhoneSummaryTest {
             // The excerpt first, the task last (Gemma 4 E2B went on with a bare transcript as Iskra).
             val asked = (phone.asked.single().messages.single() as ru.iskra.core.llm.ChatMessage.User).text
             assertTrue(asked.contains("\n\nВладелец: реплика 0\n"), asked)
-            assertTrue(asked.startsWith("Отрывок переписки владельца телефона и ассистента «Искра»:"), asked)
+            assertTrue(asked.startsWith("Отрывок переписки владельца телефона и ассистента «Искра» от 6 ноября (пятница):"), asked)
+            assertTrue(asked.contains("Вместо «сегодня», «завтра», «вчера» пиши даты."), asked)
             assertTrue(asked.endsWith("Не продолжай переписку: ответь только пересказом или словом НЕТ."), asked)
         }
     }

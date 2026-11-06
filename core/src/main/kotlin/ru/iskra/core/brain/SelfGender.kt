@@ -22,11 +22,26 @@ object SelfGender {
     private val masc = Regex("""(?iu)(?<!\p{L})я\s+(?:(?:$FILLER)\s+){0,3}(?!(?:$NOT_VERBS)(?!\p{L}))(?:\p{L}+(?:л|лся)|рад|готов|должен|уверен|согласен|сам|занят|влюбл[её]н|счастлив|голоден|болен|свободен|один|доволен|способен|обязан|благодарен|виноват|женат)(?!\p{L})""")
     private val quoted = Regex("""«[^»]*»|"[^"]*"|“[^”]*”""")
 
+    /** Nouns and names that look like a past-tense verb at the start of a sentence («Акула!», «Павел на работе»). */
+    private const val NOT_VERBS_START = "акула|юла|мила|смола|зола|кабала|гала|мула|метла|мгла|алла|стелла|белла|павел|михаил|даниил|гавриил|" +
+        "ангел|стул|угол|посол|ос[её]л|ор[её]л|кот[её]л|пепел|дятел|мул|аул|тыл|пыл|вал|ил|мел|пол|дол"
+    /** What may follow such a verb in the same sentence — a place, a time, a manner, but never a subject of its own. */
+    private const val AFTER_VERB = "на|в|во|с|со|из|к|ко|по|до|за|у|от|домой|сегодня|вчера|только|уже|наконец|опять|снова|очень|так|ужасно|" +
+        "жутко|немного|чуть|недавно|сейчас|тоже|весь|всю|целый|целую|сама|сам"
+    /**
+     * «Сдала на пятёрку!», «Устала.», «Вернулся домой» — a sentence that begins with the verb and has no subject of its
+     * own (so «Пришла посылка» doesn't count), not a question («Устала?» is asked of her).
+     */
+    private fun startVerb(ending: String) = Regex("""(?iu)(?:^|[.!?…]\s+)(?!(?:$NOT_VERBS|$NOT_VERBS_START)(?!\p{L}))\p{L}*(?:$ending)""" +
+        """(?=\s*(?:[.!…,]|$)|\s+(?:$AFTER_VERB)(?!\p{L})[^.!?…]*(?:[.!…]|$))""")
+    private val femStart = startVerb("""[аеиоуыэюяёшгкрзсб]ла|[аеиоуыэюяёшгкрзсб]лась""")
+    private val mascStart = startVerb("""[аеиоуыэюяё]л|[аеиоуыэюяё]лся|ш[её]л""")
+
     /** 'f', 'm', or null when one message doesn't tell (or tells both). */
     fun of(text: String): Char? {
-        val t = quoted.replace(text, " ")
-        val f = fem.findAll(t).count()
-        val m = masc.findAll(t).count()
+        val t = quoted.replace(text, " ").trim()
+        val f = fem.findAll(t).count() + femStart.findAll(t).count()
+        val m = masc.findAll(t).count() + mascStart.findAll(t).count()
         return when {
             f > 0 && m == 0 -> 'f'
             m > 0 && f == 0 -> 'm'
