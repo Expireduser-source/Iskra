@@ -1,0 +1,4 @@
+• Iskra asks your name once and understands a short answer
+• "What do I have tomorrow?" — reminders, plans and birthdays in one answer, even offline
+• "Interview tomorrow at 10" → "Shall I remind you an hour before?" — one "yes" sets it
+• In Russian, the phone model no longer addresses women in the masculine
