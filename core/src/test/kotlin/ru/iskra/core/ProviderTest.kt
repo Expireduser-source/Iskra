@@ -21,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ProviderTest {
     private val server = MockWebServer().apply { start() }
@@ -125,6 +126,30 @@ class ProviderTest {
         val sent = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
         val assistant = sent["messages"]!!.jsonArray[1].jsonObject["content"]!!.jsonArray
         assertEquals(listOf("thinking", "tool_use"), assistant.map { it.jsonObject["type"]!!.jsonPrimitive.content })
+    }
+
+    /** GPT-5 / o-series: only the default temperature, "max_completion_tokens"; a refused parameter goes, once. */
+    @Test fun refusedParametersAreDropped() = runTest {
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"message":"Unsupported value: 'temperature' does not support 0.8 with this model. Only the default (1) value is supported.","type":"invalid_request_error","param":"temperature","code":"unsupported_value"}}"""))
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.","type":"invalid_request_error","param":"max_tokens"}}"""))
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"role":"assistant","content":"[happy] Привет"}}]}"""))
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"role":"assistant","content":"[happy] Ещё раз"}}]}"""))
+        val p = OpenAiCompatibleProvider(server.url("/v1").toString(), "sk", "some-new-model")
+        assertEquals("[happy] Привет", p.complete(req).text)
+        val bodies = List(3) { Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject }
+        assertTrue("temperature" in bodies[0] && "max_tokens" in bodies[0])
+        assertFalse("temperature" in bodies[1])
+        assertTrue("max_completion_tokens" in bodies[2] && "max_tokens" !in bodies[2] && "temperature" !in bodies[2])
+        // Remembered: the next request goes right.
+        assertEquals("[happy] Ещё раз", p.complete(req).text)
+        val next = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+        assertTrue("max_completion_tokens" in next && "temperature" !in next)
+        // Known reasoning models are sent right from the start; other errors are not retried.
+        val gpt5 = OpenAiCompatibleProvider("https://api.openai.com/v1", "sk", "gpt-5-mini").buildBody(req)
+        assertTrue("max_completion_tokens" in gpt5 && "temperature" !in gpt5)
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"message":"Invalid messages"}}"""))
+        assertFailsWith<LlmException> { OpenAiCompatibleProvider(server.url("/v1").toString(), "sk", "m").complete(req) }
+        assertEquals(5, server.requestCount)
     }
 
     @Test fun errorsAreClassifiedAndDoNotLeakKey() = runTest {

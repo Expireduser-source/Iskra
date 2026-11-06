@@ -2,3 +2,4 @@
 • No more "I remember your exam" right after you mention it
 • Night recaps write dates instead of "tomorrow"
 • The light model answers in the language you ask in
+• Your own OpenAI key works with GPT-5 and o-series models

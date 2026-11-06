@@ -35,7 +35,36 @@ class OpenAiCompatibleProvider(
 
     override val id: String = "openai-compatible:$model"
 
-    override suspend fun complete(request: LlmRequest): LlmResponse {
+    /**
+     * OpenAI's reasoning models (GPT-5, o1/o3/o4) take only the default temperature and want "max_completion_tokens";
+     * other servers may refuse a parameter too. Known ones are set from the start; a 400 that names the parameter
+     * turns it off for this provider and the request goes again (once per parameter).
+     */
+    private val reasoning = Regex("""^(?:openai/)?(?:o\d|gpt-5)""").containsMatchIn(model.lowercase())
+    @Volatile private var sendTemperature = !reasoning
+    @Volatile private var completionTokens = useMaxCompletionTokens || (reasoning && "api.openai.com" in baseUrl)
+
+    /** A refused parameter: turned off, and true when there is something to try again without. */
+    private fun adapted(e: LlmException): Boolean {
+        val m = e.message.orEmpty()
+        if (!m.startsWith("HTTP 400")) return false
+        return when {
+            sendTemperature && Regex("""(?i)temperature""").containsMatchIn(m) -> { sendTemperature = false; true }
+            !completionTokens && Regex("""(?i)max_completion_tokens""").containsMatchIn(m) -> { completionTokens = true; true }
+            else -> false
+        }
+    }
+
+    private suspend fun <T> adapting(call: suspend () -> T): T {
+        repeat(2) { try { return call() } catch (e: LlmException) { if (!adapted(e)) throw e } }
+        return call()
+    }
+
+    override suspend fun complete(request: LlmRequest): LlmResponse = adapting { completeOnce(request) }
+
+    override suspend fun stream(request: LlmRequest, onText: (String) -> Unit): LlmResponse = adapting { streamOnce(request, onText) }
+
+    private suspend fun completeOnce(request: LlmRequest): LlmResponse {
         if (apiKey.isBlank()) throw LlmException("No API key", LlmException.Kind.NOT_CONFIGURED)
         val body = buildBody(request).toString()
         val url = baseUrl.trimEnd('/') + "/chat/completions"
@@ -55,7 +84,7 @@ class OpenAiCompatibleProvider(
      * assembled from their fragments. A server that ignores "stream" and answers with plain JSON
      * still works: the whole body is parsed at the end.
      */
-    override suspend fun stream(request: LlmRequest, onText: (String) -> Unit): LlmResponse {
+    private suspend fun streamOnce(request: LlmRequest, onText: (String) -> Unit): LlmResponse {
         if (apiKey.isBlank()) throw LlmException("No API key", LlmException.Kind.NOT_CONFIGURED)
         val extra = mutableMapOf<String, kotlinx.serialization.json.JsonElement>("stream" to JsonPrimitive(true))
         if (streamUsage) extra["stream_options"] = buildJsonObject { put("include_usage", true) }
@@ -79,8 +108,8 @@ class OpenAiCompatibleProvider(
 
     internal fun buildBody(request: LlmRequest): JsonObject = buildJsonObject {
         put("model", model)
-        put(if (useMaxCompletionTokens) "max_completion_tokens" else "max_tokens", request.maxTokens)
-        put("temperature", request.temperature)
+        put(if (completionTokens) "max_completion_tokens" else "max_tokens", request.maxTokens)
+        if (sendTemperature) put("temperature", request.temperature)
         put("messages", buildJsonArray {
             add(buildJsonObject { put("role", "system"); put("content", request.fullSystem) })
             for (m in request.messages) add(encode(m))
