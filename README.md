@@ -38,11 +38,12 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
   “Spark” and she listens — recognized fully on the phone.
 - **From any app:** share text to Iskra or select it and tap **“Ask Iskra”** — explain, summarize, translate, save as a
   note or a reminder. A Quick Settings tile and launcher shortcuts (Ask, Voice, Reminder, On screen).
-- **When it's really hard:** if you write that you don't want to live or want to hurt yourself, she answers at once —
-  with or without any brain — with people who can help: 112, Russia's free helpline 8-800-2000-122 and the МЧС
-  psychologists, 988 in the US, Samaritans 116 123 in the UK and Ireland. A tap on a number opens the dialer (the call is
-  yours to make). For the rest of the day she is gentle instead of playful, and the next day she asks how you are.
-  Settings → “Help in a crisis” turns all of it off: then the model answers such words itself, with nothing added.
+- **When it's really hard:** if you write that you don't want to live or want to hurt yourself, she answers at once with
+  people who can help: 112, Russia's free helpline 8-800-2000-122 and the МЧС psychologists, 988 in the US, Samaritans
+  116 123 in the UK and Ireland. A cloud brain answers in its own words, and the numbers are added only if it named none.
+  A tap on a number opens the dialer (the call is yours to make). For the rest of the day she is gentle instead of
+  playful, and the next day she asks how you are. Settings → “Help in a crisis” turns all of it off: then the model
+  answers such words itself, with nothing added.
 - **For every phone and person:** English and Russian (follows the phone), Android 8 to 16, tablets and foldables,
   guides for Xiaomi, Samsung, Huawei, Honor, OPPO, OnePlus, vivo, Tecno and others, TalkBack, large fonts, light and
   dark themes, calm motion, battery modes and daily cloud spending limits.

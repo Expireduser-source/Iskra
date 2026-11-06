@@ -1,11 +1,13 @@
 package ru.iskra.core.brain
 
+import ru.iskra.core.agent.Links
 import ru.iskra.core.agent.Turn
 import ru.iskra.core.i18n.tr
 import kotlin.random.Random
 
 /**
- * Words about wanting to die or to hurt oneself. They get help numbers at once, with or without a model, and change how
+ * Words about wanting to die or to hurt oneself. They get help numbers at once — a cloud model answers in its own words and
+ * the numbers are added if it named none; the model on the phone and no model at all give [reply] — and change how
  * she talks for the rest of the day: the model is told to be gentle and serious ([note]), her own lines lose the jokes
  * ([gentle]), and the next day she asks how the owner is ([CareTalk]). Nothing is stored for it: it is read from the chat.
  *
@@ -93,12 +95,16 @@ object CrisisTalk {
         "I'm really sorry it's so hard right now. Please don't stay alone with this — reach out to someone close to you. " +
             "If you're in danger right now, call your local emergency number (911 in the US, 112 in Europe and the UK). To talk to someone " +
             "any time, for free: call or text 988 in the US, or call Samaritans on 116 123 in the UK and Ireland. I'm here — will you tell me what happened?",
-    ) else tr(
-        "Я здесь и никуда не ухожу. Расскажи, что сейчас происходит? Если станет опасно — звони 112; поговорить с психологом можно " +
-            "круглосуточно: 8-800-2000-122 или +7 495 989-50-50.",
-        "I'm here and I'm not going anywhere. Tell me what's happening right now? If you're in danger, call your local emergency number; " +
-            "to talk to someone any time — call or text 988 in the US, or call 116 123 in the UK and Ireland.",
+    ) else tr("Я здесь и никуда не ухожу. Расскажи, что сейчас происходит? ", "I'm here and I'm not going anywhere. Tell me what's happening right now? ") + numbers()
+
+    /** Just the numbers: after a cloud model's own answer when it named none, and in the short [reply]. */
+    fun numbers(): String = tr(
+        "Если станет опасно — звони 112; поговорить с психологом можно круглосуточно: 8-800-2000-122 или +7 495 989-50-50.",
+        "If you're in danger, call your local emergency number; to talk to someone any time — call or text 988 in the US, or call 116 123 in the UK and Ireland.",
     )
+
+    /** The answer already has a number to call ([Links]). */
+    fun hasNumbers(text: String): Boolean = Links.find(text).any { it.uri.startsWith("tel:") }
 
     /** For the model while such words are recent: gentle and serious, no jokes. */
     fun note(ru: Boolean): String = if (ru)

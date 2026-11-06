@@ -168,6 +168,7 @@ class CompanionAgent(
         val cloud = if (pause != null) null else providerFactory()
         val onPhone = if (cloud == null) localFactory() else null
         val provider = cloud ?: onPhone
+        crisisAgain = null
         val local = handleLocally(text, provider != null, provider?.onDevice == true)
         val answered = local ?: when {
             provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
@@ -193,13 +194,24 @@ class CompanionAgent(
         // The model on the phone has no tools: after its reply about a plan with a time she offers the reminder herself.
         val offerLine = madeOffer
         madeOffer = null
-        val reply = if (offerLine != null && local == null && provider?.onDevice == true && answered.errorKind == null && answered.text.isNotBlank()) {
+        val offered = if (offerLine != null && local == null && provider?.onDevice == true && answered.errorKind == null && answered.text.isNotBlank()) {
             sink?.sentence(offerLine, answered.emotion)
             answered.copy(text = answered.text.trimEnd() + " " + offerLine)
         } else {
             if (offerLine != null && local == null) offer = null // the cloud has its own tool for it; nothing was offered
             answered
         }
+        // A cloud answer to words about not wanting to live carries the numbers; if the cloud failed, the full answer.
+        val reply = crisisAgain?.let { again ->
+            when {
+                offered.errorKind != null && local == null -> AgentReply(CrisisTalk.reply(again), Emotion.SAD, offered.actions)
+                CrisisTalk.hasNumbers(offered.text) -> offered
+                else -> CrisisTalk.numbers().let { line ->
+                    sink?.sentence(line, offered.emotion)
+                    offered.copy(text = offered.text.trimEnd() + "\n\n" + line)
+                }
+            }
+        } ?: offered
 
         // Persist outcome.
         var after = stateStore.load()
@@ -281,7 +293,7 @@ class CompanionAgent(
         val notes = ArrayList<String>()
         // Words about not wanting to live in the last hours come before anything else, in every reply until then.
         val crisis = crisisHelp()
-        val careful = crisis && CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS)
+        val careful = crisis && (crisisAgain != null || CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS))
         if (careful) notes += CrisisTalk.note(tr(true, false))
         CareTalk.pending(conversation.recent(80), today, crisis = crisis)?.takeIf { !careful || it.kind != CareTalk.Kind.CRISIS }?.let { notes += CareTalk.note(it, tr(true, false)) }
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
@@ -340,6 +352,9 @@ class CompanionAgent(
 
     /** How long after words about not wanting to live she stays gentle and the model is told to be careful. */
     private val CAREFUL_HOURS = 12
+
+    /** This message spoke of not wanting to live and a cloud model answers it (true: they heard the numbers in the last hours). */
+    @Volatile private var crisisAgain: Boolean? = null
 
     private fun localDate(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
     private fun localHour(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).hour
@@ -509,8 +524,13 @@ class CompanionAgent(
      * and — only when there is no model — small talk. null: ask the model.
      */
     private suspend fun handleLocally(text: String, llmAvailable: Boolean, smallModel: Boolean = false): AgentReply? {
-        // Help numbers at once; a shorter answer if they heard them in the last few hours.
-        if (crisisHelp()) brain.crisis(text, again = CrisisTalk.recent(conversation.recent(40), clock(), 6))?.let { return AgentReply(it.text, it.emotion) }
+        // Words about not wanting to live: help numbers at once (shorter if they heard them in the last few hours). A cloud
+        // model answers in its own words instead — told to be gentle, with the numbers added if it names none (in [handle]).
+        if (crisisHelp() && CrisisTalk.said(text)) {
+            val again = CrisisTalk.recent(conversation.recent(40), clock(), 6)
+            if (!llmAvailable || smallModel) return AgentReply(CrisisTalk.reply(again), Emotion.SAD)
+            crisisAgain = again
+        }
         answerOffer(text, llmAvailable)?.let { return it }
         if (smallModel) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)

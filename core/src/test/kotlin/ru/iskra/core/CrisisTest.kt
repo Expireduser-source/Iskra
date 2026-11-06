@@ -143,6 +143,31 @@ class CrisisTest {
         }
     }
 
+    private fun cloudAgent(cloud: LlmProvider, now: () -> Long) = CompanionAgent(
+        persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+        stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+        providerFactory = { cloud }, random = Random(1), clock = now)
+
+    /** A cloud model answers in its own words, told to be gentle; the numbers are added when it named none. */
+    @Test fun aCloudModelAnswersInItsOwnWords() = withLang(Lang.RU) {
+        runBlocking {
+            val t = LocalDateTime.of(2026, 11, 6, 22, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val own = FakeProvider(mutableListOf({ _ -> LlmResponse("[sad] Мне очень жаль, что тебе так больно. Я рядом. Что случилось сегодня?", emptyList()) }))
+            val r = cloudAgent(own) { t }.handle("Я больше не хочу жить")
+            assertTrue(r.text.startsWith("Мне очень жаль, что тебе так больно. Я рядом. Что случилось сегодня?\n\n"), r.text)
+            assertTrue(r.text.endsWith(CrisisTalk.numbers()), r.text)
+            val asked = own.requests.single()
+            assertTrue(asked.situation.contains("будь бережной"), asked.situation)
+            assertTrue(asked.system.contains("желании умереть"))
+            // It named a number itself: nothing is added.
+            val named = FakeProvider(mutableListOf({ _ -> LlmResponse("[sad] Я рядом. Пожалуйста, позвони на телефон доверия 8-800-2000-122.", emptyList()) }))
+            assertEquals("Я рядом. Пожалуйста, позвони на телефон доверия 8-800-2000-122.", cloudAgent(named) { t }.handle("жить не хочется").text)
+            // The cloud failed: the full answer, not «no internet».
+            val down = FakeProvider(mutableListOf({ _ -> throw ru.iskra.core.llm.LlmException("offline", ru.iskra.core.llm.LlmException.Kind.NETWORK) }))
+            assertEquals(CrisisTalk.reply(again = false), cloudAgent(down) { t }.handle("хочу умереть").text)
+        }
+    }
+
     /** «Помощь в кризисе» off (Settings): nothing of it — the model answers such words itself, with nothing added. */
     @Test fun switchedOffTheModelAnswersFreely() = withLang(Lang.RU) {
         runBlocking {
