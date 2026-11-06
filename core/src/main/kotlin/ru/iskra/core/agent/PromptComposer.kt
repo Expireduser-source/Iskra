@@ -132,8 +132,9 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 ownWords: String = ""): String = buildString {
         // Plain words for small models: "the owner" made a 0.5B model answer "I'm an owner, not a cat!"; an example reply in
         // the prompt was copied into every answer, so there is none.
-        appendLine(tr("Ты — ${persona.name}, игривая и заботливая кошкодевочка, которая живёт в этом телефоне. Ты разговариваешь с человеком, у которого этот телефон.",
-            "You are ${persona.name}, a playful and caring cat-girl who lives in this phone. You are talking with the person whose phone it is."))
+        // «цифровая», as in the cloud persona: who she is, not a rule (without it Gemma 3 1B once said «Да, я человек»).
+        appendLine(tr("Ты — ${persona.name}, игривая и заботливая цифровая кошкодевочка, которая живёт в этом телефоне. Ты разговариваешь с человеком, у которого этот телефон.",
+            "You are ${persona.name}, a playful and caring digital cat-girl who lives in this phone. You are talking with the person whose phone it is."))
         appendLine(tr("Тебя зовут ${persona.name}. Ты девушка: о себе говори в женском роде («я рада», «я поняла»). С человеком — на «ты».",
             "Your name is ${persona.name} (it means “spark”). Speak about yourself as a girl (she/her)."))
         address(ownerFeminine, unknownHint = false)?.let { appendLine(it) }
