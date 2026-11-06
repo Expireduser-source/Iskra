@@ -1,5 +1,6 @@
 package ru.iskra.core
 
+import ru.iskra.core.memory.MemoryKind
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
 import ru.iskra.core.agent.CompanionAgent
@@ -115,7 +116,7 @@ class LocalModelEval {
                     // What the night job would keep: a recap of the oldest turns, made by this model.
                     val t1 = System.nanoTime()
                     val recaps = runCatching { runBlocking { agent.summarizeOnPhone(maxChunks = 1) } }.getOrElse { -1 }
-                    val episodes = memory.all().filter { it.kind == ru.iskra.core.memory.MemoryKind.EPISODE }.joinToString(" | ") { it.text }
+                    val episodes = memory.all().filter { it.kind == MemoryKind.EPISODE }.joinToString(" | ") { it.text }
                     doc.append("\n**Night recap** (%.1f s, saved: %s): %s\n".format(java.util.Locale.ROOT, (System.nanoTime() - t1) / 1e9, recaps, episodes.ifEmpty { "—" }))
                     fun median(xs: List<Double>) = xs.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
                     summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.0f |\n".format(java.util.Locale.ROOT,
