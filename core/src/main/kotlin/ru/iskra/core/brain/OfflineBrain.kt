@@ -501,6 +501,29 @@ object MemoryTalk {
         return null
     }
 
+    private val slots: List<Pair<Regex, (MatchResult) -> String>> = listOf(
+        Regex("""^(?:Владельца зовут|The owner's name is) """) to { _ -> "name" },
+        Regex("""^(?:Владелец живёт в|The owner lives in) """) to { _ -> "city" },
+        Regex("""^(?:Владельцу \d+ (?:лет|год|года) \(на|The owner is \d+ \(as of) """) to { _ -> "age" },
+        Regex("""^(?:День рождения владельца|The owner's birthday):""") to { _ -> "birthday" },
+        Regex("""^(?:Владелец учится (?:на|в|во) |The owner studies )""") to { _ -> "study" },
+        Regex("""^(?:Владелец работает|The owner works) """) to { _ -> "work" },
+        Regex("""^(?:\p{L}+ )?(\p{L}+) владельца зовут """) to { m -> "family:" + m.groupValues[1].lowercase() },
+        Regex("""^The owner's (?:\p{L}+ )?(\p{L}+) is named """) to { m -> "family:" + m.groupValues[1].lowercase() },
+        Regex("""^Любим\p{L}+ (\p{L}+(?: \p{L}+)?) владельца — """) to { m -> "favorite:" + m.groupValues[1].lowercase() },
+        Regex("""^The owner's favorite (.+?) is """) to { m -> "favorite:" + m.groupValues[1].lowercase() },
+        Regex("""^Владелец (?:любит|обожает|не любит|ненавидит|терпеть не может|не выносит),? (.+)$""") to { m -> "taste:" + m.groupValues[1].lowercase() },
+        Regex("""^Владельцу (?:не )?нрав\p{L}+,? (.+)$""") to { m -> "taste:" + m.groupValues[1].lowercase() },
+        Regex("""^The owner (?:loves|adores|likes|enjoys|hates|dislikes|can't stand|doesn't like) (.+)$""") to { m -> "taste:" + m.groupValues[1].lowercase() },
+    )
+
+    /**
+     * What a fact is about, when it holds one value: «name», «city», «age», «family:сестру», «favorite:фильм», «taste:пиццу».
+     * A new fact replaces older ones about the same thing («я живу в Казани» after «в Москве», «не люблю пиццу» after
+     * «люблю пиццу»), so the prompt never holds both. null: facts that add up (pets, skills being learned).
+     */
+    fun slot(text: String): String? = slots.firstNotNullOfOrNull { (re, key) -> re.find(text)?.let(key) }
+
     /** Facts from every sentence of a message («Меня зовут Аня. Я учусь на врача.»), not only from a one-sentence one. */
     fun facts(text: String, today: java.time.LocalDate = java.time.LocalDate.now()): List<Fact> {
         val whole = fact(text, today)

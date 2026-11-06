@@ -202,6 +202,11 @@ class MemoryManager(
     /** Rewrites one memory in place (a plan becomes «было» once she asked how it went). */
     fun update(item: MemoryItem) = store.update(item)
     fun delete(id: Long) { store.delete(id); onForget() }
+    /**
+     * Drops an entry the owner replaced with a newer value (a new city, a moved or called-off plan) — not a request to
+     * forget, so the on-phone model's cached dialogue is kept (deleting it means a slow reload on the next reply).
+     */
+    fun replaced(id: Long) = store.delete(id)
     fun deleteAll() { store.deleteAll(); onForget() }
 
     /**

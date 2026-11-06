@@ -267,7 +267,7 @@ class CompanionAgent(
         val known = PlanTalk.known(memory.all())
         val crossed = ArrayList<String>()
         for (head in heard.cancelled) known.filter { !it.done && !it.plan.date.isBefore(today) && PlanTalk.head(it.plan.what) == head }.forEach {
-            memory.delete(it.item.id); crossed += it.plan.what
+            memory.replaced(it.item.id); crossed += it.plan.what
         }
         if (crossed.isNotEmpty() && heard.plans.isEmpty()) said += PlanTalk.crossedOut(crossed.distinct(), crossed.first().any { it in 'а'..'я' })
         for (heardPlan in heard.plans) {
@@ -300,6 +300,18 @@ class CompanionAgent(
             val asked = due?.item?.id == k.item.id && PlanTalk.mentions(k.plan, reply)
             if (told || asked) memory.update(k.item.copy(text = k.plan.doneText))
         }
+    }
+
+    /**
+     * A fact the owner told: it replaces older facts about the same thing (a new city, age, «не люблю» after «люблю»), so
+     * memory and the prompt don't hold both.
+     */
+    private fun rememberFact(f: MemoryTalk.Fact): MemoryManager.AddResult {
+        val slot = MemoryTalk.slot(f.text)
+        // The old value goes first: «Владельцу 26 лет» and «…25 лет» differ only in a number, which the duplicate check ignores.
+        if (slot != null && !MemoryManager.looksSensitive(f.text))
+            memory.all().filter { it.text != f.text && MemoryTalk.slot(it.text) == slot }.forEach { memory.replaced(it.id) }
+        return memory.add(f.text, f.kind, MemorySource.USER_EXPLICIT, f.importance, clock())
     }
 
     /**
@@ -377,7 +389,7 @@ class CompanionAgent(
         val today = localDate(clock())
         val facts = MemoryTalk.facts(text, today)
         // Kept even if the model is weak at tools; with a model the reply is the model's (it now sees the facts).
-        val added = facts.map { f -> f to memory.add(f.text, f.kind, MemorySource.USER_EXPLICIT, f.importance, clock()) }
+        val added = facts.map { f -> f to rememberFact(f) }
         // «Завтра экзамен», «в пятницу собеседование»: a dated plan, to wish luck on the day and ask how it went.
         val planned = notePlans(text, clock())
         if (!llmAvailable && (facts.isNotEmpty() || planned.isNotEmpty())) {

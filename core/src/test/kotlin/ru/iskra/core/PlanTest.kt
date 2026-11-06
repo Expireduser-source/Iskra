@@ -329,3 +329,29 @@ class GenderTest {
         }
     }
 }
+
+/** A new fact replaces the old one about the same thing, so memory never holds both. */
+class FactSlotTest {
+    @Test fun newFactsReplaceOldOnes() = withLang(Lang.RU) {
+        runBlocking {
+            var forgets = 0
+            val memory = MemoryManager(InMemoryMemoryStore(), onForget = { forgets++ })
+            var now = 1_000L
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, clock = { now }, random = Random(1))
+            for (t in listOf("Я живу в Москве", "Я люблю пиццу", "Мне 25 лет", "Мою сестру зовут Аня", "У меня есть кот по имени Барсик")) { a.handle(t); now += 1000 }
+            for (t in listOf("Я живу в Казани", "Я не люблю пиццу", "Мне 26 лет", "Мою сестру зовут Анна", "У меня есть собака по имени Рекс")) { a.handle(t); now += 1000 }
+            val texts = memory.all().map { it.text }.toSet()
+            assertTrue("Владелец живёт в Казани" in texts && "Владелец живёт в Москве" !in texts, texts.toString())
+            assertTrue("Владелец не любит пиццу" in texts && "Владелец любит пиццу" !in texts, texts.toString())
+            assertTrue(texts.any { it.startsWith("Владельцу 26 лет") } && texts.none { it.startsWith("Владельцу 25 лет") }, texts.toString())
+            assertTrue("Сестру владельца зовут Анна" in texts && "Сестру владельца зовут Аня" !in texts, texts.toString())
+            // Pets add up.
+            assertTrue(texts.count { it.startsWith("У владельца есть") } == 2, texts.toString())
+            assertEquals("taste:пиццу", MemoryTalk.slot("Владелец любит пиццу"))
+            assertNull(MemoryTalk.slot("Владелец учится играть на гитаре"))
+            // An update is not «forget»: the phone model's cached dialogue stays (no slow reload).
+            assertEquals(0, forgets)
+        }
+    }
+}
