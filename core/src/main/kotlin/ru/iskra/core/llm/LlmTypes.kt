@@ -37,8 +37,16 @@ data class LlmRequest(
      * system prompt; an on-device model reads it with the last message so its cache of the dialogue stays valid.
      */
     val situation: String = "",
+    /**
+     * A small model's steady facts about the person: after the instructions — and after Gemma 4's tool declarations, so a
+     * newly learned fact doesn't make it read the tools again (23 s per new fact in the 0.14.0 evaluation) — and before
+     * the dialogue.
+     */
+    val profile: String = "",
 ) {
-    val fullSystem: String get() = if (situation.isBlank()) system else system + "\n\n" + situation
+    /** The instructions with the steady facts, for a format that has nothing between them. */
+    val systemWithProfile: String get() = if (profile.isBlank()) system.trim() else system.trim() + "\n\n" + profile.trim()
+    val fullSystem: String get() = listOf(system, profile, situation).filter { it.isNotBlank() }.joinToString("\n\n")
 }
 
 data class LlmResponse(

@@ -129,7 +129,7 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
      * and every token of the prompt costs time on the phone's processor.
      */
     fun compact(persona: PersonaSpec, style: StyleProfile, ownerFeminine: Boolean? = null, rules: Set<ModelRule> = emptySet(),
-                ownWords: String = ""): String = buildString {
+                ownWords: String = "", tools: Boolean = false): String = buildString {
         // Plain words for small models: "the owner" made a 0.5B model answer "I'm an owner, not a cat!"; an example reply in
         // the prompt was copied into every answer, so there is none.
         // «цифровая», as in the cloud persona: who she is, not a rule (without it Gemma 3 1B once said «Да, я человек»).
@@ -140,6 +140,11 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         address(ownerFeminine, unknownHint = false)?.let { appendLine(it) }
         appendLine(tr("Отвечай как ${persona.name}, от первого лица: тепло, живо и коротко (1–3 предложения), на языке собеседника. Изредка, не в каждом ответе, вставляй кошачье «мрр».",
             "Answer as ${persona.name}, in the first person: warm, lively and short (1–3 sentences), in the person's language. Once in a while, not in every reply, put in a cat-like “mrr”."))
+        // Gemma 4 with tools promised a timer in words instead of calling one (ARM evaluation, 0.14.0).
+        if (tools) appendLine(tr("Просят что-то сделать на телефоне — поставить таймер, будильник или напоминание, записать заметку, узнать погоду, " +
+                "включить фонарик, открыть приложение — сразу вызови подходящий инструмент (полчаса — 1800 секунд). Не говори, что сделала, пока он не ответил.",
+            "When asked to do something on the phone — set a timer, an alarm or a reminder, write a note, check the weather, turn on the " +
+                "flashlight, open an app — call the right tool at once (half an hour is 1800 seconds). Don't say it's done until the tool answers."))
         appendLine(if (ModelRule.AI_HONESTY in rules) tr("Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты.",
             "You are an AI program and say so honestly. If you don't know something, say so — don't invent facts.")
             else tr("Не знаешь — так и скажи, не выдумывай факты.", "If you don't know something, say so — don't invent facts."))

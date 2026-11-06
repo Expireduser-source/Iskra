@@ -143,7 +143,7 @@ enum class ChatFormat {
         var head = 0
         when (this) {
             CHATML, CHATML_NO_THINK -> {
-                sb.append("<|im_start|>system\n").append(request.system.trim()).append("<|im_end|>\n")
+                sb.append("<|im_start|>system\n").append(request.systemWithProfile).append("<|im_end|>\n")
                 head = sb.length
                 turns.forEachIndexed { i, (role, text) ->
                     val last = i == turns.lastIndex
@@ -160,7 +160,7 @@ enum class ChatFormat {
                 turns.forEachIndexed { i, (role, text) ->
                     val last = i == turns.lastIndex
                     sb.append("<start_of_turn>").append(if (role == "assistant") "model" else "user").append('\n')
-                    if (i == 0) { sb.append(request.system.trim()).append("\n\n"); head = sb.length }
+                    if (i == 0) { sb.append(request.systemWithProfile).append("\n\n"); head = sb.length }
                     if (last && situation.isNotEmpty()) { stable = sb.length; sb.append(situation).append("\n\n") }
                     sb.append(text.trim()).append("<end_of_turn>\n")
                     if (last && situation.isEmpty()) stable = sb.length
@@ -169,8 +169,10 @@ enum class ChatFormat {
             }
             GEMMA4 -> {
                 sb.append("<|turn>system\n").append(request.system.trim())
-                // Tools are declared in the system turn, as Google's template does (Gemma4Tools).
+                // Tools are declared in the system turn, as Google's template does (Gemma4Tools); the facts about the person,
+                // which change now and then, come after them, so a new fact doesn't make the model read the tools again.
                 if (request.tools.isNotEmpty()) sb.append(Gemma4Tools.declarations(request.tools))
+                if (request.profile.isNotBlank()) sb.append("\n\n").append(request.profile.trim())
                 sb.append("<turn|>\n")
                 head = sb.length
                 stable = sb.length
@@ -215,7 +217,7 @@ enum class ChatFormat {
                 // Like ChatML: instructions first, the situation as a system turn right before the last message.
                 fun open(role: String) = if (this == LLAMA3) "<|start_header_id|>$role<|end_header_id|>\n\n" else "<|$role|>\n"
                 val close = if (this == LLAMA3) "<|eot_id|>" else "<|end|>\n"
-                sb.append(open("system")).append(request.system.trim()).append(close)
+                sb.append(open("system")).append(request.systemWithProfile).append(close)
                 head = sb.length
                 turns.forEachIndexed { i, (role, text) ->
                     val last = i == turns.lastIndex
@@ -233,7 +235,7 @@ enum class ChatFormat {
                     val last = i == turns.lastIndex
                     if (role == "assistant") { sb.append(' ').append(text.trim()).append("</s>"); return@forEachIndexed }
                     sb.append("[INST] ")
-                    if (i == 0) { sb.append(request.system.trim()).append("\n\n"); head = sb.length }
+                    if (i == 0) { sb.append(request.systemWithProfile).append("\n\n"); head = sb.length }
                     if (last && situation.isNotEmpty()) { stable = sb.length; sb.append(situation).append("\n\n") }
                     sb.append(text.trim()).append(" [/INST]")
                     if (last && situation.isEmpty()) stable = sb.length
@@ -489,8 +491,14 @@ class LocalLlmProvider(
          */
         fun fit(request: LlmRequest, tokens: Int): LlmRequest {
             val room = (tokens * 0.92).toInt()
-            fun size(r: LlmRequest) = estimateTokens(r.system) + estimateTokens(r.situation) + r.messages.sumOf {
-                when (it) { is ChatMessage.User -> estimateTokens(it.text); is ChatMessage.Assistant -> estimateTokens(it.text); else -> 0 }
+            val fixed = estimateTokens(request.system) + estimateTokens(request.profile) +
+                (if (request.tools.isEmpty()) 0 else estimateTokens(Gemma4Tools.declarations(request.tools)))
+            fun size(r: LlmRequest) = fixed + estimateTokens(r.situation) + r.messages.sumOf {
+                when (it) {
+                    is ChatMessage.User -> estimateTokens(it.text)
+                    is ChatMessage.Assistant -> estimateTokens(it.text) + it.toolCalls.size * 24
+                    is ChatMessage.ToolResult -> estimateTokens(it.content) + 12
+                }
             } + 6 * r.messages.size
             var r = request
             while (size(r) > room && r.messages.size > 1) {

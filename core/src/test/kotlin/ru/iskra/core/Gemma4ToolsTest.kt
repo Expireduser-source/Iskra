@@ -199,3 +199,63 @@ class ForeignScriptTest {
         }
     }
 }
+
+/** A phone model promising an action in words, with nothing called (Gemma 4 E4B in the 0.14.0 evaluation). */
+class ActionPromiseTest {
+    @Test fun promisesAreHeard() {
+        val p = ru.iskra.core.agent.ActionPromise
+        for (t in listOf("Я поставлю таймер. Сколько времени тебе нужно?", "Хорошо! Я поставлю напоминание: «Вынуть пирог». Через полчаса ты получишь уведомление.",
+            "Записала в заметки!", "Включаю фонарик!", "Я напомню тебе через полчаса.", "I'll set a timer for you.", "I've set a reminder."))
+            assertTrue(p.made(t), t)
+        for (t in listOf("Переворачивай пирог, чтобы он не подгорел. Не забывай о нем! ⏰", "Поставь таймер сам, а я подожду.", "Я рада за тебя!",
+            "Ты поставил рекорд!", "Set a timer if you like."))
+            assertFalse(p.made(t), t)
+    }
+
+    private fun agent(engine: LlamaEngine, format: ChatFormat, tool: RecordingTool = RecordingTool()) = CompanionAgent(
+        persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+        stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(tool)), policy = SafetyPolicy({ _, _ -> true }),
+        providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, format, "local:test") }, random = Random(1))
+
+    @Test fun gemma4IsToldToCallAndDoes() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Gemma4Tools2.Scripted("[happy] Я поставлю напоминание, через полчаса ты получишь уведомление!",
+                "<|tool_call>call:set_timer{seconds:1800}<tool_call|>", "[happy] Готово — таймер на полчаса!")
+            val timer = RecordingTool()
+            val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Через полчаса надо вынуть пирог из духовки, не дай мне забыть")
+            assertEquals("Готово — таймер на полчаса!", r.text)
+            assertEquals(1, timer.calls.size)
+            assertTrue(engine.prompts[1].contains("Вызови инструмент"), engine.prompts[1].takeLast(300))
+        }
+    }
+
+    @Test fun aPromiseNothingCameOfIsOwned() = withLang(Lang.RU) {
+        runBlocking {
+            // A phone model without tools can only promise: it is said that nothing is set.
+            val r = agent(Gemma4Tools2.Scripted("[happy] Я поставлю таймер на полчаса, не волнуйся!"), ChatFormat.GEMMA).handle("Через полчаса вынуть пирог, не дай забыть")
+            assertTrue(r.text.startsWith("Я поставлю таймер на полчаса, не волнуйся! Ой, это я только сказала"), r.text)
+            // A question back is not a broken promise.
+            val q = agent(Gemma4Tools2.Scripted("[curious] Я поставлю таймер. Сколько минут?", "[curious] Я поставлю таймер. Сколько минут?"), ChatFormat.GEMMA4)
+                .handle("Поможешь не забыть про пирог?")
+            assertEquals("Я поставлю таймер. Сколько минут?", q.text)
+        }
+    }
+}
+
+/** Scripted answers, one per generation. */
+object Gemma4Tools2 {
+    class Scripted(vararg outputs: String) : LlamaEngine {
+        private val left = ArrayDeque(outputs.toList())
+        val prompts = mutableListOf<String>()
+        override val info = "scripted"
+        override val contextSize = 8192
+        override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, head: Int, onPiece: (String) -> Boolean): String {
+            prompts += prompt
+            val answer = left.removeFirstOrNull() ?: "[happy] Мрр!"
+            for (piece in Regex("""<\|tool_call>|<tool_call\|>|[^<]+|<""").findAll(answer).map { it.value }) if (!onPiece(piece)) break
+            return answer
+        }
+        override fun cancel() = Unit
+        override fun close() = Unit
+    }
+}

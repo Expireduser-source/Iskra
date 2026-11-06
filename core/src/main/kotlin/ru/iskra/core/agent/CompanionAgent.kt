@@ -253,6 +253,16 @@ class CompanionAgent(
             val again = askModel(provider, text, state, sink, nudge, hideOtherScript = told)
             return if (again.errorKind == null && again.text.any { it.isLetterOrDigit() } && composer.wrongLanguage(text, again.text) == null) again else first
         }
+        if (fine(first) && first.errorKind == null && first.actions.isEmpty() && ActionPromise.made(first.text)) {
+            // «Я поставлю таймер» with nothing called: Gemma 4 once more, told to call; still nothing — said honestly.
+            val again = if (provider.nativeTools) askModel(provider, text, state, sink, ActionPromise.nudge()) else null
+            if (again != null && again.errorKind == null && again.actions.isNotEmpty()) return again
+            val last = again?.takeIf { it.errorKind == null && it.text.any(Char::isLetterOrDigit) } ?: first
+            // A question back («Сколько времени тебе нужно?») is not a broken promise: the answer comes next.
+            if (last.text.trimEnd().endsWith("?")) return last
+            sink?.sentence(ActionPromise.note(), last.emotion)
+            return last.copy(text = last.text.trimEnd() + " " + ActionPromise.note())
+        }
         if (fine(first)) return first
         val second = askModel(provider, text, state, sink)
         return if (fine(second)) second else second.copy(errorKind = LlmException.Kind.BAD_RESPONSE)
@@ -673,10 +683,13 @@ class CompanionAgent(
         val small = provider.onDevice
         val system: String
         val situation: String
+        // A small model's steady facts about the person: separate, so Gemma 4 reads them after its tools.
+        var profile = ""
         if (small) {
             // Steady facts go with the instructions (cached); only memories matching this message come next to it.
             val mem = forPrompt(memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true), now)
-            system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all()), rules(), ownWords()) + "\n\n" + composer.compactProfile(mem, now)
+            system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all()), rules(), ownWords(), tools = provider.nativeTools)
+            profile = composer.compactProfile(mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
             val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList()).take(1)
             situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, nudge ?: composer.languageNudge(text, lastReply))
@@ -727,7 +740,7 @@ class CompanionAgent(
         try {
             repeat(maxToolRounds) { round ->
                 val offerTools = round < maxToolRounds - 1
-                val request = LlmRequest(system = system, messages = messages,
+                val request = LlmRequest(system = system, messages = messages, profile = profile,
                     tools = when {
                         !offerTools || provider.id in noTools -> emptyList()
                         !small -> tools.specs()
