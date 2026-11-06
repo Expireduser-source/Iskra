@@ -641,3 +641,60 @@ class OfflineCoverageTest {
         assertTrue(missed.isEmpty(), missed.toString())
     }
 }
+
+/** Without a cloud, old turns are summarized by the model on the phone (at night on charge, by the app's job). */
+class PhoneSummaryTest {
+    private class PhoneModel(private val answer: String) : ru.iskra.core.llm.LlmProvider {
+        override val id = "local:test"
+        override val onDevice = true
+        val asked = mutableListOf<ru.iskra.core.llm.LlmRequest>()
+        override suspend fun complete(request: ru.iskra.core.llm.LlmRequest): LlmResponse { asked += request; return LlmResponse(answer, emptyList()) }
+    }
+
+    private fun agent(memory: MemoryManager, convo: InMemoryConversationStore, local: ru.iskra.core.llm.LlmProvider?) = CompanionAgent(
+        persona = Personas.ISKRA, memory = memory, conversation = convo, stateStore = InMemoryStateStore(), tools = ToolRegistry(),
+        policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, localFactory = { local }, random = Random(1),
+        clock = { java.time.LocalDateTime.of(2026, 11, 7, 3, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli() })
+
+    private fun fill(convo: InMemoryConversationStore, n: Int) {
+        val t0 = java.time.LocalDateTime.of(2026, 11, 6, 18, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        repeat(n) { i -> convo.append(Turn(if (i % 2 == 0) Turn.Role.USER else Turn.Role.ASSISTANT, "реплика $i", t0 + i * 1000L)) }
+    }
+
+    @Test fun summarizesAtNight() = withLang(Lang.RU) {
+        runBlocking {
+            val memory = MemoryManager(InMemoryMemoryStore())
+            val convo = InMemoryConversationStore()
+            fill(convo, 64)
+            val phone = PhoneModel("Аня готовится к сессии на врача и волнуется перед экзаменом по анатомии.")
+            assertEquals(1, agent(memory, convo, phone).summarizeOnPhone())
+            assertEquals("6 ноября: Аня готовится к сессии на врача и волнуется перед экзаменом по анатомии.", memory.all().single().text)
+            assertEquals(MemoryKind.EPISODE, memory.all().single().kind)
+            assertEquals(34, convo.count())
+            assertTrue(phone.asked.single().messages.single().let { (it as ru.iskra.core.llm.ChatMessage.User).text.startsWith("Владелец: реплика 0") })
+        }
+    }
+
+    @Test fun aChattyOrEmptyAnswerKeepsTheTurns() = withLang(Lang.RU) {
+        runBlocking {
+            for (bad in listOf("[happy] Мрр, конечно! Давай поговорим!", "Владелец: реплика 0\nИскра: реплика 1", "", "Ок")) {
+                val memory = MemoryManager(InMemoryMemoryStore())
+                val convo = InMemoryConversationStore()
+                fill(convo, 64)
+                assertEquals(0, agent(memory, convo, PhoneModel(bad)).summarizeOnPhone(), bad)
+                assertTrue(memory.all().isEmpty(), bad)
+                assertEquals(64, convo.count(), bad)
+            }
+            // «НЕТ»: nothing worth keeping, the turns go.
+            val convo = InMemoryConversationStore()
+            fill(convo, 64)
+            val memory = MemoryManager(InMemoryMemoryStore())
+            assertEquals(1, agent(memory, convo, PhoneModel("НЕТ")).summarizeOnPhone())
+            assertTrue(memory.all().isEmpty())
+            assertEquals(34, convo.count())
+            // No model on the phone, or too few turns.
+            assertNull(agent(memory, InMemoryConversationStore(), null).summarizeOnPhone())
+            assertEquals(0, agent(memory, InMemoryConversationStore().also { fill(it, 10) }, PhoneModel("x")).summarizeOnPhone())
+        }
+    }
+}

@@ -313,6 +313,8 @@ class CompanionAgent(
         return m.copy(profile = f(m.profile), related = f(m.related), recent = f(m.recent))
     }
 
+    private val MONTHS_GEN = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+
     private fun localDate(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
     private fun localHour(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).hour
 
@@ -670,29 +672,8 @@ class CompanionAgent(
     /** Compresses the oldest part of the dialogue into an EPISODE memory so context stays small. */
     private suspend fun maybeSummarize(provider: LlmProvider) {
         if (conversation.count() < summarizeAfterTurns || clock() < summaryRetryAtMs) return
-        val old = conversation.oldest(summarizeAfterTurns / 2)
-        val transcript = old.joinToString("\n") { (if (it.role == Turn.Role.USER) tr("Владелец: ", "Owner: ") else "${persona.name}: ") + it.text.take(500) }
         try {
-            val r = provider.complete(LlmRequest(
-                system = tr("Сожми диалог в 1–3 предложения от третьего лица: только устойчиво полезное о владельце " +
-                    "(планы, события, договорённости, предпочтения). Без паролей и чувствительных данных. " +
-                    "Если ничего полезного нет — ответь ровно словом НЕТ.", "Compress the dialogue into 1–3 sentences in the third person: only lastingly useful facts about the owner (plans, events, agreements, preferences). No passwords or sensitive data. If there is nothing useful, answer with exactly the word NONE."),
-                messages = listOf(ChatMessage.User(transcript)),
-                maxTokens = 200, temperature = 0.2,
-            ))
-            currentCoroutineContext().ensureActive()
-            val summary = r.text.trim()
-            val saved = when {
-                summary.equals("НЕТ", ignoreCase = true) || summary.equals("NONE", ignoreCase = true) -> true
-                summary.isEmpty() -> false
-                else -> memory.add(summary.take(400), MemoryKind.EPISODE, MemorySource.SUMMARY, 2, clock()) !is MemoryManager.AddResult.Rejected
-            }
-            if (saved) {
-                conversation.popOldest(old.size)
-                summaryRetryAtMs = 0L
-            } else {
-                summaryRetryAtMs = clock() + cloudPauseMs
-            }
+            if (summarizeOldest(provider) == null) summaryRetryAtMs = clock() + cloudPauseMs else summaryRetryAtMs = 0L
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -701,6 +682,61 @@ class CompanionAgent(
             if (e is LlmException && (e.kind == LlmException.Kind.AUTH || e.kind == LlmException.Kind.BALANCE))
                 cloudPause = summaryRetryAtMs to e.kind
         }
+    }
+
+    /**
+     * Compresses the oldest half of [summarizeAfterTurns] turns into an episode in memory and drops them from the dialogue.
+     * Returns the saved summary ("" when there was nothing worth keeping), or null when nothing usable came back (the turns stay).
+     */
+    private suspend fun summarizeOldest(provider: LlmProvider): String? {
+        val old = conversation.oldest(summarizeAfterTurns / 2)
+        if (old.isEmpty()) return null
+        val day = localDate(old.first().atMs)
+        val transcript = old.joinToString("\n") { (if (it.role == Turn.Role.USER) tr("Владелец: ", "Owner: ") else "${persona.name}: ") + it.text.take(500) }
+        val r = provider.complete(LlmRequest(
+            system = tr("Сожми диалог в 1–3 предложения от третьего лица: только устойчиво полезное о владельце " +
+                "(планы, события, договорённости, предпочтения). Без паролей и чувствительных данных. " +
+                "Если ничего полезного нет — ответь ровно словом НЕТ.", "Compress the dialogue into 1–3 sentences in the third person: only lastingly useful facts about the owner (plans, events, agreements, preferences). No passwords or sensitive data. If there is nothing useful, answer with exactly the word NONE."),
+            messages = listOf(ChatMessage.User(transcript)),
+            maxTokens = 200, temperature = 0.2,
+        ))
+        currentCoroutineContext().ensureActive()
+        val summary = cleanSummary(r.text, provider.onDevice) ?: return null
+        if (summary.isNotEmpty()) {
+            // A summary made on the phone says when (the cloud's is used right away, so it went without a date).
+            val text = if (provider.onDevice) tr("${day.dayOfMonth} ${MONTHS_GEN[day.monthValue - 1]}: ", "${day.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${day.dayOfMonth}: ") + summary else summary
+            if (memory.add(text.take(400), MemoryKind.EPISODE, MemorySource.SUMMARY, 2, clock()) is MemoryManager.AddResult.Rejected) return null
+        }
+        conversation.popOldest(old.size)
+        return summary
+    }
+
+    /**
+     * A summary as the model wrote it → what is kept: "" for «НЕТ», null for nothing usable. A small model on the phone may
+     * answer as Iskra instead («[happy] Мрр, конечно!») or copy the transcript: such text is not kept.
+     */
+    private fun cleanSummary(raw: String, onDevice: Boolean): String? {
+        val s = ReplyParser.parse(raw).text.trim().trim('"', '«', '»')
+        if (s.equals("НЕТ", ignoreCase = true) || s.equals("NONE", ignoreCase = true) || s.trimEnd('.').equals("нет", true)) return ""
+        if (s.isEmpty()) return null
+        if (!onDevice) return s
+        val chatty = Regex("""(?iu)(?<!\p{L})(?:мрр+|мур|meow|mrr+)(?!\p{L})|^(?:конечно|ой|привет|sure|of course|hi)\b|владелец:|owner:|${persona.name}:""")
+        return s.takeIf { it.length in 15..400 && !chatty.containsMatchIn(it) }
+    }
+
+    /**
+     * Without a cloud, old turns are summarized by the model on the phone — slowly, so at night on charge (the app's job
+     * calls this). Up to [maxChunks] summaries; returns how many were saved, or null when there is no model on the phone.
+     */
+    suspend fun summarizeOnPhone(maxChunks: Int = 2): Int? = mutex.withLock {
+        val provider = localFactory() ?: return@withLock null
+        var saved = 0
+        repeat(maxChunks) {
+            if (conversation.count() < summarizeAfterTurns) return@withLock saved
+            if (summarizeOldest(provider) == null) return@withLock saved
+            saved++
+        }
+        saved
     }
 }
 

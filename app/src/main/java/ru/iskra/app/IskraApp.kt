@@ -171,10 +171,14 @@ class IskraApp : Application() {
         )
         chat = ChatController(this)
         AutoBackup.schedule(this, onlyIfMissing = true)
+        ru.iskra.app.data.NightMemory.schedule(this)
         FreeBrain.refreshStandInsIfStale()
     }
 
     /** Built per request so settings/key changes apply immediately. */
+    /** A cloud «brain» is set up (it also recaps long conversations itself). */
+    fun hasCloud(): Boolean = runCatching { currentProvider() != null }.getOrDefault(false)
+
     private fun currentProvider(): LlmProvider? {
         val s = settings.load()
         if (s.preset == ProviderPreset.OFFLINE) return null

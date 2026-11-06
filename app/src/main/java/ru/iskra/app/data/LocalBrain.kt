@@ -472,6 +472,25 @@ object LocalBrain {
         engine = null; engineFor = null; engineSession = null
     }
 
+    /** Light models summarize badly («Мрр, конечно!» instead of a summary): night summaries are for the smart ones. */
+    fun canSummarize(): Boolean {
+        val st = state.value as? State.Ready ?: return false
+        return enabled() && st.model.id !in setOf("gemma-3-1b-qat", "gemma-3-1b", "qwen2.5-0.5b", "qwen2.5-1.5b")
+    }
+
+    /**
+     * Runs [work] with the model while the saved dialogue cache stays as it was: the cache is saved first, and the model,
+     * which [work] fills with other text (a summary), is closed without saving. The next reply loads the dialogue again.
+     */
+    suspend fun <T> aside(work: suspend () -> T): T {
+        engineLock.withLock { closeEngine(save = true) }
+        try {
+            return work()
+        } finally {
+            engineLock.withLock { closeEngine(save = false) }
+        }
+    }
+
     /**
      * The conversation or a memory was erased: the saved dialogue cache (it may still hold them) goes too, and the
      * model in memory is closed, so it starts clean.

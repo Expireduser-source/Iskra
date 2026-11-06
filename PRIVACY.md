@@ -19,7 +19,9 @@ Android Keystore. Android backup of the app is turned off, so this data is not u
 What goes into memory on its own: what you tell about yourself in plain words — your name, city, study or work, pets,
 birthday, age, the names of your family, what you like and dislike — and the plans you mention («exam tomorrow»), so she can
 wish you luck and later ask how it went. Each one is an ordinary entry in «Memory». When yesterday you said you were sad or ill,
-she asks how you are the next day: that comes from the chat history only, nothing extra is saved for it.
+she asks how you are the next day: that comes from the chat history only, nothing extra is saved for it. Without a cloud «brain», a smart model on
+the phone compresses old turns of the chat into a short recap (📖 in «Memory») once a day, while the phone charges and
+rests — on the phone, like everything else.
 
 You can delete any entry in «Memory», or everything at once with «Erase everything». Uninstalling the app deletes
 all of it. Backup files are created only when you ask (a file you choose) and never contain API keys or the chat.
@@ -72,7 +74,9 @@ Changes to this policy are published in this file in the repository. Questions: 
 Что попадает в память само: то, что ты простыми словами рассказываешь о себе, — имя, город, учёба или работа, питомцы,
 день рождения, возраст, имена близких, что любишь и не любишь, — и планы, которые ты упоминаешь («завтра экзамен»), чтобы
 пожелать удачи и потом спросить, как всё прошло. Каждое — обычная запись в «Памяти». Если вчера ты писал, что грустно или
-болеешь, на следующий день она спросит, как ты: это берётся только из переписки, ничего отдельно не сохраняется.
+болеешь, на следующий день она спросит, как ты: это берётся только из переписки, ничего отдельно не сохраняется. Без облачного
+«мозга» умная модель на телефоне раз в сутки, пока телефон заряжается и не используется, сжимает старую переписку в
+короткий пересказ (📖 в «Памяти») — тоже на телефоне.
 
 Любую запись можно удалить в «Памяти», всё сразу — кнопкой «Стереть всё». При удалении приложения удаляется всё.
 Файлы резервных копий создаются только по твоей просьбе (в выбранный тобой файл) и никогда не содержат ключей и переписки.
