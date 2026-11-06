@@ -1,0 +1,3 @@
+• A new brain on the phone: Google's Gemma 4, made for phones. The smart model answers twice as fast as before and speaks more naturally; the smartest one is for powerful phones
+• Iskra keeps your answer to "how did the exam go?" with the plan
+• Plans are told to the model as "tomorrow", "yesterday" — no stray dates

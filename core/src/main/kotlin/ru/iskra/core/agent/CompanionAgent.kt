@@ -306,6 +306,13 @@ class CompanionAgent(
         else tr("Мрр, смотрю: ", "Mrr, let me see: ") + all.joinToString("; ") + "."
     }
 
+    /** Plans in the prompt said relative to today («на завтра (7 ноября)»), not with the stored year. */
+    private fun forPrompt(m: ru.iskra.core.memory.MemoryContext, nowMs: Long): ru.iskra.core.memory.MemoryContext {
+        val today = localDate(nowMs)
+        fun f(items: List<ru.iskra.core.memory.MemoryItem>) = items.map { PlanTalk.forPrompt(it, today) }
+        return m.copy(profile = f(m.profile), related = f(m.related), recent = f(m.recent))
+    }
+
     private fun localDate(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
     private fun localHour(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).hour
 
@@ -573,7 +580,7 @@ class CompanionAgent(
         val situation: String
         if (small) {
             // Steady facts go with the instructions (cached); only memories matching this message come next to it.
-            val mem = memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true)
+            val mem = forPrompt(memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true), now)
             system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all())) + "\n\n" + composer.compactProfile(mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
             val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList()).take(1)
@@ -581,7 +588,7 @@ class CompanionAgent(
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {
             system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty(), ownerFeminine = SelfGender.feminine(memory.all()))
-            situation = composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
+            situation = composer.situation(state.mood, forPrompt(memory.context(text, now), now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
         }
         val messages = ArrayList<ChatMessage>()
         // A small model's window of the dialogue moves in steps, not by one turn per message: its first turn stays put for

@@ -546,3 +546,27 @@ class OutcomeTest {
         }
     }
 }
+
+/** Plans in a model's prompt are said relative to today; template slots and «сейчас сессия» are not taken literally. */
+class PromptWordingTest {
+    private val today = LocalDate.of(2026, 11, 6)
+    private fun item(text: String) = MemoryItem(1, MemoryKind.FACT, text, MemorySource.USER_EXPLICIT, 3, 0, 0)
+
+    @Test fun plansAreRelativeToToday() {
+        assertEquals("Планы владельца на завтра (7 ноября): экзамен по анатомии",
+            PlanTalk.forPrompt(item("Планы владельца на 7 ноября 2026: экзамен по анатомии"), today).text)
+        assertEquals("Вчера (5 ноября) у владельца было: экзамен (владелец: «Сдала на пятёрку!»)",
+            PlanTalk.forPrompt(item("5 ноября 2026 у владельца было: экзамен (владелец: «Сдала на пятёрку!»)"), today).text)
+        assertEquals("The owner's plans for tomorrow (November 7): physics exam",
+            PlanTalk.forPrompt(item("The owner's plans for November 7, 2026: physics exam"), today).text)
+        assertEquals("Владелец любит пиццу", PlanTalk.forPrompt(item("Владелец любит пиццу"), today).text)
+        assertTrue(PlanTalk.hear("Я учусь на врача, сейчас сессия.", today).plans.isEmpty())
+        assertEquals(today, PlanTalk.hear("Сейчас иду на экзамен", today).plans.single().date)
+    }
+
+    @Test fun unfilledSlotsAreRemoved() {
+        assertEquals("Hi! I'm Iskra. What are you up to today? mrr",
+            ru.iskra.core.agent.ReplyParser.parse("[happy] Hi! I'm Iskra. Mr./Ms. [person's name], what are you up to today? mrr").text)
+        assertEquals("Привет! Как дела?", ru.iskra.core.agent.ReplyParser.parse("[happy] Привет, [имя]! Как дела?").text)
+    }
+}

@@ -136,7 +136,7 @@ object PlanTalk {
     private val dayPatterns: List<Pair<Regex, (MatchResult, LocalDate) -> LocalDate?>> = listOf(
         Regex("""(?iu)(?<!\p{L})послезавтра(?!\p{L})|(?<!\p{L})(?:the\s+)?day\s+after\s+tomorrow(?!\p{L})""") to { _, t -> t.plusDays(2) },
         Regex("""(?iu)(?<!\p{L})(?:завтра|tomorrow)(?!\p{L})""") to { _, t -> t.plusDays(1) },
-        Regex("""(?iu)(?<!\p{L})(?:сегодня|сейчас|today|tonight|this\s+(?:morning|afternoon|evening))(?!\p{L})""") to { _, t -> t },
+        Regex("""(?iu)(?<!\p{L})(?:сегодня|today|tonight|this\s+(?:morning|afternoon|evening))(?!\p{L})""") to { _, t -> t },
         Regex("""(?iu)(?<!\p{L})(?:в|во|на|к)\s+(?:эт(?:от|у|о)\s+|следующ(?:ий|ую|ее)\s+|ближайш(?:ий|ую|ее)\s+)?(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)(?!\p{L})""") to { m, t ->
             next(t, weekdaysRu.indexOf(m.groupValues[1].lowercase()))
         },
@@ -184,7 +184,8 @@ object PlanTalk {
     }
 
     /** «иду к врачу», «еду на собеседование» with no day named: today. */
-    private val goingNow = Regex("""(?iu)^(?:я\s+)?(?:уже\s+)?(?:иду|еду|лечу|бегу|направляюсь)(?!\p{L})""")
+    // «сейчас сессия», «сейчас отпуск» is how things are, not a plan for today: only going somewhere counts.
+    private val goingNow = Regex("""(?iu)^(?:я\s+)?(?:уже\s+|сейчас\s+)?(?:иду|еду|лечу|бегу|направляюсь)(?!\p{L})""")
 
     /** The coming day a sentence names («завтра», «в пятницу», «12 ноября», "on Friday") and where it is said, or null. */
     fun day(text: String, today: LocalDate): Pair<LocalDate, IntRange>? {
@@ -431,6 +432,37 @@ object PlanTalk {
     }
 
     private fun words(s: String) = s.lowercase().replace('ё', 'е').split(Regex("""[^\p{L}\p{N}]+""")).filter { it.length >= 3 && it !in ruPreps }
+
+    /**
+     * A plan as a model should read it: relative to today and without the year — «Планы владельца на завтра (7 ноября):
+     * экзамен», «Вчера (7 ноября) у владельца было: …». In the ARM evaluation both Gemma 4 models repeated «6 ноября 2026
+     * года» from the stored wording. Other memories are returned as they are.
+     */
+    fun forPrompt(item: MemoryItem, today: LocalDate): MemoryItem {
+        val k = known(listOf(item)).firstOrNull() ?: return item
+        val d = k.plan.date
+        val ru = k.plan.ru
+        val days = ChronoUnit.DAYS.between(today, d)
+        val md = if (ru) "${d.dayOfMonth} ${monthsGen[d.monthValue - 1]}" else "${monthsEn[d.monthValue - 1]} ${d.dayOfMonth}"
+        val whenRu = when (days) {
+            0L -> "сегодня ($md)"; 1L -> "завтра ($md)"; 2L -> "послезавтра ($md)"; -1L -> "вчера ($md)"; -2L -> "позавчера ($md)"
+            in 3L..6L -> whenText(d, today, true) + " ($md)"
+            else -> md + if (d.year != today.year) " ${d.year}" else ""
+        }
+        val whenEn = when (days) {
+            0L -> "today ($md)"; 1L -> "tomorrow ($md)"; -1L -> "yesterday ($md)"
+            in 2L..6L -> whenText(d, today, false) + " ($md)"
+            else -> md + if (d.year != today.year) ", ${d.year}" else ""
+        }
+        val said = k.outcome?.let { if (ru) " (владелец: «$it»)" else " (the owner: «$it»)" }.orEmpty()
+        val text = when {
+            ru && !k.done && !d.isBefore(today) -> "Планы владельца на $whenRu: ${k.plan.what}"
+            ru -> "${whenRu.replaceFirstChar { it.uppercase() }} у владельца было: ${k.plan.what}$said"
+            !k.done && !d.isBefore(today) -> "The owner's plans for $whenEn: ${k.plan.what}"
+            else -> "${whenEn.replaceFirstChar { it.uppercase() }} the owner had: ${k.plan.what}$said"
+        }
+        return item.copy(text = text)
+    }
 
     /** The owner says how it went («сдал на пять», "it went great"). */
     fun outcome(text: String): Boolean = pastRu.containsMatchIn(text) || pastEn.containsMatchIn(text)

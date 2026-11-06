@@ -61,24 +61,31 @@ object LocalBrain {
     }
 
     /**
-     * Chosen on real conversations in Russian and English (CI evaluation on x86 and on ARM built like the phone library,
-     * docs/reports/2026-11-05-0.12.3.md). Gemma 3 trained by Google for 4-bit (QAT, Q4_0): the 4B speaks Russian the best of
-     * all the small models tried, and Q4_0 runs through llama.cpp's fastest ARM path. Official ggml-org GGUF files.
+     * Chosen on real conversations in Russian and English (CI evaluation on ARM built like the phone library, 2 threads,
+     * docs/reports/2026-11-05-0.12.3.md and the 0.12.8 report). All Q4_0 from Google's quantization-aware training, which
+     * runs through llama.cpp's fastest ARM path; official ggml-org GGUF files. Gemma 4 E2B (2026, made for phones) answers
+     * in 1.5 s / 4.2 s there against 2.4 s / 8.7 s for Gemma 3 4B, briefly and in natural Russian; E4B writes the best and
+     * the slowest. Per-layer embeddings make their files big, but they are read from the file only as needed.
      */
     val models = listOf(
         Model("gemma-3-1b-qat", "Gemma 3 1B", "gemma-3-1b-it-qat-Q4_0.gguf",
             "https://huggingface.co/ggml-org/gemma-3-1b-it-qat-GGUF/resolve/main/gemma-3-1b-it-qat-Q4_0.gguf", 720, 4,
             ChatFormat.GEMMA, "Лёгкая: отвечает быстро на любом телефоне, но проще в разговоре и иногда путается.",
             "Light: answers quickly on any phone, but is simpler and sometimes gets confused."),
-        Model("gemma-3-4b-qat", "Gemma 3 4B", "gemma-3-4b-it-qat-Q4_0.gguf",
-            "https://huggingface.co/ggml-org/gemma-3-4b-it-qat-GGUF/resolve/main/gemma-3-4b-it-qat-Q4_0.gguf", 2526, 6,
-            ChatFormat.GEMMA, "Умная: лучший русский, помнит сказанное и объясняет толково. Нужно 6 ГБ памяти; на телефонах с двумя быстрыми ядрами отвечает медленнее.",
-            "Smart: the best Russian, remembers what you said and explains well. Needs 6 GB of memory; slower on phones with two fast cores."),
+        Model("gemma-4-e2b", "Gemma 4 E2B", "gemma-4-E2B-it-Q4_0.gguf",
+            "https://huggingface.co/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_0.gguf", 2842, 6,
+            ChatFormat.GEMMA4, "Умная: новая модель Google для телефонов — естественно говорит по-русски, понимает с полуслова и отвечает коротко. Нужно 6 ГБ памяти.",
+            "Smart: Google's new model made for phones — natural Russian, gets what you mean, answers briefly. Needs 6 GB of memory."),
+        Model("gemma-4-e4b", "Gemma 4 E4B", "gemma-4-E4B-it-Q4_0.gguf",
+            "https://huggingface.co/ggml-org/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_0.gguf", 4591, 10,
+            ChatFormat.GEMMA4, "Самая умная: лучшие ответы, но вдвое медленнее умной и весит 4,6 ГБ. Для мощных телефонов от 10 ГБ памяти.",
+            "Smartest: the best answers, but half as fast as the smart one and 4.6 GB. For powerful phones with 10 GB of memory or more."),
     )
 
     /** Earlier catalogs: still work if downloaded; the card suggests the better one. */
     private val legacy = listOf(
         Model("gemma-3-1b", "Gemma 3 1B (Q4_K_M)", "gemma-3-1b-it-Q4_K_M.gguf", "", 806, 4, ChatFormat.GEMMA, "", ""),
+        Model("gemma-3-4b-qat", "Gemma 3 4B", "gemma-3-4b-it-qat-Q4_0.gguf", "", 2526, 6, ChatFormat.GEMMA, "", ""),
         Model("qwen3.5-2b", "Qwen3.5 2B", "Qwen3.5-2B-Q4_K_M.gguf", "", 1280, 6, ChatFormat.CHATML_NO_THINK, "", ""),
         Model("qwen3.5-4b", "Qwen3.5 4B", "Qwen3.5-4B-Q4_K_M.gguf", "", 2740, 10, ChatFormat.CHATML_NO_THINK, "", ""),
         Model("qwen2.5-0.5b", "Qwen2.5 0.5B", "qwen2.5-0.5b-instruct-q4_k_m.gguf", "", 491, 3, ChatFormat.CHATML, "", ""),
@@ -153,10 +160,15 @@ object LocalBrain {
     fun fewFastCores(): Boolean = runCatching { performanceCores() <= 2 }.getOrDefault(false)
 
     /** For a model from an earlier catalog: why the suggested one is better. */
-    fun whyBetter(old: Model): String = if (old.id == "gemma-3-1b" && suggested().id == "gemma-3-1b-qat") tr(
-        "та же модель, но обученная Google для такого сжатия: быстрее и меньше",
-        "the same model, trained by Google for this compression: faster and smaller")
-    else tr("быстрее отвечает и естественнее говорит по-русски", "answers faster and speaks Russian more naturally")
+    fun whyBetter(old: Model): String = when {
+        old.id == "gemma-3-1b" && suggested().id == "gemma-3-1b-qat" -> tr(
+            "та же модель, но обученная Google для такого сжатия: быстрее и меньше",
+            "the same model, trained by Google for this compression: faster and smaller")
+        old.id == "gemma-3-4b-qat" && suggested().id == "gemma-4-e2b" -> tr(
+            "новое поколение, сделанное для телефонов: отвечает вдвое быстрее и умнее",
+            "the new generation made for phones: answers twice as fast and is smarter")
+        else -> tr("быстрее отвечает и естественнее говорит по-русски", "answers faster and speaks Russian more naturally")
+    }
 
     private fun unsupportedReason(): String? {
         val abi = Build.SUPPORTED_ABIS.firstOrNull().orEmpty()

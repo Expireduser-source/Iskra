@@ -78,8 +78,8 @@ fun LocalBrainCard() {
                             "This phone has ${"%.0f".format(Locale.ROOT, LocalBrain.totalRamGb())} GB of memory — the chosen model may be slow or fail to load."),
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                     else if (choice != LocalBrain.models.first() && LocalBrain.fewFastCores()) Text(
-                        tr("У этого телефона два быстрых ядра: умная модель будет писать примерно 2–3 слова в секунду, лёгкая — втрое быстрее. Проверить можно кнопкой «Проверить скорость» после скачивания.",
-                            "This phone has two fast cores: the smart model will write about 2–3 words a second, the light one three times faster. “Check the speed” after the download tells for sure."),
+                        tr("У этого телефона два быстрых ядра: по оценке, ${choice.title} будет писать ${if (choice.id == "gemma-4-e4b") "1–3 слова" else "3–5 слов"} в секунду, лёгкая — 8–10. Точно покажет «Проверить скорость» после скачивания.",
+                            "This phone has two fast cores: by estimate, ${choice.title} will write ${if (choice.id == "gemma-4-e4b") "1–3 words" else "3–5 words"} a second, the light one 8–10. “Check the speed” after the download tells for sure."),
                         fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (s is LocalBrain.State.Failed) Text(s.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
                     Button(onClick = { if (metered(ctx)) confirm = true else LocalBrain.download(choice) }, modifier = Modifier.fillMaxWidth().testTag("local_brain_download")) {

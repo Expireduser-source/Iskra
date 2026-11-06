@@ -270,11 +270,13 @@ EVAL_CANDIDATES = [
     # Gemma 4 for phones (2026): about 2B / 4B of computation per token plus per-layer embeddings that are read from the
     # file only as needed. Q4_0 from Google's quantization-aware training. In 0.12.1 a 5 GB file of E2B "thought aloud"
     # instead of answering; the thought channel is closed now. The current catalog (Gemma 3 QAT) was measured on the same
-    # code in the previous run; the light one stays as a check that the runner is as fast as before.
+    # code in the previous run; since 0.12.8 E2B and E4B are in the catalog.
     ("gemma-4-e2b", "ggml-org/gemma-4-E2B-it-GGUF", [r"(?i)^gemma-4-E2B-it-Q4_0\.gguf$"], "GEMMA4"),
     ("gemma-4-e4b", "ggml-org/gemma-4-E4B-it-GGUF", [r"(?i)^gemma-4-E4B-it-Q4_0\.gguf$"], "GEMMA4"),
     # Quantization-aware trained by Google for 4-bit (Q4_0): usually closer to the full model at the same size.
     ("gemma-3-1b-qat", "ggml-org/gemma-3-1b-it-qat-GGUF", [r"(?i)q4_0\.gguf$"], "GEMMA"),
+    # The smart model before 0.12.8, for a comparison on the same code.
+    ("gemma-3-4b-qat", "ggml-org/gemma-3-4b-it-qat-GGUF", [r"(?i)q4_0\.gguf$"], "GEMMA"),
 ]
 
 
