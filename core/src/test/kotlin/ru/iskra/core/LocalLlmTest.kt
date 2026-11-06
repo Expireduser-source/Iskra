@@ -122,7 +122,11 @@ class LocalLlmTest {
             // The last reply was English, the message Russian: a reminder next to the message only.
             val p = engine.prompts[1]
             assertTrue(p.substringAfterLast("<start_of_turn>user\n").startsWith("Ответь по-русски."), p.takeLast(200))
-            assertFalse(engine.prompts[2].contains("Ответь по-русски"))  // another translation request: no reminder
+            // Still English: once more without the English turns (and the request they answered) in the history.
+            assertTrue(engine.prompts[1].contains("I love winter evenings"))
+            assertFalse(engine.prompts[2].contains("I love winter evenings"), engine.prompts[2])
+            assertFalse(engine.prompts[2].contains("Переведи на английский"))
+            assertFalse(engine.prompts[3].contains("Ответь по-русски"))  // another translation request: no reminder
             val c = ru.iskra.core.agent.PromptComposer()
             assertEquals("Answer in English.", c.languageNudge("And what about breakfast?", "Мрр, омлет лучше!"))
             assertEquals("", c.languageNudge("Как дела?", "Мрр, хорошо!"))

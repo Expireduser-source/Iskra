@@ -244,12 +244,13 @@ class CompanionAgent(
     private suspend fun askPhone(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?): AgentReply {
         fun fine(r: AgentReply) = r.errorKind != null || r.actions.isNotEmpty() || r.text.any { it.isLetterOrDigit() }
         val first = askModel(provider, text, state, sink)
-        // Answered in another language than asked: once more, told which (the first one stays if that doesn't help) —
-        // unless this try was already told (the reply before was in the other language too).
+        // Answered in another language than asked: once more, told which (the first one stays if that doesn't help). If this
+        // try was told already — the reply before was in the other language too, a translation say — the second one doesn't
+        // see the turns in that language: Gemma 3 1B went on in English after «Переведи на английский…», nudge or not.
         val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
         val told = composer.languageNudge(text, lastReply).isNotEmpty()
-        if (!told && fine(first) && first.errorKind == null) composer.wrongLanguage(text, first.text)?.let { nudge ->
-            val again = askModel(provider, text, state, sink, nudge)
+        if (fine(first) && first.errorKind == null) composer.wrongLanguage(text, first.text)?.let { nudge ->
+            val again = askModel(provider, text, state, sink, nudge, hideOtherScript = told)
             return if (again.errorKind == null && again.text.any { it.isLetterOrDigit() } && composer.wrongLanguage(text, again.text) == null) again else first
         }
         if (fine(first)) return first
@@ -653,8 +654,12 @@ class CompanionAgent(
         }
     }
 
-    /** [nudge]: one more line for a small model's situation («Ответь по-русски.») on a second try. */
-    private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?, nudge: String? = null): AgentReply {
+    /**
+     * [nudge]: one more line for a small model's situation («Ответь по-русски.») on a second try; [hideOtherScript]: the
+     * small model's history leaves out replies in another language than [text] and the messages they answered.
+     */
+    private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?, nudge: String? = null,
+                                 hideOtherScript: Boolean = false): AgentReply {
         val now = clock()
         // A small model on the phone gets a short prompt, no tools and less history: every token costs it time.
         val small = provider.onDevice
@@ -677,7 +682,14 @@ class CompanionAgent(
         // A small model's window of the dialogue moves in steps, not by one turn per message: its first turn stays put for
         // several messages, so the cached beginning stays valid. 6–13 turns, about the same as before on average.
         val window = if (small) conversation.count().let { n -> n - maxOf(0, (n - 6) / 8 * 8) } else historyTurns
-        for (t in conversation.recent(window)) messages += when (t.role) {
+        val shown = conversation.recent(window).let { turns ->
+            if (!small || !hideOtherScript) turns else {
+                val off = turns.indices.filter { turns[it].role == Turn.Role.ASSISTANT && composer.otherScript(text, turns[it].text) }
+                    .flatMap { i -> listOf(i, i - 1).filter { j -> j >= 0 && (j == i || turns[j].role == Turn.Role.USER) } }.toSet()
+                turns.filterIndexed { i, _ -> i !in off }
+            }
+        }
+        for (t in shown) messages += when (t.role) {
             // «…» left by a reply that went wrong is not shown back: a small model copied it into every answer after
             // (ARM evaluation, Gemma 3 1B: «…», «…Ты выглядишь очень интересно!», «…»).
             Turn.Role.ASSISTANT -> if (small && t.text.none { it.isLetterOrDigit() }) continue else

@@ -198,6 +198,13 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
      * A reply in another script than the message («Ты человек?» — «Uh... I think so.», Gemma 3 1B in the ARM evaluation),
      * unless a translation was asked for: the nudge for a second try, else null.
      */
+    /** [turn] is clearly in another script than [message] (an English translation in a Russian chat). */
+    fun otherScript(message: String, turn: String): Boolean {
+        val a = script(message) ?: return false
+        val b = script(turn) ?: return false
+        return a != b
+    }
+
     fun wrongLanguage(message: String, reply: String): String? {
         val asked = script(message) ?: return null
         val replied = script(reply) ?: return null
