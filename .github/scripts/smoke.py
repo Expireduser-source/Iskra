@@ -267,13 +267,14 @@ def local_brain_check(s, api):
 # Models to compare in the evaluation: the catalog's and candidates for it (a missing repo or file is skipped).
 EVAL_CANDIDATES = [
     # (name, repo, file patterns in order of preference, chat format if the file's own template can't tell)
-    ("gemma-3-1b", "ggml-org/gemma-3-1b-it-GGUF", [r"(?i)gemma-3-1b-it-q4_k_m\.gguf$"], "GEMMA"),
+    # Gemma 4 for phones (2026): about 2B / 4B of computation per token plus per-layer embeddings that are read from the
+    # file only as needed. Q4_0 from Google's quantization-aware training. In 0.12.1 a 5 GB file of E2B "thought aloud"
+    # instead of answering; the thought channel is closed now. The current catalog (Gemma 3 QAT) was measured on the same
+    # code in the previous run; the light one stays as a check that the runner is as fast as before.
+    ("gemma-4-e2b", "ggml-org/gemma-4-E2B-it-GGUF", [r"(?i)^gemma-4-E2B-it-Q4_0\.gguf$"], "GEMMA4"),
+    ("gemma-4-e4b", "ggml-org/gemma-4-E4B-it-GGUF", [r"(?i)^gemma-4-E4B-it-Q4_0\.gguf$"], "GEMMA4"),
     # Quantization-aware trained by Google for 4-bit (Q4_0): usually closer to the full model at the same size.
     ("gemma-3-1b-qat", "ggml-org/gemma-3-1b-it-qat-GGUF", [r"(?i)q4_0\.gguf$"], "GEMMA"),
-    ("gemma-3-4b-qat", "ggml-org/gemma-3-4b-it-qat-GGUF", [r"(?i)q4_0\.gguf$"], "GEMMA"),
-    ("gemma-3-4b", "ggml-org/gemma-3-4b-it-GGUF", [r"(?i)gemma-3-4b-it-q4_k_m\.gguf$"], "GEMMA"),
-    ("qwen3.5-2b", "unsloth/Qwen3.5-2B-GGUF", [r"(?i)qwen3\.5-2b-q4_k_m\.gguf$"], "CHATML_NO_THINK"),
-    ("qwen3.5-4b", "unsloth/Qwen3.5-4B-GGUF", [r"(?i)qwen3\.5-4b-q4_k_m\.gguf$"], "CHATML_NO_THINK"),
 ]
 
 
