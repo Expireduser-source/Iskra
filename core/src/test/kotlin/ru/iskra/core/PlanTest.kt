@@ -493,3 +493,28 @@ class ReminderOfferTest {
         }
     }
 }
+
+/** «ты устал» → «ты устала» when the owner speaks of herself in the feminine. */
+class AgreementTest {
+    @Test fun fixesMasculineAddress() {
+        val g = ru.iskra.core.brain.SelfGender
+        assertEquals("Ты, наверное, устала? Ты сегодня так много сделала!", g.agreeFeminine("Ты, наверное, устал? Ты сегодня так много сделал!"))
+        assertEquals("Ты пришла! Я рада. Ты готова?", g.agreeFeminine("Ты пришёл! Я рада. Ты готов?"))
+        assertEquals("Ты не заблудилась? Ты права.", g.agreeFeminine("Ты не заблудился? Ты прав."))
+        assertEquals("Ты футбол смотрела?", g.agreeFeminine("Ты футбол смотрел?"))     // the noun stays, the verb agrees
+        assertEquals("Ты устала, а он пришёл.", g.agreeFeminine("Ты устал, а он пришёл."))  // another subject: not hers
+        assertEquals("Ты знаешь, кот пришёл?", g.agreeFeminine("Ты знаешь, кот пришёл?"))   // a comma ends the clause
+        assertEquals("Я устала, а ты?", g.agreeFeminine("Я устала, а ты?"))
+    }
+
+    @Test fun theReplyIsAgreed() = withLang(Lang.RU) {
+        runBlocking {
+            val memory = MemoryManager(InMemoryMemoryStore())
+            memory.add(ru.iskra.core.brain.SelfGender.FEMININE_RU, MemoryKind.FACT, MemorySource.MODEL_PROPOSED, 3, 0)
+            val provider = FakeProvider(mutableListOf({ _ -> LlmResponse("[happy] Ты сегодня молодец, наверное, устал?", emptyList()) }))
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { provider }, random = Random(1))
+            assertEquals("Ты сегодня молодец, наверное, устала?", a.handle("Я сегодня весь день работала").text)
+        }
+    }
+}

@@ -583,10 +583,13 @@ class CompanionAgent(
         messages += ChatMessage.User(text)
 
         var spoke = false
+        // A woman is addressed «ты устала» even when the model wrote «ты устал» (heard and shown the same).
+        val feminine = SelfGender.feminine(memory.all()) == true && tr(true, false)
+        fun agree(t: String) = if (feminine) SelfGender.agreeFeminine(t) else t
         val voice = sink?.let { out ->
             object : ReplySink {
                 override fun emotion(e: Emotion) = out.emotion(e)
-                override fun sentence(text: String, emotion: Emotion) { spoke = true; out.sentence(text, emotion) }
+                override fun sentence(text: String, emotion: Emotion) { spoke = true; out.sentence(agree(text), emotion) }
             }
         }
         val actions = mutableListOf<ActionRecord>()
@@ -617,7 +620,7 @@ class CompanionAgent(
                     val fallback = if (actions.isNotEmpty()) actions.joinToString("; ") { it.outcome.message } else "…"
                     val full = listOf(said.toString().trim(), parsed.text).filter { it.isNotBlank() }.joinToString(" ").trim()
                     return AgentReply(
-                        text = full.ifBlank { fallback },
+                        text = agree(full.ifBlank { fallback }),
                         emotion = emotion ?: state.mood.dominantEmotion(),
                         actions = actions,
                         usedLlm = true,

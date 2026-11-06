@@ -46,6 +46,58 @@ object SelfGender {
         }
     }
 
+    private val feminineOf = mapOf("готов" to "готова", "рад" to "рада", "уверен" to "уверена", "прав" to "права", "сам" to "сама",
+        "один" to "одна", "занят" to "занята", "должен" to "должна", "согласен" to "согласна", "свободен" to "свободна", "голоден" to "голодна",
+        "болен" to "больна", "счастлив" to "счастлива", "доволен" to "довольна", "способен" to "способна", "обязан" to "обязана", "нужен" to "нужна",
+        "виноват" to "виновата", "умён" to "умна", "умен" to "умна", "влюблён" to "влюблена", "влюблен" to "влюблена", "расстроен" to "расстроена",
+        "удивлён" to "удивлена", "удивлен" to "удивлена", "огорчён" to "огорчена", "огорчен" to "огорчена", "утомлён" to "утомлена", "утомлен" to "утомлена")
+    private val notVerbs = NOT_VERBS.split('|').toSet()
+    /** Who else a clause may be about: past this word the verb is no longer the owner's. */
+    private val otherSubject = setOf("я", "он", "она", "оно", "мы", "вы", "они", "кто", "что", "это", "все", "всё", "мама", "папа")
+    private val word = Regex("""\p{L}+|[.!?;:,—–()«»"]|-(?=\s)""")
+    /** Words set off by commas that don't end the clause: «ты, наверное, устал». */
+    private val parenthetical = setOf("наверное", "кажется", "конечно", "правда", "похоже", "видимо", "ведь", "же", "да", "ну", "наконец", "может",
+        "возможно", "небось", "мрр", "вроде", "честно", "кстати")
+
+    /**
+     * A reply that calls a woman «ты устал», «ты готов» (small models often do, whatever the prompt says) → «ты устала»,
+     * «ты готова»: past-tense verbs and short adjectives within four words after «ты», in the same clause, up to another
+     * subject («ты устал, а я рада» → «ты устала, а я рада»). Nouns like «футбол» are left alone.
+     */
+    fun agreeFeminine(text: String): String {
+        val tokens = word.findAll(text).toList()
+        val out = StringBuilder(text)
+        val edits = ArrayList<Pair<IntRange, String>>()
+        for ((i, t) in tokens.withIndex()) {
+            if (!t.value.equals("ты", ignoreCase = true)) continue
+            var words = 0
+            var aside = false
+            for (k in i + 1 until tokens.size) {
+                val w = tokens[k].value
+                if (w == ",") {
+                    // «ты, наверное, устал»: an aside goes on; any other comma ends the clause («ты знаешь, кот пришёл»).
+                    if (aside) { aside = false; continue }
+                    if (tokens.getOrNull(k + 1)?.value?.lowercase() in parenthetical) { aside = true; continue }
+                    break
+                }
+                if (!w.first().isLetter() || w.lowercase() in otherSubject || w.equals("ты", true) || ++words > 4) break
+                val lw = w.lowercase()
+                val fem = when {
+                    lw in notVerbs || lw.length < 3 -> null
+                    feminineOf.containsKey(lw) -> feminineOf[lw]
+                    lw.endsWith("шёл") || lw.endsWith("шел") -> w.dropLast(3) + "шла"
+                    lw.endsWith("чёл") || lw.endsWith("чел") -> w.dropLast(3) + "чла"
+                    lw.endsWith("лся") -> w.dropLast(3) + "лась"
+                    lw.endsWith("л") && lw.dropLast(1).lastOrNull()?.let { it in "аеиоуыяюё" } == true -> w + "а"
+                    else -> null
+                }
+                if (fem != null) edits += tokens[k].range to fem
+            }
+        }
+        for ((range, fem) in edits.distinctBy { it.first.first }.sortedByDescending { it.first.first }) out.replace(range.first, range.last + 1, fem)
+        return out.toString()
+    }
+
     /** What memory holds: true — feminine, false — masculine, null — not known yet. */
     fun feminine(memories: List<MemoryItem>): Boolean? = memories.sortedByDescending { it.createdAtMs }
         .firstNotNullOfOrNull { when (it.text) { FEMININE_RU -> true; MASCULINE_RU -> false; else -> null } }
