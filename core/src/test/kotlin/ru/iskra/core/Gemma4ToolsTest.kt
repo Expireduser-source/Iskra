@@ -150,6 +150,18 @@ class Gemma4ToolsTest {
     }
 
     @Suppress("unused") private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.content
+
+    /** One fixed answer, piece by piece. */
+    class ScriptedForTests(private val answer: String) : LlamaEngine {
+        override val info = "scripted"
+        override val contextSize = 8192
+        override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, head: Int, onPiece: (String) -> Boolean): String {
+            for (c in answer.chunked(3)) if (!onPiece(c)) break
+            return answer
+        }
+        override fun cancel() = Unit
+        override fun close() = Unit
+    }
 }
 
 /** The evaluation's tool request must reach the model: the phrase parser doesn't know this wording. */
@@ -157,5 +169,33 @@ class EvalToolRequestTest {
     @Test fun theParserLeavesItToTheModel() = withLang(Lang.RU) {
         val now = java.time.LocalDateTime.of(2026, 11, 8, 15, 0)
         assertEquals(null, ru.iskra.core.tools.CommandParser.parse("Через полчаса надо вынуть пирог из духовки, не дай мне забыть.", now))
+    }
+}
+
+/** Letters of a script the person didn't write in are dropped from a phone model's reply (Llama 3.2 1B: «Мैं Аня»). */
+class ForeignScriptTest {
+    private val ru = LocalLlmProvider.BASE_SCRIPTS + LocalLlmProvider.scriptsOf("Привет, меня зовут Аня")
+
+    @Test fun strayLettersGo() {
+        assertEquals("Огромного привета! Аня, это отличная девушка.", LocalLlmProvider.stripForeign("Огромного привета! मैं Аня, это отличная девушка.", ru)
+            .replace(Regex(" {2,}"), " "))
+        assertEquals("гидjenные", LocalLlmProvider.stripForeign("гидروjenные", ru)) // the Arabic «رو» in the middle goes
+        assertEquals("Привет,. Как дела?", LocalLlmProvider.stripForeign("Привет，你好世界。Как дела？", ru))
+        // Emoji, Greek letters in formulas, Latin words stay.
+        assertEquals("Ура! 🎉 π ≈ 3.14, ok", LocalLlmProvider.stripForeign("Ура! 🎉 π ≈ 3.14, ok", ru))
+    }
+
+    @Test fun theOwnersScriptStays() {
+        val hindi = LocalLlmProvider.BASE_SCRIPTS + LocalLlmProvider.scriptsOf("नमस्ते")
+        assertEquals("मैं ठीक हूँ", LocalLlmProvider.stripForeign("मैं ठीक हूँ", hindi))
+    }
+
+    @Test fun anotherLanguageAskedForStays() = withLang(Lang.RU) {
+        runBlocking {
+            val p = LocalLlmProvider({ Gemma4ToolsTest.ScriptedForTests("[happy] По-японски: ありがとう!") }, ChatFormat.GEMMA4, "local:test")
+            assertEquals("[happy] По-японски: ありがとう!", p.complete(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Как сказать «спасибо» по-японски?")))).text)
+            val q = LocalLlmProvider({ Gemma4ToolsTest.ScriptedForTests("[happy] Мрр, ありがとう привет!") }, ChatFormat.GEMMA4, "local:test")
+            assertEquals("[happy] Мрр, привет!", q.complete(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Привет!")))).text.replace(Regex(" {2,}"), " "))
+        }
     }
 }

@@ -296,7 +296,10 @@ class LocalLlmProvider(
         val prompt = rendered.text
         // Small Qwen models sometimes slip Chinese characters into Russian or English; unless the person wrote them, drop them.
         val lastUser = (request.messages.lastOrNull { it is ChatMessage.User } as? ChatMessage.User)?.text.orEmpty()
-        val guard = !lastUser.any(::isCjk)
+        // …and Llama 3.2 1B slipped in Devanagari («Мैं Аня»): letters of a script the person didn't write in go, unless they
+        // asked about another language («как это по-японски?»).
+        val allowed = BASE_SCRIPTS + scriptsOf(lastUser)
+        val guard = !OTHER_LANGUAGE.containsMatchIn(lastUser)
         // Gemma 4 answers straight away with thinking off; if it opens its thought channel anyway, nothing is shown until
         // the channel closes. The beginning waits only while it could still be the channel's opening tag.
         var gate = if (format == ChatFormat.GEMMA4) Gate.WAIT else Gate.OPEN
@@ -350,7 +353,7 @@ class LocalLlmProvider(
                             else s.indexOf(Gemma4Tools.CALL_OPEN).let { at -> if (at < 0) s else { gate = Gate.CALL; s.substring(0, at) } }
                         }
                         if (incoming.isEmpty()) return@generate scope.isActive
-                        var visible = think.feed(incoming).let { if (guard) stripCjk(it) else it }
+                        var visible = think.feed(incoming).let { if (guard) stripForeign(it, allowed) else it }
                         if (!leadDone) {
                             lead.append(visible)
                             val trimmed = trimLead(lead.toString())
@@ -381,7 +384,7 @@ class LocalLlmProvider(
         val (said, made) = if (format == ChatFormat.GEMMA4) Gemma4Tools.parse(reply) else reply to emptyList()
         val calls = if (request.tools.isEmpty()) emptyList() else made.filter { c -> request.tools.any { it.name == c.name } }
         reply = said
-        val final = cleanStart(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()
+        val final = cleanStart(if (guard) stripForeign(reply, allowed).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()
         sincePurr = if (PURR.containsMatchIn(final)) 0 else sincePurr + 1
         LlmResponse(final, calls)
     }
@@ -420,6 +423,43 @@ class LocalLlmProvider(
                 Character.UnicodeScript.HANGUL, Character.UnicodeScript.BOPOMOFO -> true
                 else -> false
             }
+        }
+
+        /** Scripts a reply may always use: Latin, Cyrillic, Greek (formulas), digits and punctuation. */
+        val BASE_SCRIPTS = setOf(Character.UnicodeScript.LATIN, Character.UnicodeScript.CYRILLIC, Character.UnicodeScript.GREEK,
+            Character.UnicodeScript.COMMON, Character.UnicodeScript.INHERITED)
+
+        /** «как это по-японски?», «переведи на арабский», "how do you write it in Chinese": another script is the point. */
+        private val OTHER_LANGUAGE = Regex("""(?iu)перев[ео]д|переведи|по-\p{L}+ски|на\s+\p{L}+ск(?:ом|ий|ой)|иероглиф|алфавит|translat|""" +
+            """\bin\s+(?:japanese|chinese|korean|arabic|hindi|hebrew|thai|greek|georgian|armenian)\b|how\s+(?:do\s+you|to)\s+(?:say|write|spell)""")
+
+        /** The scripts the letters of [s] are written in. */
+        fun scriptsOf(s: String): Set<Character.UnicodeScript> = s.filter { it.isLetter() }.map { Character.UnicodeScript.of(it.code) }.toSet()
+
+        /**
+         * Drops letters of scripts not in [allowed] (CJK, Devanagari, Arabic… slipped in by a small model); full-width
+         * punctuation (，。！) becomes ordinary, with a space before the next word.
+         */
+        fun stripForeign(s: String, allowed: Set<Character.UnicodeScript>): String {
+            val out = StringBuilder(s.length)
+            for (c in s) {
+                val ch = when {
+                    c in '\uFF01'..'\uFF5E' -> (c.code - 0xFEE0).toChar()
+                    c == '\u3002' -> '.'
+                    c == '\u3001' -> ','
+                    c == '\u3000' -> ' '
+                    else -> c
+                }
+                if (ch in '\u3003'..'\u303F') continue
+                // Letters and their marks («ैं» in «मैं») alike; emoji halves (surrogates) and unassigned code points stay.
+                if (!ch.isSurrogate()) {
+                    val script = Character.UnicodeScript.of(ch.code)
+                    if (script !in allowed && script != Character.UnicodeScript.UNKNOWN) continue
+                }
+                if (out.isNotEmpty() && out.last() in ",.!?:;" && ch.isLetter()) out.append(' ')
+                out.append(ch)
+            }
+            return out.toString()
         }
 
         /** Drops CJK letters; full-width punctuation (，。！) becomes ordinary, with a space before the next word. */
