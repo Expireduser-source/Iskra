@@ -255,7 +255,38 @@ class CompanionAgent(
                 else "${if (day == 0) "today" else "tomorrow"} is the owner's $who's birthday — remind them to congratulate"
         }
         CareTalk.pending(conversation.recent(80), today)?.let { notes += CareTalk.note(it, tr(true, false)) }
+        if (shouldAskName()) notes += tr("ты ещё не знаешь, как зовут собеседника — если к месту, спроси (один раз)", "you don't know the person's name yet — if it fits, ask (once)")
         return notes
+    }
+
+    /**
+     * She doesn't know the owner's name after a few messages and hasn't asked yet (in her words or the model's): ask once.
+     * A refusal stays in the chat, so she doesn't ask again.
+     */
+    private fun shouldAskName(): Boolean = stateStore.load().totalUserMessages >= 3 && MemoryTalk.ownerName(memory.all()) == null &&
+        conversation.recent(400).none { it.role == Turn.Role.ASSISTANT && MemoryTalk.askedName.containsMatchIn(it.text) }
+
+    /** «Что у меня завтра?» → «Мрр, смотрю: завтра в 09:00 — позвонить маме; завтра — экзамен по физике.» */
+    private fun agenda(text: String, today: java.time.LocalDate): String? {
+        val (from, to) = MemoryTalk.agendaDays(text, today) ?: return null
+        val ru = tr(true, false)
+        val plans = PlanTalk.known(memory.all()).filter { !it.done && !it.plan.date.isBefore(from) && !it.plan.date.isAfter(to) }
+            .map { "${PlanTalk.whenText(it.plan.date, today, it.plan.ru)} — ${it.plan.what}" }
+        // Reminders say their day as «сегодня в 18:30», «через 10 мин (в 14:35)», «завтра в 09:00» or «9.11 в 10:00».
+        val heads = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.flatMap { d ->
+            when (d) {
+                today -> listOf("сегодня", "через", "today", "in ")
+                today.plusDays(1) -> listOf("завтра", "tomorrow")
+                else -> listOf("${d.dayOfMonth}.${"%02d".format(d.monthValue)} ", d.month.name.take(3).lowercase() + " ${d.dayOfMonth} ")
+            }
+        }.toList()
+        val reminders = runCatching { upcoming() }.getOrDefault(emptyList()).filter { r -> heads.any { r.lowercase().startsWith(it) } }
+        val birthdays = MemoryTalk.theirBirthdays(memory.all()).filter { (_, md) -> generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.any { java.time.MonthDay.from(it) == md } }
+            .map { (who, md) -> if (who.any { it in 'а'..'я' }) "${md.dayOfMonth} ${listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")[md.monthValue - 1]} — день рождения у $who" else "${md.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${md.dayOfMonth} — your $who's birthday" }
+        val all = reminders + plans + birthdays
+        val span = when { from == to && from == today -> tr("сегодня", "today"); from == to && from == today.plusDays(1) -> tr("завтра", "tomorrow"); from == to -> PlanTalk.whenText(from, today, ru); else -> tr("ближайшие дни", "the coming days") }
+        return if (all.isEmpty()) tr("На $span у меня ничего не записано — ни планов, ни напоминаний. Расскажешь, что намечается?", "Nothing's noted for $span — no plans, no reminders. Tell me what's coming up?")
+        else tr("Мрр, смотрю: ", "Mrr, let me see: ") + all.joinToString("; ") + "."
     }
 
     private fun localDate(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
@@ -395,7 +426,11 @@ class CompanionAgent(
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         MemoryTalk.forgetQuery(text)?.let { return forget(it) }
         val today = localDate(clock())
-        val facts = MemoryTalk.facts(text, today)
+        // Right after she asked the name, «Аня» is the answer.
+        val lastSaid = conversation.recent(1).lastOrNull()?.takeIf { it.role == Turn.Role.ASSISTANT }?.text
+        val facts = MemoryTalk.facts(text, today).ifEmpty {
+            listOfNotNull(lastSaid?.takeIf { MemoryTalk.askedName.containsMatchIn(it) }?.let { MemoryTalk.nameAnswer(text) })
+        }
         // Kept even if the model is weak at tools; with a model the reply is the model's (it now sees the facts).
         val added = facts.map { f -> f to rememberFact(f) }
         // «Завтра экзамен», «в пятницу собеседование»: a dated plan, to wish luck on the day and ask how it went.
@@ -406,6 +441,8 @@ class CompanionAgent(
             return AgentReply((kept + planned).joinToString(" ").ifEmpty { tr("Не стану это запоминать: $refused.", "I won't remember that: $refused.") }, Emotion.HAPPY)
         }
         // "Как меня зовут и на кого я учусь?": exact from memory without a model, and instead of a small one (they mixed it up).
+        // «Что у меня завтра?»: plans, reminders and birthdays together, exactly.
+        if (!llmAvailable || smallModel) agenda(text, today)?.let { return AgentReply(it, Emotion.HAPPY) }
         if (!llmAvailable || smallModel) MemoryTalk.recall(text, memory.all(), today)?.let { return AgentReply(it, Emotion.HAPPY) }
         if (!llmAvailable && MemoryTalk.asksName(text)) {
             val name = MemoryTalk.ownerName(memory.all())
@@ -424,6 +461,7 @@ class CompanionAgent(
                 // Small talk without a model still asks how the owner is after a hard day, or how the exam went (once).
                 val care = CareTalk.pending(conversation.recent(80), today)?.let { CareTalk.ask(it) }
                 val ask = care ?: PlanTalk.due(PlanTalk.known(memory.all()), today, now.hour)?.takeIf { !PlanTalk.mentions(it.plan, text) }?.let { PlanTalk.byTheWay(it.plan) }
+                    ?: if (shouldAskName()) tr("Кстати, а как тебя зовут? Хочу знать, как к тебе обращаться.", "By the way, what should I call you? I'd like to know your name.") else null
                 return AgentReply(if (ask != null) a.text + " " + ask else a.text, a.emotion)
             }
         }

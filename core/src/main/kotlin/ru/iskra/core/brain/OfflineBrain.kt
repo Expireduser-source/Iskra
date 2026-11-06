@@ -603,6 +603,45 @@ object MemoryTalk {
 
     fun asksName(text: String) = askName.matches(text.trim())
 
+    /** Iskra asking the owner's name: «Кстати, а как тебя зовут?», "what should I call you?" (in her own or the model's words). */
+    val askedName = Regex("""(?iu)как\s+(?:тебя|к\s+тебе)\s+(?:зовут|обращаться)|как\s+твоё\s+имя|как\s+твое\s+имя|what(?:'s|\s+is)\s+your\s+name|what\s+(?:should|can|do)\s+i\s+call\s+you|how\s+should\s+i\s+call\s+you""")
+
+    private val bareName = Regex("""(?iu)^(?:меня\s+|я\s+|зови\s+(?:меня\s+)?|это\s+|i'm\s+|i\s+am\s+|call\s+me\s+|it's\s+)?(\p{L}[\p{L}-]{1,20})(?:\s+(\p{L}[\p{L}-]{1,20}))?[.!)]*(?:\s*[,!.]?\s*(?:а\s+тебя\??|а\s+ты\??|приятно\s+познакомиться!?|and\s+you\??|nice\s+to\s+meet\s+you!?))?$""")
+    private val notName = setOf("да", "нет", "неа", "ага", "угу", "ок", "окей", "привет", "пока", "спасибо", "хорошо", "ладно", "никак", "неважно",
+        "секрет", "потом", "зачем", "почему", "не", "скажу", "угадай", "сама", "сам", "хозяин", "хозяйка", "человек", "никто", "так", "просто", "ну",
+        "yes", "no", "ok", "okay", "hi", "hello", "thanks", "secret", "nope", "why", "later", "guess", "nobody", "human", "sure", "well", "fine",
+        "устал", "устала", "занят", "занята", "грустно", "весело", "нормально", "отлично", "плохо", "дела", "работаю", "сплю", "тут", "здесь")
+
+    /**
+     * The answer right after she asked the name: «Аня», «Меня Аня», «Аня, а тебя?», "I'm Tom". The same fact as «меня
+     * зовут Аня»; null when it doesn't look like a name («не скажу», «да», «устала»).
+     */
+    fun nameAnswer(text: String): Fact? {
+        val m = bareName.matchEntire(text.trim()) ?: return null
+        val words = listOf(m.groupValues[1], m.groupValues[2]).filter { it.isNotEmpty() }
+        if (words.any { it.lowercase() in notName || it.lowercase() in notNames }) return null
+        // A second word only when it is capitalised: «Аня Смирнова», not «Аня привет».
+        val full = (if (words.size > 1 && !words[1].first().isUpperCase()) words.take(1) else words).joinToString(" ") { cap(it) }
+        val ru = isRu(text)
+        return Fact(if (ru) "Владельца зовут $full" else "The owner's name is $full", 5,
+            if (ru) "Приятно познакомиться, $full! Запомнила." else "Nice to meet you, $full! I'll remember that.")
+    }
+
+    private val agendaRe = Regex("""(?iu)^(?:а\s+)?(?:(?:искра|iskra)[,\s]+)?(?:что\s+у\s+меня\s+(?:сегодня|завтра|послезавтра|на\s+неделе|на\s+выходных)(?:\s+по\s+плану)?|какие\s+у\s+меня\s+планы(?:\s+на\s+(?:сегодня|завтра|послезавтра|неделю|выходные))?|что\s+(?:у\s+меня\s+)?(?:запланировано|по\s+планам)(?:\s+на\s+(?:сегодня|завтра|неделю))?|what(?:'s|\s+is|\s+are)\s+(?:on\s+)?my\s+(?:plans|schedule|agenda)(?:\s+for\s+(?:today|tomorrow|the\s+week))?|what\s+do\s+i\s+have\s+(?:today|tomorrow|this\s+week))\s*[?!.]*$""")
+
+    /** «Что у меня завтра?»: the days asked about (from, to), or null when the message is something else. */
+    fun agendaDays(text: String, today: java.time.LocalDate): Pair<java.time.LocalDate, java.time.LocalDate>? {
+        val t = text.trim().lowercase().replace('ё', 'е')
+        if (!agendaRe.matches(t)) return null
+        return when {
+            "послезавтра" in t -> today.plusDays(2) to today.plusDays(2)
+            "завтра" in t || "tomorrow" in t -> today.plusDays(1) to today.plusDays(1)
+            "сегодня" in t || "today" in t -> today to today
+            "выходн" in t -> PlanTalk.day("на выходных", today)!!.first.let { it to it.plusDays(1) }
+            else -> today to today.plusDays(7)
+        }
+    }
+
     private enum class Topic { NAME, STUDY, WORK, CITY, PET, BIRTHDAY, THEIR_BIRTHDAY, AGE, FAMILY, LIKES, DISLIKES, FAVORITE, PLANS, ALL }
 
     // Each clause of a question about the owner; ё is read as е.

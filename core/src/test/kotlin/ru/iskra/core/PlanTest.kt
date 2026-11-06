@@ -411,3 +411,44 @@ class EverydayPhrasesTest {
             assertTrue(PlanTalk.hear(t, today).plans.isEmpty() && MemoryTalk.fact(t, today) == null, t)
     }
 }
+
+/** She asks the name once and understands a short answer; «что у меня завтра?» gathers plans, reminders and birthdays. */
+class AcquaintanceTest {
+    private fun ms(y: Int, m: Int, d: Int, h: Int) = java.time.LocalDateTime.of(y, m, d, h, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    @Test fun asksTheNameOnceAndHearsAShortAnswer() = withLang(Lang.RU) {
+        runBlocking {
+            val memory = MemoryManager(InMemoryMemoryStore())
+            val convo = InMemoryConversationStore()
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = memory, conversation = convo, stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, clock = { ms(2026, 11, 6, 12) }, random = Random(1))
+            assertFalse(a.handle("привет").text.contains("как тебя зовут"))
+            a.handle("как дела?")
+            val r = a.handle("спасибо")
+            assertTrue(r.text.contains("Кстати, а как тебя зовут?"), r.text)
+            assertEquals("Приятно познакомиться, Аня! Запомнила.", a.handle("Аня, а тебя?").text)
+            assertEquals("Аня", MemoryTalk.ownerName(memory.all()))
+            assertFalse(a.handle("спасибо").text.contains("зовут"))
+        }
+    }
+
+    @Test fun aRefusalIsNotAName() {
+        for (t in listOf("не скажу", "да", "устала", "секрет")) assertNull(MemoryTalk.nameAnswer(t), t)
+        assertEquals("Владельца зовут Аня Смирнова", MemoryTalk.nameAnswer("Меня Аня Смирнова")?.text)
+        withLang(Lang.EN) { assertEquals("The owner's name is Tom", MemoryTalk.nameAnswer("I'm Tom, and you?")?.text) }
+    }
+
+    @Test fun agendaGathersEverything() = withLang(Lang.RU) {
+        runBlocking {
+            val memory = MemoryManager(InMemoryMemoryStore())
+            memory.add("Планы владельца на 7 ноября 2026: экзамен по физике", MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, 0)
+            memory.add("День рождения мамы владельца: 7 ноября", MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, 0)
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, clock = { ms(2026, 11, 6, 12) }, random = Random(1),
+                upcoming = { listOf("сегодня в 18:30 — позвонить в банк", "завтра в 09:00 — взять зачётку") })
+            assertEquals("Мрр, смотрю: завтра в 09:00 — взять зачётку; завтра — экзамен по физике; 7 ноября — день рождения у мамы.", a.handle("Что у меня завтра?").text)
+            assertEquals("Мрр, смотрю: сегодня в 18:30 — позвонить в банк.", a.handle("что у меня сегодня").text)
+            assertTrue(a.handle("что у меня послезавтра?").text.startsWith("На послезавтра у меня ничего не записано"))
+        }
+    }
+}
