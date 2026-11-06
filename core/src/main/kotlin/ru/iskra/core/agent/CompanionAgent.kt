@@ -251,20 +251,27 @@ class CompanionAgent(
      * Things worth knowing today: the owner's birthday, today's and tomorrow's plans (only in the first exchange of the
      * day, so they aren't repeated in every reply) and the plan to ask about.
      */
+    /**
+     * Most important first: how the owner is after a hard day, the owner's birthday, how a plan went, today's and
+     * tomorrow's plans, close people's birthdays, the name. The model on the phone gets only the first one: in the ARM
+     * evaluation Gemma 3 1B, given «вчера было грустно» and «сегодня экзамен» together, answered one and garbled the other.
+     */
     private fun todayNotes(nowMs: Long): List<String> {
         val today = localDate(nowMs)
         val all = memory.all()
         val notes = ArrayList<String>()
+        CareTalk.pending(conversation.recent(80), today)?.let { notes += CareTalk.note(it, tr(true, false)) }
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
         val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
-        notes += PlanTalk.notes(PlanTalk.known(all), today, localHour(nowMs), fresh, tr(true, false))
+        // PlanTalk lists today's and tomorrow's plans first and the one to ask about last; asking how it went comes first here.
+        val plans = PlanTalk.notes(PlanTalk.known(all), today, localHour(nowMs), fresh, tr(true, false))
+        notes += plans.filter { it.contains("спроси, как прошло") || it.contains("ask how it went") } + plans.filterNot { it.contains("спроси, как прошло") || it.contains("ask how it went") }
         if (fresh) for ((who, md) in MemoryTalk.theirBirthdays(all)) {
             val day = when (md) { java.time.MonthDay.from(today) -> 0; java.time.MonthDay.from(today.plusDays(1)) -> 1; else -> continue }
             val whose = if (who.first().isUpperCase()) "у $who" else "у $who владельца"
             notes += if (who.any { it in 'а'..'я' }) "${if (day == 0) "сегодня" else "завтра"} день рождения $whose — напомни поздравить"
                 else "${if (day == 0) "today" else "tomorrow"} is the owner's $who's birthday — remind them to congratulate"
         }
-        CareTalk.pending(conversation.recent(80), today)?.let { notes += CareTalk.note(it, tr(true, false)) }
         if (shouldAskName()) notes += tr("ты ещё не знаешь, как зовут собеседника — если к месту, спроси (один раз)", "you don't know the person's name yet — if it fits, ask (once)")
         return notes
     }
@@ -562,7 +569,7 @@ class CompanionAgent(
             val mem = memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true)
             system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all())) + "\n\n" + composer.compactProfile(mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
-            val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList())
+            val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList()).take(1)
             situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, composer.languageNudge(text, lastReply))
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {

@@ -504,6 +504,9 @@ class AgreementTest {
         assertEquals("Ты футбол смотрела?", g.agreeFeminine("Ты футбол смотрел?"))     // the noun stays, the verb agrees
         assertEquals("Ты устала, а он пришёл.", g.agreeFeminine("Ты устал, а он пришёл."))  // another subject: not hers
         assertEquals("Ты знаешь, кот пришёл?", g.agreeFeminine("Ты знаешь, кот пришёл?"))   // a comma ends the clause
+        // From the ARM evaluation (Gemma 3 1B to «Аня»).
+        assertEquals("Ты просто прекрасна - очень добрая и понимающая.", g.agreeFeminine("Ты просто прекрасен - очень добрый и понимающий."))
+        assertEquals("Помни, что ты замечательная и любимая.", g.agreeFeminine("Помни, что ты замечательный и любимый."))
         assertEquals("Я устала, а ты?", g.agreeFeminine("Я устала, а ты?"))
     }
 
