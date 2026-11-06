@@ -607,3 +607,37 @@ class OfflineTalkTest {
         }
     }
 }
+
+/** Everyday phrases that must get a real answer without any brain (not the «I don't understand yet» fallback). */
+class OfflineCoverageTest {
+    private fun answers(lang: Lang, phrases: List<String>): List<Pair<String, String>> = withLang(lang) {
+        runBlocking {
+            phrases.map { p ->
+                val a = CompanionAgent(persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                    stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, random = Random(7))
+                p to a.handle(p).text
+            }
+        }
+    }
+    // Every line of the "no brain" fallback, by a phrase only it has.
+    private val fallback = Regex("""Мяу\? Это я пока не понимаю|тут нужен «мозг»|без «мозга» я на такое не отвечу|без «мозга» я понимаю немногое|""" +
+        """Meow\? I don't get that yet|that needs a “brain”|without a “brain” I can't answer|without a “brain” I understand only""")
+
+    @Test fun russian() {
+        val missed = answers(Lang.RU, listOf("Привет", "Как дела?", "Что делаешь?", "Спокойной ночи", "Я скучал", "Расскажи анекдот", "Ты меня любишь?",
+            "Спасибо", "Пока", "Кто ты?", "Что ты умеешь?", "Мне скучно", "Мне грустно", "Я устал", "Посоветуй фильм", "Что приготовить на ужин?",
+            "Сколько времени?", "Подбрось монетку", "Ты спишь?", "Помурлычь", "Давай поиграем", "Загадай загадку", "Я поссорился с другом",
+            "Мне страшно", "У меня ничего не получается", "Похвали меня", "Ты кошка?", "Ура, я сдал экзамен!", "Мне одиноко", "Не могу уснуть"))
+            .filter { (_, a) -> fallback.containsMatchIn(a) }
+        assertTrue(missed.isEmpty(), missed.toString())
+    }
+
+    @Test fun english() {
+        val missed = answers(Lang.EN, listOf("Hi", "How are you?", "What are you doing?", "Good night", "I missed you", "Tell me a joke", "Do you love me?",
+            "Thanks", "Bye", "Who are you?", "What can you do?", "I'm bored", "I'm sad", "I'm tired", "Recommend a movie", "What should I cook?",
+            "Flip a coin", "Are you asleep?", "Purr for me", "Let's play", "Tell me a riddle", "I'm scared", "Nothing works", "Praise me",
+            "Are you a cat?", "I did it!", "I feel lonely", "I can't sleep"))
+            .filter { (_, a) -> fallback.containsMatchIn(a) }
+        assertTrue(missed.isEmpty(), missed.toString())
+    }
+}
