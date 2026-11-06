@@ -73,7 +73,7 @@ class AndroidReminderScheduler(private val ctx: Context) : ReminderScheduler {
             val nm = ctx.getSystemService(NotificationManager::class.java)
             if (nm.getNotificationChannel(CHANNEL) == null) {
                 nm.createNotificationChannel(NotificationChannel(CHANNEL, tr("Напоминания", "Reminders"), NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = tr("Напоминания, которые ты попросил поставить", "Reminders you asked me to set")
+                    description = tr("Напоминания, о которых ты просишь", "Reminders you asked me to set")
                 })
             }
         }

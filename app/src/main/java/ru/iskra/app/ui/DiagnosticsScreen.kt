@@ -96,7 +96,7 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
         Text(tr("Диагностика", "Diagnostics"), fontSize = 20.sp)
         Text(
             tr("Журнал хранится только на телефоне (последние ${Diag.log.capacity} событий). В отчёт не попадают " +
-                "ключи API (они замаскированы) и текст переписки. Отправляешь его ты сам — приложение ничего не отправляет.", "The journal is kept only on the phone (the last ${Diag.log.capacity} events). The report never includes API keys (they are masked) or chat text. You send it yourself — the app sends nothing."),
+                "ключи API (они замаскированы) и текст переписки. Отправляешь его только ты — приложение ничего не отправляет.", "The journal is kept only on the phone (the last ${Diag.log.capacity} events). The report never includes API keys (they are masked) or chat text. You send it yourself — the app sends nothing."),
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(onClick = {

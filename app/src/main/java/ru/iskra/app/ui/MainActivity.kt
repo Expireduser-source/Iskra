@@ -277,7 +277,7 @@ private fun MemoryScreen(modifier: Modifier) {
         Text(tr("Что Искра помнит о тебе", "What Iskra remembers about you"), fontSize = 20.sp)
         Text(
             tr("Это обычные записи на телефоне, а не «обучение нейросети». Всё можно удалить. " +
-                "📌 — ты попросил запомнить, 🤖 — предложила модель, 📖 — сжатый пересказ разговоров.", "These are plain entries on the phone, not “neural network training”. Everything can be deleted. 📌 — you asked her to remember, 🤖 — suggested by the model, 📖 — a short recap of conversations."),
+                "📌 — по твоей просьбе, 🤖 — предложила модель, 📖 — сжатый пересказ разговоров.", "These are plain entries on the phone, not “neural network training”. Everything can be deleted. 📌 — you asked her to remember, 🤖 — suggested by the model, 📖 — a short recap of conversations."),
             color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp,
         )
         Spacer(Modifier.size(8.dp))

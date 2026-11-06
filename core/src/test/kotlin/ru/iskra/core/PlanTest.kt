@@ -296,3 +296,36 @@ class CareTest {
         }
     }
 }
+
+/** «я устала» → she addresses the owner «ты устала»; learned from the owner's own words only. */
+class GenderTest {
+    @Test fun readsHowTheOwnerSpeaksOfThemselves() {
+        val g = ru.iskra.core.brain.SelfGender
+        assertEquals('f', g.of("Я сегодня так устала"))
+        assertEquals('f', g.of("я рада тебя видеть"))
+        assertEquals('f', g.of("Вчера я не спала до трёх"))
+        assertEquals('m', g.of("я устал"))
+        assertEquals('m', g.of("Я уже пришёл домой"))
+        assertEquals('m', g.of("я рад"))
+        for (t in listOf("я футбол не смотрю", "я сериал люблю", "Ты сказала: «я рада»", "я иду домой", "мы устали", "она устала"))
+            assertNull(g.of(t), t)
+        assertEquals('f', g.decide(listOf("я устала", "привет", "я так рада")))
+        assertNull(g.decide(listOf("я устала")))                         // one is not enough
+        assertNull(g.decide(listOf("я устала", "я рада", "я устал")))     // disagreeing
+    }
+
+    @Test fun theModelIsToldHowToAddress() = withLang(Lang.RU) {
+        runBlocking {
+            val memory = MemoryManager(InMemoryMemoryStore())
+            val provider = FakeProvider(MutableList(3) { { _: ru.iskra.core.llm.LlmRequest -> LlmResponse("[happy] Мрр!", emptyList()) } })
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { provider }, random = Random(1))
+            a.handle("Я сегодня так устала")
+            assertTrue(provider.requests[0].system.contains("Род собеседника пока неизвестен"))
+            a.handle("но я рада, что ты тут")
+            assertEquals(ru.iskra.core.brain.SelfGender.FEMININE_RU, memory.all().single().text)
+            a.handle("Привет!")
+            assertTrue(provider.requests[2].system.contains("обращайся к ней так же: «ты устала»"), provider.requests[2].system)
+        }
+    }
+}

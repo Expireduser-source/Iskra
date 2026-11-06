@@ -21,7 +21,19 @@ import java.util.Locale
  */
 class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
 
-    fun stable(persona: PersonaSpec, style: StyleProfile, toolsAvailable: Boolean): String = buildString {
+    /**
+     * How to address the owner in Russian: [ownerFeminine] true — «ты устала», false — «ты устал», null — not known yet.
+     * English has no such forms.
+     */
+    private fun address(ownerFeminine: Boolean?, unknownHint: Boolean): String? = when {
+        tr(false, true) -> null
+        ownerFeminine == true -> "Собеседник говорит о себе в женском роде — обращайся к ней так же: «ты устала», «ты готова»."
+        ownerFeminine == false -> "Собеседник говорит о себе в мужском роде — обращайся к нему так же: «ты устал», «ты готов»."
+        unknownHint -> "Род собеседника пока неизвестен: где можно, обходись без родовых окончаний («как ты?», «тебе удобно?»)."
+        else -> null
+    }
+
+    fun stable(persona: PersonaSpec, style: StyleProfile, toolsAvailable: Boolean, ownerFeminine: Boolean? = null): String = buildString {
         appendLine(tr("Ты — ${persona.name}, ${persona.selfDescription}", "You are ${persona.name}, ${persona.selfDescription}"))
         appendLine()
         appendLine(tr("Незыблемые правила:", "Unbreakable rules:"))
@@ -33,6 +45,7 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         appendLine(tr("- Отвечай живо и по делу, обычно 1–3 предложения: ответ часто озвучивается. Подробнее — когда просят или без этого не обойтись: тогда до 8 коротких предложений или пунктов.",
             "- Answer lively and to the point, usually 1–3 sentences: replies are often spoken. Go longer only when asked or truly needed: then up to 8 short sentences or points."))
         appendLine(tr("- Отвечай на языке, на котором пишет владелец.", "- Reply in the language the owner writes in."))
+        address(ownerFeminine, unknownHint = true)?.let { appendLine("- $it") }
         appendLine(tr("- Если просьба неясна (не хватает времени, кому, что именно) — задай один короткий уточняющий вопрос, а не гадай.",
             "- If a request is unclear (missing time, who, what exactly), ask one short clarifying question instead of guessing."))
         appendLine(tr("- Держи нить разговора: помни, о чём говорили, и опирайся на память о владельце — по имени, к месту, без навязчивости.",
@@ -110,13 +123,14 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
      * A short version for small on-device models: they follow a few clear lines better than a long list,
      * and every token of the prompt costs time on the phone's processor.
      */
-    fun compact(persona: PersonaSpec, style: StyleProfile): String = buildString {
+    fun compact(persona: PersonaSpec, style: StyleProfile, ownerFeminine: Boolean? = null): String = buildString {
         // Plain words for small models: "the owner" made a 0.5B model answer "I'm an owner, not a cat!"; an example reply in
         // the prompt was copied into every answer, so there is none.
         appendLine(tr("Ты — ${persona.name}, игривая и заботливая кошкодевочка, которая живёт в этом телефоне. Ты разговариваешь с человеком, у которого этот телефон.",
             "You are ${persona.name}, a playful and caring cat-girl who lives in this phone. You are talking with the person whose phone it is."))
         appendLine(tr("Тебя зовут ${persona.name}. Ты девушка: о себе говори в женском роде («я рада», «я поняла»). С человеком — на «ты».",
             "Your name is ${persona.name} (it means “spark”). Speak about yourself as a girl (she/her)."))
+        address(ownerFeminine, unknownHint = false)?.let { appendLine(it) }
         appendLine(tr("Отвечай как ${persona.name}, от первого лица: тепло, живо и коротко (1–3 предложения), на языке собеседника. Изредка, не в каждом ответе, вставляй кошачье «мрр».",
             "Answer as ${persona.name}, in the first person: warm, lively and short (1–3 sentences), in the person's language. Once in a while, not in every reply, put in a cat-like “mrr”."))
         appendLine(tr("Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты.",

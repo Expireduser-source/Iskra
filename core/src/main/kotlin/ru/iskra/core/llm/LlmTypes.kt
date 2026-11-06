@@ -85,7 +85,7 @@ class LlmException(
         Kind.BAD_RESPONSE -> tr("Модель ответила в непонятном формате.", "The model answered in a format I don't understand.")
         Kind.NOT_CONFIGURED -> tr("Облачная модель не настроена — я работаю в простом офлайн-режиме.", "The cloud model isn't set up — I'm working in simple offline mode.")
         Kind.BALANCE -> tr("На счёте сервиса модели закончились деньги или лимит. Пополни баланс. $OFFLINE", "The model service account is out of money or credits. Top it up. $OFFLINE")
-        Kind.LIMIT -> tr("Сегодняшний лимит облака, который ты задал, исчерпан. До завтра отвечаю без модели. $OFFLINE", "The daily cloud limit you set is used up. Until tomorrow I answer without the model. $OFFLINE")
+        Kind.LIMIT -> tr("Сегодняшний лимит облака из настроек исчерпан. До завтра отвечаю без модели. $OFFLINE", "The daily cloud limit you set is used up. Until tomorrow I answer without the model. $OFFLINE")
         Kind.FREE_QUOTA -> tr("Бесплатные сообщения на сегодня закончились. До завтра отвечаю без модели. $OFFLINE",
             "Today's free messages are used up. Until tomorrow I answer without the model. $OFFLINE")
         Kind.POLICY -> tr("OpenRouter не даёт эту бесплатную модель из-за настроек приватности аккаунта: открой openrouter.ai/settings/privacy " +

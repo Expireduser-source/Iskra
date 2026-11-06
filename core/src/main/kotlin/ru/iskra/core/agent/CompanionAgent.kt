@@ -10,6 +10,7 @@ import ru.iskra.core.brain.SearchMemoryTool
 import ru.iskra.core.brain.NumberWords
 import ru.iskra.core.brain.OfflineBrain
 import ru.iskra.core.brain.PlanTalk
+import ru.iskra.core.brain.SelfGender
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -195,6 +196,7 @@ class CompanionAgent(
         conversation.append(Turn(Turn.Role.USER, text, now))
         if (reply.text.isNotBlank()) conversation.append(Turn(Turn.Role.ASSISTANT, reply.text, clock(), reply.emotion))
         runCatching { settlePlans(text, reply.text, dueBefore, now) }
+        runCatching { learnGender(text, now) }
         // Local commands stay free; an unsuccessful cloud reply must not trigger another request.
         // Only a working cloud model summarizes: not one that just failed, not the slow model on the phone.
         if (provider != null && provider === cloud && reply.usedLlm && reply.error == null && reply.errorKind == null) maybeSummarize(provider)
@@ -300,6 +302,21 @@ class CompanionAgent(
         }
     }
 
+    /**
+     * «я устала» / «я устал»: after two of the owner's messages agree (and none disagree), memory notes how they speak of
+     * themselves, and replies address them the same way. A later change of mind updates the note.
+     */
+    private fun learnGender(text: String, nowMs: Long) {
+        if (SelfGender.of(text) == null) return
+        val said = conversation.recent(80).filter { it.role == Turn.Role.USER }.map { it.text }
+        val g = SelfGender.decide(said) ?: return
+        val note = if (g == 'f') SelfGender.FEMININE_RU else SelfGender.MASCULINE_RU
+        val old = memory.all().filter { it.text == SelfGender.FEMININE_RU || it.text == SelfGender.MASCULINE_RU }
+        if (old.any { it.text == note }) return
+        old.forEach { memory.update(it.copy(text = note)) }
+        if (old.isEmpty()) memory.add(note, MemoryKind.FACT, MemorySource.MODEL_PROPOSED, 3, nowMs)
+    }
+
     /** When she speaks up on her own ([ru.iskra.core.skills.ProactivePolicy]): what about the owner's plans fits the moment. */
     enum class PlanMoment { MORNING, EVENING, ANY }
 
@@ -373,7 +390,7 @@ class CompanionAgent(
         if (!llmAvailable && MemoryTalk.asksName(text)) {
             val name = MemoryTalk.ownerName(memory.all())
             return if (name != null) AgentReply(tr("Тебя зовут $name. Мрр, как такое забыть!", "Your name is $name. Mrr, how could I forget!"), Emotion.HAPPY)
-            else AgentReply(tr("Ты мне ещё не говорил. Скажи «меня зовут …» — запомню.", "You haven't told me yet. Say “my name is …” and I'll remember."), Emotion.CURIOUS)
+            else AgentReply(tr("Я пока не знаю твоего имени. Скажи «меня зовут …» — запомню.", "You haven't told me yet. Say “my name is …” and I'll remember."), Emotion.CURIOUS)
         }
         val now = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault())
         // Speech recognisers write "двадцать пять": try the words as digits if the plain text isn't a command.
@@ -451,13 +468,13 @@ class CompanionAgent(
         if (small) {
             // Steady facts go with the instructions (cached); only memories matching this message come next to it.
             val mem = memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true)
-            system = composer.compact(persona.localized(), state.style) + "\n\n" + composer.compactProfile(mem, now)
+            system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all())) + "\n\n" + composer.compactProfile(mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
             val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList())
             situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, composer.languageNudge(text, lastReply))
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {
-            system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
+            system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty(), ownerFeminine = SelfGender.feminine(memory.all()))
             situation = composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
         }
         val messages = ArrayList<ChatMessage>()

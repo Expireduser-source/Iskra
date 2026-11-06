@@ -332,7 +332,7 @@ fun SkillsSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
                 HourField(s.quietTo) { onChange(s.copy(quietTo = it)) }
             }
             SwitchRow(s.proactiveVoice, tr("Говорить голосом (иначе только облачко)", "Speak aloud (otherwise only the bubble)")) { onChange(s.copy(proactiveVoice = it)) }
-            Hint(tr("Утром при первом включении экрана, когда ты вернулся после долгого перерыва, иногда вечером. Никогда — в тихие часы, при выключенном экране и чаще, чем выбрано. Голосом — только если не играет музыка.", "In the morning when the screen first turns on, when you come back after a long break, sometimes in the evening. Never during quiet hours, with the screen off or more often than chosen. Aloud — only if no music is playing."))
+            Hint(tr("Утром при первом включении экрана, после долгого перерыва, иногда вечером. Никогда — в тихие часы, при выключенном экране и чаще, чем выбрано. Голосом — только если не играет музыка.", "In the morning when the screen first turns on, when you come back after a long break, sometimes in the evening. Never during quiet hours, with the screen off or more often than chosen. Aloud — only if no music is playing."))
         }
     }
     Section(tr("Напоминания", "Reminders")) {

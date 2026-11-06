@@ -16,6 +16,11 @@ memory entries, notes, reminders, the chat history, her mood, your settings, the
 «brain on the phone» if you downloaded one, with its conversation cache (what the model has already read, so it doesn't read the dialogue again after a pause; deleted together with the chat history or a forgotten memory), and the diagnostics journal (the journal contains events and timings, never API keys or chat text). API keys are encrypted with the
 Android Keystore. Android backup of the app is turned off, so this data is not uploaded to cloud backups.
 
+What goes into memory on its own: what you tell about yourself in plain words — your name, city, study or work, pets,
+birthday, age, the names of your family, what you like and dislike — and the plans you mention («exam tomorrow»), so she can
+wish you luck and later ask how it went. Each one is an ordinary entry in «Memory». When yesterday you said you were sad or ill,
+she asks how you are the next day: that comes from the chat history only, nothing extra is saved for it.
+
 You can delete any entry in «Memory», or everything at once with «Erase everything». Uninstalling the app deletes
 all of it. Backup files are created only when you ask (a file you choose) and never contain API keys or the chat.
 
@@ -63,6 +68,11 @@ Changes to this policy are published in this file in the repository. Questions: 
 Всё, что знает Искра, хранится только в закрытом хранилище приложения на телефоне: память, заметки, напоминания,
 переписка, её настроение, настройки, кэш голоса, модель «мозга на телефоне», если ты её скачал, с её кэшем разговора (то, что модель уже прочитала, чтобы после паузы не читать переписку заново; стирается вместе с перепиской или забытой записью памяти), и журнал диагностики (в журнале события и время, но никогда — ключи API
 и текст переписки). Ключи API зашифрованы Android Keystore. Резервное копирование приложения в облако Android выключено.
+
+Что попадает в память само: то, что ты простыми словами рассказываешь о себе, — имя, город, учёба или работа, питомцы,
+день рождения, возраст, имена близких, что любишь и не любишь, — и планы, которые ты упоминаешь («завтра экзамен»), чтобы
+пожелать удачи и потом спросить, как всё прошло. Каждое — обычная запись в «Памяти». Если вчера ты писал, что грустно или
+болеешь, на следующий день она спросит, как ты: это берётся только из переписки, ничего отдельно не сохраняется.
 
 Любую запись можно удалить в «Памяти», всё сразу — кнопкой «Стереть всё». При удалении приложения удаляется всё.
 Файлы резервных копий создаются только по твоей просьбе (в выбранный тобой файл) и никогда не содержат ключей и переписки.

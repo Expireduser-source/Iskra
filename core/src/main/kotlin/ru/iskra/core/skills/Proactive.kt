@@ -109,7 +109,7 @@ class PhraseBank(private val random: Random = Random.Default) {
     })
 
     fun reminder(text: String): String = pick("REMINDER", tr(
-        listOf("Напоминаю: $text.", "Эй, ты просил напомнить: $text.", "Мрр, время: $text.", "Не забудь: $text."),
+        listOf("Напоминаю: $text.", "Эй, напоминаю, как договаривались: $text.", "Мрр, время: $text.", "Не забудь: $text."),
         listOf("Reminder: $text.", "Hey, you asked me to remind you: $text.", "Mrr, it's time: $text.", "Don't forget: $text."),
     ))
 
@@ -153,9 +153,9 @@ class PhraseBank(private val random: Random = Random.Default) {
             "С добрым утром! Не забудь позавтракать.",
         )
         private val RETURN_RU = listOf(
-            "О, ты вернулся! Я тут не скучала. Ну, почти.",
+            "О, ты снова тут! Я не скучала. Ну, почти.",
             "С возвращением. Если что-то нужно — скажи «Искра».",
-            "Мяу, привет! Хорошо, что заглянул.",
+            "Мяу, привет! Хорошо, что ты заглядываешь.",
             "Я тут, на месте. Есть дела для меня?",
         )
         private val IDLE_RU = listOf(
