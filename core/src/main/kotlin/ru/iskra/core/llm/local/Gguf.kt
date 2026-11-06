@@ -50,6 +50,9 @@ fun ChatFormat.Companion.detect(template: String?, fallback: ChatFormat = ChatFo
     template == null -> fallback
     "<|turn>" in template -> ChatFormat.GEMMA4
     "<start_of_turn>" in template -> ChatFormat.GEMMA
+    "<|start_header_id|>" in template -> ChatFormat.LLAMA3
     "<|im_start|>" in template -> if ("enable_thinking" in template || "<think>" in template) ChatFormat.CHATML_NO_THINK else ChatFormat.CHATML
+    "<|assistant|>" in template && "<|end|>" in template -> ChatFormat.PHI
+    "[INST]" in template -> ChatFormat.MISTRAL
     else -> fallback
 }

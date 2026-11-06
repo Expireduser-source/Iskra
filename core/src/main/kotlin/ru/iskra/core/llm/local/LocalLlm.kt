@@ -112,7 +112,13 @@ enum class ChatFormat {
      * answer right after <|turn>model (Google's model card). An empty thought channel there — what the bigger models
      * write themselves — made E2B think aloud for a hundred tokens before most answers (ARM evaluation, 0.12.7).
      */
-    GEMMA4;
+    GEMMA4,
+    /** Llama 3.x and the many models built on it: <|start_header_id|>role<|end_header_id|> … <|eot_id|>. */
+    LLAMA3,
+    /** Mistral and Mixtral and their fine-tunes: [INST] … [/INST] answer</s>; no system role, it goes into the first message. */
+    MISTRAL,
+    /** Phi-3 / Phi-4-mini: <|system|> / <|user|> / <|assistant|> … <|end|>. */
+    PHI;
 
     companion object
 
@@ -175,6 +181,34 @@ enum class ChatFormat {
                 }
                 sb.append("<|turn>model\n")
             }
+            LLAMA3, PHI -> {
+                // Like ChatML: instructions first, the situation as a system turn right before the last message.
+                fun open(role: String) = if (this == LLAMA3) "<|start_header_id|>$role<|end_header_id|>\n\n" else "<|$role|>\n"
+                val close = if (this == LLAMA3) "<|eot_id|>" else "<|end|>\n"
+                sb.append(open("system")).append(request.system.trim()).append(close)
+                head = sb.length
+                turns.forEachIndexed { i, (role, text) ->
+                    val last = i == turns.lastIndex
+                    if (last) stable = sb.length
+                    if (last && situation.isNotEmpty()) sb.append(open("system")).append(situation).append(close)
+                    sb.append(open(role)).append(text.trim()).append(close)
+                    if (last && situation.isEmpty()) stable = sb.length
+                }
+                if (turns.isEmpty()) stable = sb.length
+                sb.append(open("assistant"))
+            }
+            MISTRAL -> {
+                // [INST] instructions\n\nfirst message [/INST] answer</s>[INST] situation\n\nlast message [/INST]
+                turns.forEachIndexed { i, (role, text) ->
+                    val last = i == turns.lastIndex
+                    if (role == "assistant") { sb.append(' ').append(text.trim()).append("</s>"); return@forEachIndexed }
+                    sb.append("[INST] ")
+                    if (i == 0) { sb.append(request.system.trim()).append("\n\n"); head = sb.length }
+                    if (last && situation.isNotEmpty()) { stable = sb.length; sb.append(situation).append("\n\n") }
+                    sb.append(text.trim()).append(" [/INST]")
+                    if (last && situation.isEmpty()) stable = sb.length
+                }
+            }
         }
         return Prompt(sb.toString(), stable, head)
     }
@@ -184,6 +218,9 @@ enum class ChatFormat {
         CHATML, CHATML_NO_THINK -> listOf("<|im_end|>", "<|im_start|>", "<|endoftext|>")
         GEMMA -> listOf("<end_of_turn>", "<start_of_turn>")
         GEMMA4 -> listOf("<turn|>", "<|turn>")
+        LLAMA3 -> listOf("<|eot_id|>", "<|start_header_id|>", "<|end_of_text|>")
+        MISTRAL -> listOf("</s>", "[INST]")
+        PHI -> listOf("<|end|>", "<|user|>", "<|assistant|>", "<|endoftext|>")
     }
 }
 

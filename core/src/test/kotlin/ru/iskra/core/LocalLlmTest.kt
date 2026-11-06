@@ -201,10 +201,12 @@ class LocalLlmTest {
                 assertTrue(b.text.startsWith(a.text.take(a.stable)), "$f: the next prompt differs within the stable part")
             }
             // With a situation, the stable part ends right before it (it won't be in the next prompt).
-            assertTrue(p1.text.substring(p1.stable).removePrefix("<|im_start|>system\n").startsWith("Ты помнишь"), "$f: ${p1.text.substring(p1.stable)}")
+            assertTrue(p1.text.substring(p1.stable).removePrefix("<|im_start|>system\n").removePrefix("<|start_header_id|>system<|end_header_id|>\n\n")
+                .removePrefix("<|system|>\n").startsWith("Ты помнишь"), "$f: ${p1.text.substring(p1.stable)}")
             // Without one, the newest message is stable too: only the answer header follows it.
             assertTrue(p2.text.substring(0, p2.stable).endsWith("Как дела?" + mapOf(ChatFormat.GEMMA to "<end_of_turn>\n",
-                ChatFormat.GEMMA4 to "<turn|>\n").getOrDefault(f, "<|im_end|>\n")), "$f: ${p2.text.substring(p2.stable)}")
+                ChatFormat.GEMMA4 to "<turn|>\n", ChatFormat.LLAMA3 to "<|eot_id|>", ChatFormat.PHI to "<|end|>\n", ChatFormat.MISTRAL to " [/INST]")
+                .getOrDefault(f, "<|im_end|>\n")), "$f: ${p2.text.substring(p2.stable)}")
             assertEquals(f.render(r3), p3.text)
             // When the dialogue window moves on (the oldest turns leave), the instructions still start the prompt.
             val moved = f.prompt(r3.copy(messages = r3.messages.drop(2)))
