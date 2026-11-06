@@ -570,3 +570,40 @@ class PromptWordingTest {
         assertEquals("Привет! Как дела?", ru.iskra.core.agent.ReplyParser.parse("[happy] Привет, [имя]! Как дела?").text)
     }
 }
+
+/** Without any brain she still answers everyday feelings and plays riddles. */
+class OfflineTalkTest {
+    private val now = java.time.LocalDateTime.of(2026, 11, 6, 15, 0)
+    private fun brain() = ru.iskra.core.brain.OfflineBrain(Random(5))
+
+    @Test fun everydayFeelingsAreAnswered() = withLang(Lang.RU) {
+        val b = brain()
+        for (t in listOf("Я скучал", "Мне страшно", "У меня ничего не получается", "Похвали меня", "Я поссорился с другом", "Ура, я сдал экзамен!",
+            "Не могу уснуть", "Ты спишь?", "Помурлычь", "Ты кошка?", "Посоветуй фильм", "Что приготовить на ужин?", "Мне одиноко", "Давай поиграем")) {
+            val a = b.chat(t, now, ru.iskra.core.persona.Emotion.NEUTRAL, null)
+            assertNotNull(a, t)
+        }
+        withLang(Lang.EN) { assertNotNull(b.chat("I missed you", now, ru.iskra.core.persona.Emotion.NEUTRAL, null)) }
+        Unit
+    }
+
+    @Test fun riddles() = withLang(Lang.RU) {
+        val b = brain()
+        val q = b.chat("загадай загадку", now, ru.iskra.core.persona.Emotion.NEUTRAL, null)!!.text
+        assertTrue(q.startsWith("Загадка!"), q)
+        assertTrue(b.chat("не знаю что это такое вообще наверное", now, ru.iskra.core.persona.Emotion.NEUTRAL, null)?.text?.startsWith("Загадка!") != true)
+        // A fresh riddle: a wrong guess, then giving up.
+        b.chat("ещё загадку", now, ru.iskra.core.persona.Emotion.NEUTRAL, null)
+        assertTrue(b.chat("кирпич", now, ru.iskra.core.persona.Emotion.NEUTRAL, null)!!.text.startsWith("Не-а"))
+        assertTrue(b.chat("сдаюсь", now, ru.iskra.core.persona.Emotion.NEUTRAL, null)!!.text.startsWith("Это "))
+    }
+
+    @Test fun weatherWordOrder() {
+        val today = java.time.LocalDateTime.of(2026, 11, 6, 12, 0)
+        for ((t, day) in listOf("какая сегодня погода" to "today", "какая завтра погода" to "tomorrow", "какая погода завтра" to "tomorrow", "погода в Казани на завтра" to "tomorrow")) {
+            val p = ru.iskra.core.tools.CommandParser.parse(t, today) as? ru.iskra.core.tools.CommandParser.Parsed.Tool
+            assertNotNull(p, t)
+            assertEquals(day, p.args["day"].toString().trim('"'), t)
+        }
+    }
+}

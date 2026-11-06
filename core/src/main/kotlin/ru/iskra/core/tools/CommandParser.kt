@@ -146,8 +146,9 @@ object CommandParser {
                 if (r.inMinutes != null) put("in_minutes", r.inMinutes.toInt()) else put("at", r.at.toString().take(16))
             })
         }
-        Regex("""^(?:какая |что с |как там |как с |скажи )?погод[аеуы]?(?: на)?(?: (сегодня|завтра))?(?: в (?:городе )?([а-я][а-я -]{1,40}?))?(?: (сегодня|завтра))?$""").find(t)?.let { m ->
-            return weather(m.groupValues[1].ifEmpty { m.groupValues[3] }, m.groupValues[2])
+        // «какая погода завтра», «какая сегодня погода», «погода в Казани на завтра»
+        Regex("""^(?:какая |что с |как там |как с |скажи )?(?:(сегодня|завтра) )?(?:будет )?погод[аеуы]?(?: на)?(?: (сегодня|завтра))?(?: в (?:городе )?([а-я][а-я -]{1,40}?))?(?: (?:на )?(сегодня|завтра))?$""").find(t)?.let { m ->
+            return weather(m.groupValues[1].ifEmpty { m.groupValues[2] }.ifEmpty { m.groupValues[4] }, m.groupValues[3])
         }
         Regex("""^(?:нужен ли|брать ли|взять ли) зонт(?:ик)?(?: (сегодня|завтра))?$""").find(t)?.let { return weather(it.groupValues[1], "") }
         Regex("""^(?:сколько (?:сейчас )?градусов|холодно ли|тепло ли)(?: на улице| сегодня)?$""").find(t)?.let { return weather("", "") }

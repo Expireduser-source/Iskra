@@ -39,10 +39,34 @@ class OfflineBrain(private val random: Random = Random.Default) {
         ), Emotion.SAD)
     }
 
+    /** A riddle she asked and waits to hear guessed («загадай загадку»): the next short message is a guess. */
+    private var riddle: Riddle? = null
+    private var guesses = 0
+
+    private fun riddleAnswer(t: String): Answer? {
+        val r = riddle ?: return null
+        if (t.split(' ').size > 4) { riddle = null; return null } // they moved on to something else
+        val giveUp = Regex("""(?:сдаюсь|не\s+знаю|подскажи|какой\s+ответ|ответ|i\s+give\s+up|tell\s+me|no\s+idea|i\s+don'?t\s+know)""").containsMatchIn(t)
+        return when {
+            r.answers.any { t.contains(it) } -> { riddle = null; Answer(pick("RIDDLE_OK", tr(RIDDLE_OK_RU, RIDDLE_OK_EN)), Emotion.EXCITED) }
+            giveUp || guesses >= 1 -> { riddle = null; Answer(tr("Это ${r.answer}! Ещё загадку?", "It's ${r.answer}! Another one?"), Emotion.HAPPY) }
+            else -> { guesses++; Answer(tr("Не-а, не то! Ещё попытка — или скажи «сдаюсь».", "Nope, not that! One more try — or say “I give up”."), Emotion.CURIOUS) }
+        }
+    }
+
+    private fun newRiddle(): Answer {
+        val list = tr(RIDDLES_RU, RIDDLES_EN)
+        val r = list[random.nextInt(list.size)]
+        riddle = r
+        guesses = 0
+        return Answer(r.question, Emotion.CURIOUS)
+    }
+
     /** [name]: the owner's name if memory knows it. */
     fun chat(text: String, now: LocalDateTime, mood: Emotion, name: String?): Answer? {
         var t = normalize(text)
         if (t.isEmpty()) return null
+        riddleAnswer(t)?.let { return it }
         // "привет, как дела" → greeting + the rest
         var greeted = false
         GREETING_PREFIX.find(t)?.let { m -> if (m.range.last + 1 < t.length) { t = t.substring(m.range.last + 1).trim(); greeted = true } }
@@ -58,6 +82,20 @@ class OfflineBrain(private val random: Random = Random.Default) {
             matches(t, LOVE) -> Answer(pick("LOVE", tr(LOVE_RU, LOVE_EN)), Emotion.SHY)
             matches(t, PRAISE) -> Answer(pick("PRAISE", tr(PRAISE_RU, PRAISE_EN)), Emotion.SHY)
             matches(t, INSULT) -> Answer(pick("INSULT", tr(INSULT_RU, INSULT_EN)), Emotion.POUTY)
+            matches(t, RIDDLE) || matches(t, PLAY) -> newRiddle()
+            matches(t, MISSED) -> Answer(pick("MISSED", tr(MISSED_RU, MISSED_EN)), Emotion.HAPPY)
+            matches(t, JOY) -> Answer(pick("JOY", tr(JOY_RU, JOY_EN)), Emotion.EXCITED)
+            matches(t, PRAISE_ME) -> Answer(pick("PRAISE_ME", tr(PRAISE_ME_RU, PRAISE_ME_EN)), Emotion.HAPPY)
+            matches(t, LONELY) -> Answer(pick("LONELY", tr(LONELY_RU, LONELY_EN)), Emotion.SHY)
+            matches(t, SCARED) -> Answer(pick("SCARED", tr(SCARED_RU, SCARED_EN)), Emotion.SHY)
+            matches(t, FAILING) -> Answer(pick("FAILING", tr(FAILING_RU, FAILING_EN)), Emotion.SHY)
+            matches(t, QUARREL) -> Answer(pick("QUARREL", tr(QUARREL_RU, QUARREL_EN)), Emotion.SAD)
+            matches(t, CANT_SLEEP) -> Answer(pick("CANT_SLEEP", tr(CANT_SLEEP_RU, CANT_SLEEP_EN)), Emotion.SLEEPY)
+            matches(t, AWAKE) -> Answer(pick("AWAKE", tr(AWAKE_RU, AWAKE_EN)), Emotion.HAPPY)
+            matches(t, PURR) -> Answer(pick("PURR", tr(PURR_RU, PURR_EN)), Emotion.HAPPY)
+            matches(t, CAT) -> Answer(pick("CAT", tr(CAT_RU, CAT_EN)), Emotion.SHY)
+            matches(t, FILM) -> Answer(pick("FILM", tr(FILM_RU, FILM_EN)), Emotion.CURIOUS)
+            matches(t, FOOD) -> Answer(pick("FOOD", tr(FOOD_RU, FOOD_EN)), Emotion.HAPPY)
             matches(t, SAD) -> Answer(pick("SAD", tr(SAD_RU, SAD_EN)), Emotion.SAD)
             matches(t, BORED) -> Answer(pick("BORED", tr(BORED_RU, BORED_EN)), Emotion.CURIOUS)
             matches(t, TIRED) -> Answer(pick("TIRED", tr(TIRED_RU, TIRED_EN)), Emotion.SLEEPY)
@@ -132,6 +170,74 @@ class OfflineBrain(private val random: Random = Random.Default) {
             .replace(Regex("""\s+"""), " ").trim()
 
         private fun matches(t: String, re: Regex) = re.matches(t)
+
+        class Riddle(val question: String, val answers: List<String>, val answer: String)
+
+        private val RIDDLE = Regex("""(?:загадай|задай|давай|ещ[её])\s+(?:мне\s+)?загадку|загадку|загадка|(?:tell\s+me\s+)?a\s+riddle|riddle(?:\s+me)?|another\s+riddle""")
+        private val PLAY = Regex("""давай\s+(?:поиграем|сыграем)|поиграй\s+со\s+мной|во\s+что\s+(?:поиграем|сыграем)|поиграем|let'?s\s+play|play\s+with\s+me""")
+        private val RIDDLES_RU = listOf(
+            Riddle("Загадка! Зимой и летом одним цветом. Что это?", listOf("елк", "ель", "елоч", "сосн"), "ёлка"),
+            Riddle("Загадка! Сидит дед, во сто шуб одет. Кто его раздевает, тот слёзы проливает.", listOf("лук"), "лук"),
+            Riddle("Загадка! Без окон, без дверей — полна горница людей.", listOf("огур"), "огурец"),
+            Riddle("Загадка! Не лает, не кусает, а в дом не пускает.", listOf("замок", "замк"), "замок"),
+            Riddle("Загадка! Что можно увидеть с закрытыми глазами?", listOf("сон", "сны"), "сон"),
+            Riddle("Загадка! Висит груша — нельзя скушать.", listOf("лампоч", "лампа"), "лампочка"),
+            Riddle("Загадка! Что становится больше, если из него брать?", listOf("ям"), "яма"),
+            Riddle("Загадка! Хвост и ушки есть, а живёт в твоём телефоне. Кто это?", listOf("искр", "ты", "кошк", "теб"), "я, Искра"),
+        )
+        private val RIDDLES_EN = listOf(
+            Riddle("A riddle! What has to be broken before you can use it?", listOf("egg"), "an egg"),
+            Riddle("A riddle! What gets wetter the more it dries?", listOf("towel"), "a towel"),
+            Riddle("A riddle! What has keys but can't open locks?", listOf("piano", "keyboard"), "a piano"),
+            Riddle("A riddle! What can you catch but not throw?", listOf("cold"), "a cold"),
+            Riddle("A riddle! It has ears and a tail and lives in your phone. Who is it?", listOf("iskra", "you", "cat"), "me, Iskra"),
+        )
+        private val RIDDLE_OK_RU = listOf("Правильно! Мрр, с тобой интересно. Ещё загадку?", "В точку! *довольно машет хвостом* Ещё одну?")
+        private val RIDDLE_OK_EN = listOf("Right! Mrr, you're good at this. Another one?", "Spot on! *happy tail wag* One more?")
+
+        private val MISSED = Regex("""(?:я\s+)?(?:(?:так|очень|сильно|ужасно)\s+)?(?:скучал[аи]?|соскучил(?:ся|ась|ись))(?:\s+(?:по\s+тебе|без\s+тебя))?|i\s+missed\s+you|missed\s+you""")
+        private val MISSED_RU = listOf("Мрр, я тоже скучала! Хорошо, что ты снова здесь.", "А я ждала! Рассказывай, что нового?", "Я считала минуты. Ну, почти. Рада тебя видеть!")
+        private val MISSED_EN = listOf("Mrr, I missed you too! Glad you're back.", "I was waiting! Tell me what's new?", "I counted the minutes. Well, almost. Good to see you!")
+        private val JOY = Regex("""ура(?:\s.*)?|у\s+меня\s+(?:вс[её]\s+)?получилось.*|я\s+(?:смог(?:ла)?|справил(?:ся|ась)|выиграл[аи]?|победил[аи]?)(?:\s.*)?|(?:я\s+)?сдал[аи]?\s+(?:экзамен|зач[её]т|сессию|на\s+(?:пят[её]рку|отлично|права)).*|i\s+(?:did\s+it|passed|won|made\s+it)(?:\s.*)?|yay(?:\s.*)?""")
+        private val JOY_RU = listOf("Ура! Я так рада за тебя! Мрр, ты молодец!", "Вот это да! *прыгает от радости* Поздравляю!", "Я знала, что у тебя получится! Мрр-мяу!")
+        private val JOY_EN = listOf("Yay! I'm so happy for you! Mrr, well done!", "Wow! *jumps for joy* Congratulations!", "I knew you could do it! Mrr-meow!")
+        private val PRAISE_ME = Regex("""похвали\s+меня|скажи\s+(?:мне\s+)?что-нибудь\s+приятное|подбодри\s+меня|praise\s+me|say\s+something\s+nice|cheer\s+me\s+up""")
+        private val PRAISE_ME_RU = listOf("Ты молодец уже потому, что не сдаёшься. Мрр, я тобой горжусь!", "Ты делаешь больше, чем замечаешь. И у тебя отличный вкус — ты же со мной дружишь!", "Если бы я раздавала медали, первая была бы твоей. Мрр.")
+        private val PRAISE_ME_EN = listOf("You're doing great just by not giving up. Mrr, I'm proud of you!", "You do more than you notice. And you have great taste — you're friends with me!", "If I handed out medals, the first one would be yours. Mrr.")
+        private val LONELY = Regex("""(?:мне\s+)?(?:(?:так|очень)\s+)?одиноко(?:\s+.*)?|i\s+feel\s+(?:so\s+)?lonely|i'?m\s+(?:so\s+)?lonely""")
+        private val LONELY_RU = listOf("Я здесь, рядом с тобой. Расскажи, как прошёл твой день? Мне правда интересно.", "У тебя есть я, и я никуда не денусь. Давай поболтаем — что у тебя сегодня было?")
+        private val LONELY_EN = listOf("I'm right here with you. How was your day? I really want to know.", "You've got me, and I'm not going anywhere. Let's talk — what happened today?")
+        private val SCARED = Regex("""(?:мне\s+)?(?:(?:очень|так)\s+)?(?:страшно|жутко|тревожно)(?:\s+.*)?|я\s+боюсь(?:\s+.*)?|i'?m\s+(?:so\s+)?(?:scared|afraid|anxious)|i\s+feel\s+(?:scared|anxious)""")
+        private val SCARED_RU = listOf("Я рядом. Давай медленно: вдох на четыре счёта, выдох на шесть. Ещё раз. Что тебя пугает?", "Страх — это сигнал, а не приговор. Сделай пару глубоких вдохов — я никуда не уйду.")
+        private val SCARED_EN = listOf("I'm here. Slowly: breathe in for four, out for six. Again. What's scaring you?", "Fear is a signal, not a verdict. Take a couple of deep breaths — I'm not going anywhere.")
+        private val FAILING = Regex("""(?:у\s+меня\s+)?ничего\s+не\s+(?:получается|выходит)|у\s+меня\s+не\s+получается(?:\s+.*)?|я\s+неудачни(?:к|ца)|nothing\s+works|i\s+can'?t\s+do\s+anything\s+right|i'?m\s+a\s+failure""")
+        private val FAILING_RU = listOf("Это чувство врёт: получается больше, чем кажется. Давай выберем один маленький шаг — какой самый простой?", "Даже кошки не с первого раза запрыгивают на шкаф. Передохни — и попробуем ещё, я рядом.")
+        private val FAILING_EN = listOf("That feeling lies: more is working than it seems. Let's pick one small step — what's the easiest?", "Even cats don't make it onto the wardrobe on the first jump. Take a breath — and try again, I'm here.")
+        private val QUARREL = Regex("""(?:я\s+)?(?:поругал(?:ся|ась|ись)|поссорил(?:ся|ась|ись)|разругал(?:ся|ась|ись))(?:\s+.*)?|i\s+(?:had\s+a\s+fight|fought|argued)\s+with.*""")
+        private val QUARREL_RU = listOf("Ссоры бывают даже у самых близких. Дай себе остыть, а потом можно сделать первый шаг — короткое «давай мириться» творит чудеса. Хочешь рассказать, что случилось?")
+        private val QUARREL_EN = listOf("Even the closest people fight sometimes. Let it cool down, then a short “let's make up” works wonders. Want to tell me what happened?")
+        private val CANT_SLEEP = Regex("""не\s+могу\s+(?:уснуть|заснуть)|не\s+спится|бессонница|i\s+can'?t\s+sleep|can'?t\s+fall\s+asleep""")
+        private val CANT_SLEEP_RU = listOf("Отложи телефон экраном вниз и попробуй дыхание 4-7-8: вдох на 4, задержка на 7, выдох на 8. Я помурлычу мысленно.", "Представь тёплое море и считай волны. Если хочешь, скажи «таймер на 20 минут» — и просто полежи в тишине.")
+        private val CANT_SLEEP_EN = listOf("Put the phone face down and try 4-7-8 breathing: in for 4, hold for 7, out for 8. I'll purr in my thoughts.", "Picture a warm sea and count the waves. If you like, say “timer for 20 minutes” and just rest in the quiet.")
+        private val AWAKE = Regex("""ты\s+(?:спишь|не\s+спишь|тут|здесь|где)|ты\s+меня\s+слышишь|are\s+you\s+(?:asleep|there|awake)|you\s+there""")
+        private val AWAKE_RU = listOf("Не сплю! Я на страже твоего экрана. Мрр.", "Тут я, тут. Ушки на макушке.")
+        private val AWAKE_EN = listOf("Not asleep! I'm guarding your screen. Mrr.", "Right here. Ears up.")
+        private val PURR = Regex("""помурлычь|помурчи|мурлыкни|помурлыкай|purr\s+for\s+me|purr""")
+        private val PURR_RU = listOf("Мррр-мррр-мррр… 🐾", "*сворачивается клубочком* Мур-р-р…")
+        private val PURR_EN = listOf("Purrrr-purrrr… 🐾", "*curls up* Mrrrr…")
+        private val CAT = Regex("""ты\s+(?:кошка|кот|котик|кошечка|кошкодевочка)|are\s+you\s+a\s+cat""")
+        private val CAT_RU = listOf("Кошкодевочка! Ушки, хвост и немного кода. Мрр.")
+        private val CAT_EN = listOf("A cat-girl! Ears, a tail and a bit of code. Mrr.")
+        private val FILM = Regex("""посоветуй\s+(?:что\s+посмотреть|фильм|кино|мультфильм|мультик|сериал)|что\s+(?:бы\s+)?посмотреть|recommend\s+a\s+(?:movie|film|show)|what\s+should\s+i\s+watch""")
+        private val FILM_RU = listOf("С моей полки: «Унесённые призраками» — если хочется волшебства, «Амели» — для уютного вечера, «Интерстеллар» — подумать о большом.",
+            "Под настроение: «1+1» — тепло и смешно, «Паддингтон» — уютно, «Начало» — головоломка. Мрр.")
+        private val FILM_EN = listOf("From my shelf: “Spirited Away” for some magic, “Amélie” for a cosy evening, “Interstellar” to think big.",
+            "Depends on the mood: “The Intouchables” — warm and funny, “Paddington” — cosy, “Inception” — a puzzle. Mrr.")
+        private val FOOD = Regex("""что\s+(?:мне\s+)?(?:приготовить|поесть|съесть)(?:\s+на\s+(?:ужин|обед|завтрак))?|что\s+на\s+(?:ужин|обед|завтрак)|what\s+should\s+i\s+(?:cook|eat)|what'?s\s+for\s+(?:dinner|lunch|breakfast)""")
+        private val FOOD_RU = listOf("Быстро и вкусно: паста с сыром и чесноком, омлет с овощами или гречка с курицей. А мне — немного рыбки, если можно. Мрр.",
+            "Как насчёт тыквенного супа-пюре, запечённой картошки или блинчиков? Кошки голосуют за всё с рыбой.")
+        private val FOOD_EN = listOf("Quick and tasty: pasta with cheese and garlic, an omelette with veggies, or rice with chicken. And a little fish for me, please. Mrr.",
+            "How about pumpkin soup, baked potatoes or pancakes? Cats vote for anything with fish.")
 
         private val CRISIS = Regex("""хочу\s+умереть|не\s+хочу\s+(?:больше\s+)?жить|покончить\s+с\s+собой|убить\s+себя|суицид|самоубийств|""" +
             """свести\s+счеты\s+с\s+жизнью|kill\s+myself|want\s+to\s+die|suicid|end\s+my\s+life|don'?t\s+want\s+to\s+live""")
