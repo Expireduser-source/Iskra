@@ -139,12 +139,22 @@ class MemoryManager(
         data class Rejected(val reason: String) : AddResult
     }
 
-    fun add(text: String, kind: MemoryKind, source: MemorySource, importance: Int, nowMs: Long): AddResult {
+    /**
+     * The entries as last read: one message reads memory a dozen times (facts, plans, notes, the prompt), and on a phone
+     * with thousands of entries each read is a database query. Every change through this manager drops it.
+     */
+    private var cache: List<MemoryItem>? = null
+    private val lock = Any()
+    private fun <T> changing(block: () -> T): T = synchronized(lock) { try { block() } finally { cache = null } }
+
+    fun add(text: String, kind: MemoryKind, source: MemorySource, importance: Int, nowMs: Long): AddResult = changing { addNow(text, kind, source, importance, nowMs) }
+
+    private fun addNow(text: String, kind: MemoryKind, source: MemorySource, importance: Int, nowMs: Long): AddResult {
         val clean = text.trim().replace(Regex("\\s+"), " ")
         if (clean.length < 3) return AddResult.Rejected(tr("слишком коротко", "too short"))
         if (clean.length > maxTextLength) return AddResult.Rejected(tr("слишком длинно (до $maxTextLength символов)", "too long (up to $maxTextLength characters)"))
         if (looksSensitive(clean)) return AddResult.Rejected(tr("похоже на пароль или номер карты — такое я не храню", "looks like a password or a card number — I don't keep that"))
-        val all = store.all()
+        val all = all()
         val toks = TextNorm.tokens(clean).toSet()
         all.firstOrNull { similar(toks, TextNorm.tokens(it.text).toSet()) }?.let { return AddResult.Duplicate(it) }
         if (all.size >= maxItems) {
@@ -166,20 +176,20 @@ class MemoryManager(
      * dialogue cache breaks wherever the prompt changes).
      */
     fun context(query: String, nowMs: Long, profileLimit: Int = 5, relatedLimit: Int = 6, recentLimit: Int = 2, onlyMatching: Boolean = false): MemoryContext {
-        val all = store.all()
+        val all = all()
         val profile = all.filter { it.kind != MemoryKind.EPISODE && it.importance >= 4 }
             .sortedWith(compareByDescending<MemoryItem> { it.importance }.thenByDescending { it.createdAtMs }).take(profileLimit)
         val recent = all.filter { it.kind == MemoryKind.EPISODE }.sortedByDescending { it.createdAtMs }.take(recentLimit)
         val used = (profile + recent).map { it.id }.toSet()
         val rest = all.filter { it.id !in used }
         val related = if (onlyMatching) retriever.matching(query, rest, relatedLimit, nowMs) else retriever.retrieve(query, rest, relatedLimit, nowMs)
-        store.touch((profile + related + recent).map { it.id }, nowMs)
+        changing { store.touch((profile + related + recent).map { it.id }, nowMs) }
         return MemoryContext(profile, related, recent.sortedBy { it.createdAtMs })
     }
 
     fun relevant(query: String, limit: Int, nowMs: Long): List<MemoryItem> {
-        val found = retriever.retrieve(query, store.all(), limit, nowMs)
-        store.touch(found.map { it.id }, nowMs)
+        val found = retriever.retrieve(query, all(), limit, nowMs)
+        changing { store.touch(found.map { it.id }, nowMs) }
         return found
     }
 
@@ -190,7 +200,7 @@ class MemoryManager(
     fun match(query: String, limit: Int = 5): List<Pair<MemoryItem, Double>> {
         val q = TextNorm.tokens(query).toSet()
         if (q.isEmpty()) return emptyList()
-        return store.all().map { item ->
+        return all().map { item ->
             val toks = TextNorm.tokens(item.text).toSet()
             item to q.count { it in toks }.toDouble() / q.size
         }.filter { it.second > 0 }
@@ -198,16 +208,16 @@ class MemoryManager(
             .take(limit)
     }
 
-    fun all() = store.all()
+    fun all(): List<MemoryItem> = synchronized(lock) { cache ?: store.all().also { cache = it } }
     /** Rewrites one memory in place (a plan becomes «было» once she asked how it went). */
-    fun update(item: MemoryItem) = store.update(item)
-    fun delete(id: Long) { store.delete(id); onForget() }
+    fun update(item: MemoryItem) = changing { store.update(item) }
+    fun delete(id: Long) { changing { store.delete(id) }; onForget() }
     /**
      * Drops an entry the owner replaced with a newer value (a new city, a moved or called-off plan) — not a request to
      * forget, so the on-phone model's cached dialogue is kept (deleting it means a slow reload on the next reply).
      */
-    fun replaced(id: Long) = store.delete(id)
-    fun deleteAll() { store.deleteAll(); onForget() }
+    fun replaced(id: Long) = changing { store.delete(id) }
+    fun deleteAll() { changing { store.deleteAll() }; onForget() }
 
     /**
      * Restore from a backup. The same rules as for new memories apply: no passwords / card numbers,
@@ -219,7 +229,7 @@ class MemoryManager(
             .filter { it.text.length in 3..maxTextLength && !looksSensitive(it.text) }
             .take(maxItems)
             .toList()
-        store.replaceAll(ok)
+        changing { store.replaceAll(ok) }
         return items.size - ok.size
     }
 
