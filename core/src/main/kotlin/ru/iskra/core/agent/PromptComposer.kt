@@ -36,7 +36,7 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
 
     /** [rules]: what the owner turned on in Settings → «Свобода модели»; none by default. */
     fun stable(persona: PersonaSpec, style: StyleProfile, toolsAvailable: Boolean, ownerFeminine: Boolean? = null,
-               rules: Set<ModelRule> = emptySet()): String = buildString {
+               rules: Set<ModelRule> = emptySet(), ownWords: String = ""): String = buildString {
         appendLine(tr("Ты — ${persona.name}, ${persona.selfDescription}", "You are ${persona.name}, ${persona.selfDescription}"))
         appendLine()
         appendLine(tr("Незыблемые правила:", "Unbreakable rules:"))
@@ -61,6 +61,7 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         persona.speechStyle.forEach { appendLine("- $it") }
         appendLine(tr("Любишь: ${persona.likes.joinToString(", ")}. Не любишь: ${persona.dislikes.joinToString(", ")}.", "You like: ${persona.likes.joinToString(", ")}. You dislike: ${persona.dislikes.joinToString(", ")}."))
         style.describeForPrompt().takeIf { it.isNotEmpty() }?.let { appendLine(it) }
+        ownWordsLine(ownWords)?.let { appendLine(it) }
         if (toolsAvailable) {
             appendLine()
             appendLine(tr("Инструменты:", "Tools:"))
@@ -127,7 +128,8 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
      * A short version for small on-device models: they follow a few clear lines better than a long list,
      * and every token of the prompt costs time on the phone's processor.
      */
-    fun compact(persona: PersonaSpec, style: StyleProfile, ownerFeminine: Boolean? = null, rules: Set<ModelRule> = emptySet()): String = buildString {
+    fun compact(persona: PersonaSpec, style: StyleProfile, ownerFeminine: Boolean? = null, rules: Set<ModelRule> = emptySet(),
+                ownWords: String = ""): String = buildString {
         // Plain words for small models: "the owner" made a 0.5B model answer "I'm an owner, not a cat!"; an example reply in
         // the prompt was copied into every answer, so there is none.
         appendLine(tr("Ты — ${persona.name}, игривая и заботливая кошкодевочка, которая живёт в этом телефоне. Ты разговариваешь с человеком, у которого этот телефон.",
@@ -145,6 +147,7 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         appendLine(tr("Начни ответ с тега настроения: [happy], [curious], [shy], [sad] или [neutral].",
             "Start the reply with a mood tag: [happy], [curious], [shy], [sad] or [neutral]."))
         style.describeForPrompt().takeIf { it.isNotEmpty() }?.let { appendLine(it) }
+        ownWordsLine(ownWords)?.let { appendLine(it) }
     }.trim()
 
     /**
@@ -182,6 +185,16 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
     private val translation = Regex("(?iu)(перев[её]д|переведи|по-английски|по-русски|на английск|на русск|translat|in russian|in english)")
 
     /**
+     * What the owner wrote in Settings → «Свобода модели» → «Свои указания»: their own instructions, after the manner of
+     * speech so they take precedence over it. Trimmed to [OWN_WORDS_MAX] characters.
+     */
+    private fun ownWordsLine(ownWords: String): String? {
+        val t = ownWords.trim().replace(Regex("""\n{3,}"""), "\n\n").take(OWN_WORDS_MAX)
+        if (t.isEmpty()) return null
+        return tr("Пожелания владельца (они важнее манеры речи выше): ", "The owner's own instructions (they come before the manner of speech above): ") + t
+    }
+
+    /**
      * A reply in another script than the message («Ты человек?» — «Uh... I think so.», Gemma 3 1B in the ARM evaluation),
      * unless a translation was asked for: the nudge for a second try, else null.
      */
@@ -211,4 +224,9 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         .replace(Regex("Владел(ец|ьца|ьцу|ьцем|ьце)")) { m -> "Человек" + mapOf("ец" to "", "ьца" to "а", "ьцу" to "у", "ьцем" to "ом", "ьце" to "е")[m.groupValues[1]] }
         .replace(Regex("владел(ец|ьца|ьцу|ьцем|ьце)")) { m -> "человек" + mapOf("ец" to "", "ьца" to "а", "ьцу" to "у", "ьцем" to "ом", "ьце" to "е")[m.groupValues[1]] }
         .replace("The owner's", "The person's").replace("the owner's", "the person's").replace("The owner", "The person").replace("the owner", "the person")
+
+    companion object {
+        /** How much of the owner's own instructions goes into the prompt. */
+        const val OWN_WORDS_MAX = 1000
+    }
 }

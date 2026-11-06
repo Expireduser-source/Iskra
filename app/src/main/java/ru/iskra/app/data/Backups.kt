@@ -43,6 +43,7 @@ object Backups {
         "quietTo" to tr("Тихие часы до", "Quiet hours to"), "proactiveVoice" to tr("Заговаривает голосом", "Speaks aloud"),
         "crisisHelp" to tr("Помощь в кризисе", "Help in a crisis"), "aiHonesty" to tr("Говорит, что она программа", "Says she is a program"),
         "noGuilt" to tr("Не давит на чувства", "No guilt trips"), "specialists" to tr("Советует специалиста", "Suggests a professional"),
+        "ownWords" to tr("Свои указания модели", "Own instructions to the model"),
     )
 
     /** Returns the number of memory items written. */

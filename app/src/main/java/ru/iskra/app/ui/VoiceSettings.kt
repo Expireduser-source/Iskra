@@ -356,6 +356,17 @@ fun SkillsSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
         SwitchRow(s.specialists, tr("Советует специалиста по здоровью, праву и деньгам", "Suggests a professional on health, law and money"), tag = "specialists") {
             onChange(s.copy(specialists = it))
         }
+        OutlinedTextField(
+            value = s.ownWords,
+            onValueChange = { onChange(s.copy(ownWords = it.take(ru.iskra.core.agent.PromptComposer.OWN_WORDS_MAX))) },
+            label = { Text(tr("Свои указания модели", "Your own instructions to the model")) },
+            placeholder = { Text(tr("Например: говори коротко и с юмором, зови меня капитаном", "For example: be brief and funny, call me captain")) },
+            minLines = 2, maxLines = 6, modifier = Modifier.fillMaxWidth().testTag("ownWords"),
+        )
+        Hint(tr("Твои слова идут в указания модели (облачной и на телефоне) и важнее её обычной манеры речи. " +
+                "${s.ownWords.length} из ${ru.iskra.core.agent.PromptComposer.OWN_WORDS_MAX} знаков.",
+            "Your words go into the model's instructions (cloud and phone) and come before her usual manner of speech. " +
+                "${s.ownWords.length} of ${ru.iskra.core.agent.PromptComposer.OWN_WORDS_MAX} characters."))
         Hint(tr("Всегда остаются: подтверждение действий с телефоном, честность о том, что сделано, и защита от команд, спрятанных в заметках " +
                 "и найденных текстах. Собственная осторожность облачных моделей и Gemma — часть самих моделей, приложение её не меняет.",
             "Always kept: confirmation of actions on the phone, honesty about what was done, and protection from commands hidden in notes " +

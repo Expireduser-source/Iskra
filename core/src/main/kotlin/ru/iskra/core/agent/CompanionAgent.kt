@@ -91,6 +91,8 @@ class CompanionAgent(
      * answers freely — nothing replaces its answers and no prohibitions go into its instructions.
      */
     private val rules: () -> Set<ModelRule> = { emptySet() },
+    /** The owner's own instructions to the model (Settings → «Свобода модели» → «Свои указания»), read on every message. */
+    private val ownWords: () -> String = { "" },
 ) {
     private val moodEngine = MoodEngine(persona.traits)
     private val mutex = Mutex()
@@ -661,14 +663,14 @@ class CompanionAgent(
         if (small) {
             // Steady facts go with the instructions (cached); only memories matching this message come next to it.
             val mem = forPrompt(memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true), now)
-            system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all()), rules()) + "\n\n" + composer.compactProfile(mem, now)
+            system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all()), rules(), ownWords()) + "\n\n" + composer.compactProfile(mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
             val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList()).take(1)
             situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, nudge ?: composer.languageNudge(text, lastReply))
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {
             system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty(),
-                ownerFeminine = SelfGender.feminine(memory.all()), rules = rules())
+                ownerFeminine = SelfGender.feminine(memory.all()), rules = rules(), ownWords = ownWords())
             situation = composer.situation(state.mood, forPrompt(memory.context(text, now), now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
         }
         val messages = ArrayList<ChatMessage>()

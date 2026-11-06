@@ -115,6 +115,8 @@ data class AppSettings(
     val aiHonesty: Boolean = false,
     val noGuilt: Boolean = false,
     val specialists: Boolean = false,
+    /** «Свои указания»: the owner's own instructions to the model, in their words (up to 1000 characters). */
+    val ownWords: String = "",
 ) {
     val modelRules: Set<ModelRule> get() = buildSet {
         if (crisisHelp) add(ModelRule.CRISIS)
@@ -170,7 +172,11 @@ class SettingsRepo(context: Context) {
         aiHonesty = prefs.getBoolean("aiHonesty", false),
         noGuilt = prefs.getBoolean("noGuilt", false),
         specialists = prefs.getBoolean("specialists", false),
+        ownWords = prefs.getString("ownWords", "") ?: "",
     )
+
+    /** Read on every message by the agent. */
+    fun ownWords(): String = prefs.getString("ownWords", "") ?: ""
 
     /** Read on every message by the agent, so a switch works as soon as it is saved. None by default. */
     fun modelRules(): Set<ModelRule> = buildSet {
@@ -211,7 +217,7 @@ class SettingsRepo(context: Context) {
         "avatarLook" to s.avatarLook.name, "economicalEar" to s.economicalEar,
         "weatherCity" to s.weatherCity, "proactive" to s.proactive.name, "quietFrom" to s.quietFrom, "quietTo" to s.quietTo,
         "proactiveVoice" to s.proactiveVoice, "crisisHelp" to s.crisisHelp, "aiHonesty" to s.aiHonesty, "noGuilt" to s.noGuilt,
-        "specialists" to s.specialists,
+        "specialists" to s.specialists, "ownWords" to s.ownWords,
     )
 
     /** Applies known, well-typed values from a backup over [base]; unknown names and wrong types are ignored. */
@@ -260,6 +266,7 @@ class SettingsRepo(context: Context) {
             aiHonesty = bool("aiHonesty") ?: base.aiHonesty,
             noGuilt = bool("noGuilt") ?: base.noGuilt,
             specialists = bool("specialists") ?: base.specialists,
+            ownWords = str("ownWords")?.take(ru.iskra.core.agent.PromptComposer.OWN_WORDS_MAX) ?: base.ownWords,
         )
     }
 
@@ -302,6 +309,7 @@ class SettingsRepo(context: Context) {
             .putBoolean("aiHonesty", s.aiHonesty)
             .putBoolean("noGuilt", s.noGuilt)
             .putBoolean("specialists", s.specialists)
+            .putString("ownWords", s.ownWords.take(ru.iskra.core.agent.PromptComposer.OWN_WORDS_MAX))
             .apply()
     }
 }

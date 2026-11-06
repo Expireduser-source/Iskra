@@ -254,4 +254,28 @@ class CrisisTest {
 
     @Suppress("unused")
     private fun userText(r: LlmRequest) = (r.messages.last() as ChatMessage.User).text
+
+    /** The owner's own instructions go into both prompts, after the manner of speech; empty adds nothing. */
+    @Test fun theOwnersOwnInstructions() = withLang(Lang.RU) {
+        val c = ru.iskra.core.agent.PromptComposer()
+        val style = ru.iskra.core.persona.StyleProfile()
+        val words = "Говори коротко и зови меня капитаном."
+        val stable = c.stable(Personas.ISKRA, style, toolsAvailable = true, ownWords = words)
+        assertTrue(stable.contains("Пожелания владельца (они важнее манеры речи выше): $words"), stable)
+        assertTrue(stable.indexOf(words) > stable.indexOf("Манера речи"))
+        assertTrue(c.compact(Personas.ISKRA, style, ownWords = words).contains(words))
+        assertFalse(c.stable(Personas.ISKRA, style, toolsAvailable = true).contains("Пожелания владельца"))
+        assertEquals(ru.iskra.core.agent.PromptComposer.OWN_WORDS_MAX + "Пожелания владельца (они важнее манеры речи выше): ".length,
+            c.compact(Personas.ISKRA, style, ownWords = "а".repeat(5000)).lines().first { it.startsWith("Пожелания") }.length)
+        runBlocking {
+            val phone = PhoneModel()
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { phone }, random = Random(1), ownWords = { words })
+            agent.handle("Привет")
+            assertTrue(phone.asked.single().system.contains(words))
+        }
+        Unit
+    }
 }

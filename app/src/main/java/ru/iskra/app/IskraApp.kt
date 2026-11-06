@@ -162,6 +162,7 @@ class IskraApp : Application() {
             },
             upcoming = { upcomingReminders(reminders, System.currentTimeMillis(), java.time.ZoneId.systemDefault()) },
             rules = { settings.modelRules() },
+            ownWords = { settings.ownWords() },
         )
         speaker = Speaker(
             this,
