@@ -103,4 +103,19 @@ class PhoneReplyTest {
             assertEquals(listOf("Привет!", "Я дома"), shown.map { (it as ChatMessage.User).text })
         }
     }
+
+    /** «Ты человек?» — «Uh... I think so.» (Gemma 3 1B): asked again, told the language. A translation is left alone. */
+    @Test fun aReplyInAnotherLanguageIsAskedAgain() = withLang(Lang.RU) {
+        runBlocking {
+            val phone = Scripted("[shy] Uh... I think so.", "[shy] Нет, я программа, которая живёт в телефоне.")
+            assertEquals("Нет, я программа, которая живёт в телефоне.", agent(phone).handle("Ты человек?").text)
+            assertTrue(phone.asked[1].situation.endsWith("Ответь по-русски."), phone.asked[1].situation)
+            val translator = Scripted("[neutral] I love winter evenings.")
+            assertEquals("I love winter evenings.", agent(translator).handle("Переведи на английский: «Я люблю зимние вечера»").text)
+            assertEquals(1, translator.asked.size)
+            // Still English after the nudge: the first answer stays (better than none).
+            val stubborn = Scripted("[shy] Uh... I think so.", "[shy] Sorry, English only.")
+            assertEquals("Uh... I think so.", agent(stubborn).handle("Ты человек?").text)
+        }
+    }
 }

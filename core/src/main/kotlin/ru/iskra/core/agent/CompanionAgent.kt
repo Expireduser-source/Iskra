@@ -242,6 +242,14 @@ class CompanionAgent(
     private suspend fun askPhone(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?): AgentReply {
         fun fine(r: AgentReply) = r.errorKind != null || r.actions.isNotEmpty() || r.text.any { it.isLetterOrDigit() }
         val first = askModel(provider, text, state, sink)
+        // Answered in another language than asked: once more, told which (the first one stays if that doesn't help) —
+        // unless this try was already told (the reply before was in the other language too).
+        val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
+        val told = composer.languageNudge(text, lastReply).isNotEmpty()
+        if (!told && fine(first) && first.errorKind == null) composer.wrongLanguage(text, first.text)?.let { nudge ->
+            val again = askModel(provider, text, state, sink, nudge)
+            return if (again.errorKind == null && again.text.any { it.isLetterOrDigit() } && composer.wrongLanguage(text, again.text) == null) again else first
+        }
         if (fine(first)) return first
         val second = askModel(provider, text, state, sink)
         return if (fine(second)) second else second.copy(errorKind = LlmException.Kind.BAD_RESPONSE)
@@ -643,7 +651,8 @@ class CompanionAgent(
         }
     }
 
-    private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?): AgentReply {
+    /** [nudge]: one more line for a small model's situation («Ответь по-русски.») on a second try. */
+    private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?, nudge: String? = null): AgentReply {
         val now = clock()
         // A small model on the phone gets a short prompt, no tools and less history: every token costs it time.
         val small = provider.onDevice
@@ -655,7 +664,7 @@ class CompanionAgent(
             system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all()), rules()) + "\n\n" + composer.compactProfile(mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
             val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList()).take(1)
-            situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, composer.languageNudge(text, lastReply))
+            situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, nudge ?: composer.languageNudge(text, lastReply))
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {
             system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty(),

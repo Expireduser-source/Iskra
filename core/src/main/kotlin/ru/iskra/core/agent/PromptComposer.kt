@@ -181,6 +181,17 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
 
     private val translation = Regex("(?iu)(перев[её]д|переведи|по-английски|по-русски|на английск|на русск|translat|in russian|in english)")
 
+    /**
+     * A reply in another script than the message («Ты человек?» — «Uh... I think so.», Gemma 3 1B in the ARM evaluation),
+     * unless a translation was asked for: the nudge for a second try, else null.
+     */
+    fun wrongLanguage(message: String, reply: String): String? {
+        val asked = script(message) ?: return null
+        val replied = script(reply) ?: return null
+        if (asked == replied || translation.containsMatchIn(message)) return null
+        return if (asked == 'r') "Ответь по-русски." else "Answer in English."
+    }
+
     /** 'r' for mostly Cyrillic text, 'e' for mostly Latin, null when it's mixed or too short to tell. */
     private fun script(s: String): Char? {
         val cyr = s.count { it in 'а'..'я' || it in 'А'..'Я' || it == 'ё' || it == 'Ё' }
