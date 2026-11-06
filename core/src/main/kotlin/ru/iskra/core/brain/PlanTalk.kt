@@ -243,6 +243,7 @@ object PlanTalk {
             val whose = (otherRu.find(s) ?: uOther.find(s.substring(0, at.first)))?.groupValues?.get(1)?.lowercase()
             if (whose != null && whose in pronouns) continue
             val full = if (whose == null || what.contains(" у ")) what else "$what у ${owners[whose] ?: whose}"
+            if (full.startsWith("день рождения у ")) continue // someone's birthday is kept as a yearly date (MemoryTalk), not a one-off plan
             plans += Plan(day.first, full, kind, gender, true)
         }
         return Heard(plans.distinctBy { it.what.lowercase() to it.date }, cancelled.distinct())

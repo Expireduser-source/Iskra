@@ -387,11 +387,75 @@ object MemoryTalk {
         petEn.find(t)?.let { m -> return Fact("The owner has a ${m.groupValues[1].lowercase()} named ${cap(m.groupValues[2])}", 4,
             "Got it: your ${m.groupValues[1].lowercase()} ${cap(m.groupValues[2])}. Say mrr from me!") }
         birthdayFact(t, today)?.let { return it }
+        theirBirthdayFact(t, today)?.let { return it }
         family(t)?.let { return it }
         ageFact(t, today)?.let { return it }
         favoriteFact(t)?.let { return it }
         tasteFact(t)?.let { return it }
         return null
+    }
+
+    // Birthdays of the people close to the owner: «у мамы день рождения 12 марта», «день рождения у брата в субботу»,
+    // «мама родилась 5 июня», «у Маши день рождения 3 мая», "my mom's birthday is March 12".
+    private const val REL_GEN = "мамы|матери|папы|отца|сестры|сестр[её]нки|брата|братика|дочери|дочки|сына|жены|мужа|девушки|парня|бабушки|дедушки|деда|подруги|друга"
+    private val theirBirthday = Regex("""(?iu)(?<!\p{L})у\s+(?:мо(?:ей|его)\s+)?((?:старш|младш|лучш)\p{L}+\s+)?(\p{L}+)\s+(?:\p{L}+\s+){0,2}?(?:день\s+рождения|днюха)(?!\p{L})|(?<!\p{L})(?:день\s+рождения|днюха)\s+у\s+(?:мо(?:ей|его)\s+)?((?:старш|младш|лучш)\p{L}+\s+)?(\p{L}+)""")
+    private val bornRel = Regex("""(?iu)^(?:а\s+)?(?:мо(?:я|й)\s+)?($REL_NOM)\s+родил(?:ся|ась)\s+(.{3,30}?)[.!]*$""")
+    private val genOf = mapOf("мама" to "мамы", "мать" to "мамы", "матери" to "мамы", "папа" to "папы", "отец" to "папы", "отца" to "папы",
+        "сестра" to "сестры", "сестрёнка" to "сестрёнки", "сестренка" to "сестрёнки", "сестренки" to "сестрёнки", "брат" to "брата", "братик" to "братика",
+        "дочь" to "дочки", "дочка" to "дочки", "дочери" to "дочки", "сын" to "сына", "жена" to "жены", "муж" to "мужа", "девушка" to "девушки",
+        "парень" to "парня", "бабушка" to "бабушки", "дедушка" to "дедушки", "дед" to "дедушки", "деда" to "дедушки", "подруга" to "подруги", "друг" to "друга")
+    private val notPeople = setOf("меня", "тебя", "него", "неё", "нее", "нас", "вас", "них", "кого", "всех", "всего", "одного")
+    private val theirBirthdayEn = Regex("""(?iu)^my\s+((?:older|younger|little|big|best)\s+)?($REL_EN)(?:'s)?\s+birthday\s+is\s+(?:on\s+)?(.{3,30}?)[.!]*$""")
+    private val relGenRe = Regex("""^(?:$REL_GEN)$""", RegexOption.IGNORE_CASE)
+
+    /** «у мамы день рождения 12 марта» → «День рождения мамы владельца: 12 марта», every year: she reminds to congratulate. */
+    private fun theirBirthdayFact(t: String, today: java.time.LocalDate): Fact? {
+        if (t.trimEnd().endsWith("?") || pastBirthday.containsMatchIn(t)) return null
+        theirBirthdayEn.find(t)?.let { m ->
+            val md = TimeTalk.monthDay(m.groupValues[3]) ?: PlanTalk.day(t, today)?.first?.let { java.time.MonthDay.from(it) } ?: return null
+            val who = (m.groupValues[1].trim().lowercase() + " " + m.groupValues[2].lowercase()).trim().replace(Regex("""\s+"""), " ")
+            val date = "${monthsEn[md.monthValue - 1]} ${md.dayOfMonth}"
+            return Fact("The owner's $who's birthday: $date", 3, "Got it: your $who's birthday is $date. I'll remind you to congratulate them!")
+        }
+        if (!isRu(t)) return null
+        var who: String? = null
+        var mod = ""
+        var rest = t
+        theirBirthday.find(t)?.let { m ->
+            who = m.groupValues[2].ifEmpty { m.groupValues[4] }
+            mod = m.groupValues[1].ifEmpty { m.groupValues[3] }.trim().lowercase()
+            rest = t.removeRange(m.range)
+        }
+        bornRel.find(t)?.let { m -> who = m.groupValues[1]; rest = m.groupValues[2] }
+        val w = who ?: return null
+        val lw = w.lowercase().replace('ё', 'е')
+        if (lw in notPeople) return null
+        val person = when {
+            genOf.containsKey(lw) || relGenRe.matches(lw) -> {
+                val rel = genOf[lw] ?: lw
+                // «у младшей сестры», «у старшего брата»: the adjective agrees with the relative.
+                val adj = Regex("""^(старш|младш|лучш)""").find(mod)?.value?.let { it + if (rel.endsWith("ы") || rel.endsWith("и")) "ей" else "его" }
+                listOfNotNull(adj, rel).joinToString(" ")
+            }
+            w.first().isUpperCase() -> w // a name, as said: «у Маши»
+            else -> return null
+        }
+        val md = TimeTalk.monthDay(rest) ?: PlanTalk.day(t, today)?.first?.let { java.time.MonthDay.from(it) } ?: return null
+        val date = "${md.dayOfMonth} ${monthsGen[md.monthValue - 1]}"
+        val named = person.first().isUpperCase()
+        return Fact("День рождения ${if (named) person else "$person владельца"}: $date", 3, "Запомнила: у $person день рождения $date. Напомню поздравить!")
+    }
+
+    /** «Сегодня день рождения у мамы — не забудь поздравить! Мрр.» ([today] false: tomorrow, the evening before). */
+    fun theirBirthdayLine(who: String, today: Boolean): String = if (isRu(who))
+        (if (today) "Сегодня" else "Завтра") + " день рождения у $who — не забудь поздравить" + (if (today) "! Мрр." else ", мрр.")
+    else (if (today) "Today" else "Tomorrow") + " is your $who's birthday — don't forget to congratulate" + (if (today) "! Mrr." else ", mrr.")
+
+    /** Birthdays of the owner's people in memory: who («мамы», «Маши», "mom") and the day; the owner's own is not here. */
+    fun theirBirthdays(memories: List<MemoryItem>): List<Pair<String, java.time.MonthDay>> = memories.mapNotNull { item ->
+        Regex("""^День рождения (.+?): (.+)$""").find(item.text)?.takeIf { it.groupValues[1] != "владельца" }?.let { m ->
+            TimeTalk.monthDay(m.groupValues[2])?.let { m.groupValues[1].removeSuffix(" владельца") to it }
+        } ?: Regex("""^The owner's (.+?)'s birthday: (.+)$""").find(item.text)?.let { m -> TimeTalk.monthDay(m.groupValues[2])?.let { m.groupValues[1] to it } }
     }
 
     private fun birthdayFact(t: String, today: java.time.LocalDate): Fact? {
@@ -506,6 +570,8 @@ object MemoryTalk {
         Regex("""^(?:Владелец живёт в|The owner lives in) """) to { _ -> "city" },
         Regex("""^(?:Владельцу \d+ (?:лет|год|года) \(на|The owner is \d+ \(as of) """) to { _ -> "age" },
         Regex("""^(?:День рождения владельца|The owner's birthday):""") to { _ -> "birthday" },
+        Regex("""^День рождения (.+?): """) to { m -> "birthday:" + m.groupValues[1].lowercase() },
+        Regex("""^The owner's (.+?)'s birthday: """) to { m -> "birthday:" + m.groupValues[1].lowercase() },
         Regex("""^(?:Владелец учится (?:на|в|во) |The owner studies )""") to { _ -> "study" },
         Regex("""^(?:Владелец работает|The owner works) """) to { _ -> "work" },
         Regex("""^(?:\p{L}+ )?(\p{L}+) владельца зовут """) to { m -> "family:" + m.groupValues[1].lowercase() },
@@ -534,7 +600,7 @@ object MemoryTalk {
 
     fun asksName(text: String) = askName.matches(text.trim())
 
-    private enum class Topic { NAME, STUDY, WORK, CITY, PET, BIRTHDAY, AGE, FAMILY, LIKES, DISLIKES, FAVORITE, PLANS, ALL }
+    private enum class Topic { NAME, STUDY, WORK, CITY, PET, BIRTHDAY, THEIR_BIRTHDAY, AGE, FAMILY, LIKES, DISLIKES, FAVORITE, PLANS, ALL }
 
     // Each clause of a question about the owner; ё is read as е.
     private val topics: List<Pair<Topic, Regex>> = listOf(
@@ -544,6 +610,7 @@ object MemoryTalk {
         Topic.CITY to """(?:где|в\s+каком\s+городе)\s+я\s+живу|where\s+do\s+i\s+live""",
         Topic.PET to """как\s+зовут\s+(?:мо(?:его|ю)\s+)?(?:кота|кошку|собаку|пса|попугая|хомяка|кролика|черепаху)|what(?:'s|\s+is)\s+my\s+(?:cat|dog|parrot|hamster|rabbit|turtle)(?:'s)?\s+name""",
         Topic.BIRTHDAY to """когда\s+(?:у\s+меня\s+)?(?:мой\s+)?день\s+рождения|when(?:'s|\s+is)\s+my\s+birthday""",
+        Topic.THEIR_BIRTHDAY to """когда\s+(?:у\s+)?(?:мо(?:ей|его)\s+)?(\p{L}+(?:\s+\p{L}+)?)\s+день\s+рождения|когда\s+день\s+рождения\s+у\s+(?:мо(?:ей|его)\s+)?(\p{L}+(?:\s+\p{L}+)?)|when(?:'s|\s+is)\s+my\s+(\p{L}+(?:\s+\p{L}+)?)'s\s+birthday""",
         Topic.AGE to """(?:(?:ты\s+)?(?:помнишь|знаешь)\s+)?сколько\s+мне\s+лет|how\s+old\s+am\s+i""",
         Topic.FAMILY to """как\s+зовут\s+(?:мо(?:его|ю)\s+)?(?:(?:старш|младш|лучш)\p{L}+\s+)?(?:$REL_ACC)|what(?:'s|\s+is)\s+my\s+(?:(?:older|younger|little|big)\s+)?(?:$REL_EN)(?:'s)?\s+name""",
         Topic.DISLIKES to """(?:(?:ты\s+)?(?:помнишь|знаешь)\s+)?что\s+я\s+не\s+люблю|что\s+мне\s+не\s+нравится|what\s+do\s+i\s+(?:hate|dislike)|what\s+don't\s+i\s+like""",
@@ -633,6 +700,12 @@ object MemoryTalk {
             Topic.CITY -> city
             Topic.PET -> pet(m.value)
             Topic.BIRTHDAY -> birthday
+            Topic.THEIR_BIRTHDAY -> {
+                val asked = (m.groupValues[1].ifEmpty { m.groupValues[2] }.ifEmpty { m.groupValues[3] }).lowercase().replace('ё', 'е')
+                val key = genOf[asked] ?: asked
+                theirBirthdays(memories).firstOrNull { (who, _) -> who.lowercase().replace('ё', 'е').split(' ').last() == key.split(' ').last().replace('ё', 'е') }
+                    ?.let { (who, md) -> if (isRu) "у $who день рождения ${md.dayOfMonth} ${monthsGen[md.monthValue - 1]}" else "your $who's birthday is ${monthsEn[md.monthValue - 1]} ${md.dayOfMonth}" }
+            }
             Topic.AGE -> age
             Topic.FAMILY -> relative(m.value)
             Topic.LIKES -> tastes.likes

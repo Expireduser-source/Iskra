@@ -248,6 +248,12 @@ class CompanionAgent(
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
         val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
         notes += PlanTalk.notes(PlanTalk.known(all), today, localHour(nowMs), fresh, tr(true, false))
+        if (fresh) for ((who, md) in MemoryTalk.theirBirthdays(all)) {
+            val day = when (md) { java.time.MonthDay.from(today) -> 0; java.time.MonthDay.from(today.plusDays(1)) -> 1; else -> continue }
+            val whose = if (who.first().isUpperCase()) "у $who" else "у $who владельца"
+            notes += if (who.any { it in 'а'..'я' }) "${if (day == 0) "сегодня" else "завтра"} день рождения $whose — напомни поздравить"
+                else "${if (day == 0) "today" else "tomorrow"} is the owner's $who's birthday — remind them to congratulate"
+        }
         CareTalk.pending(conversation.recent(80), today)?.let { notes += CareTalk.note(it, tr(true, false)) }
         return notes
     }
@@ -342,8 +348,10 @@ class CompanionAgent(
         val today = localDate(now)
         val known = PlanTalk.known(memory.all())
         when (moment) {
-            PlanMoment.MORNING -> known.filter { !it.done && it.plan.date == today }.take(2).takeIf { it.isNotEmpty() }?.joinToString(" ") { PlanTalk.wish(it.plan) }
-            PlanMoment.EVENING -> known.filter { it.plan.date == today.plusDays(1) }.take(2).takeIf { it.isNotEmpty() }?.joinToString(" ") { PlanTalk.eve(it.plan) }
+            PlanMoment.MORNING -> (MemoryTalk.theirBirthdays(memory.all()).filter { it.second == java.time.MonthDay.from(today) }.map { MemoryTalk.theirBirthdayLine(it.first, true) } +
+                known.filter { !it.done && it.plan.date == today }.map { PlanTalk.wish(it.plan) }).take(2).takeIf { it.isNotEmpty() }?.joinToString(" ")
+            PlanMoment.EVENING -> (MemoryTalk.theirBirthdays(memory.all()).filter { it.second == java.time.MonthDay.from(today.plusDays(1)) }.map { MemoryTalk.theirBirthdayLine(it.first, false) } +
+                known.filter { it.plan.date == today.plusDays(1) }.map { PlanTalk.eve(it.plan) }).take(2).takeIf { it.isNotEmpty() }?.joinToString(" ")
             // Yesterday was hard (sad, ill, a quarrel): «как ты?» comes before any plan.
             PlanMoment.ANY -> CareTalk.pending(conversation.recent(80), today)?.let { c ->
                 CareTalk.ask(c).also { conversation.append(Turn(Turn.Role.ASSISTANT, it, now, Emotion.SHY)) }

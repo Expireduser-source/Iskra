@@ -355,3 +355,40 @@ class FactSlotTest {
         }
     }
 }
+
+/** «У мамы день рождения 12 марта»: a yearly date; she reminds to congratulate the evening before and on the day. */
+class TheirBirthdayTest {
+    private val today = LocalDate.of(2026, 11, 6)
+    private fun f(t: String) = MemoryTalk.fact(t, today)
+
+    @Test fun hearsBirthdaysOfClosePeople() = withLang(Lang.RU) {
+        assertEquals("День рождения мамы владельца: 12 марта", f("У мамы день рождения 12 марта")?.text)
+        assertEquals("День рождения брата владельца: 3 мая", f("день рождения у брата 3 мая")?.text)
+        assertEquals("День рождения младшей сестры владельца: 7 ноября", f("у моей младшей сестры завтра день рождения")?.text)
+        assertEquals("День рождения старшего брата владельца: 1 июня", f("у старшего брата день рождения 1 июня")?.text)
+        assertEquals("День рождения папы владельца: 5 июня", f("Папа родился 5 июня")?.text)
+        assertEquals("День рождения Маши: 9 ноября", f("У Маши в понедельник день рождения")?.text)
+        assertEquals("День рождения владельца: 7 ноября", f("у меня завтра день рождения")?.text)
+        assertNull(f("когда у мамы день рождения?"))
+        assertNull(f("у мамы был день рождения вчера"))
+        // Not a one-off plan as well.
+        assertTrue(PlanTalk.hear("Завтра у мамы день рождения", today).plans.isEmpty())
+        withLang(Lang.EN) { assertEquals("The owner's mom's birthday: March 12", f("My mom's birthday is March 12")?.text) }
+        val mem = listOf(MemoryItem(1, MemoryKind.FACT, "День рождения мамы владельца: 12 марта", MemorySource.USER_EXPLICIT, 3, 0, 0))
+        assertEquals("Мрр, помню: у мамы день рождения 12 марта.", MemoryTalk.recall("Когда у мамы день рождения?", mem, today))
+        assertEquals("Мрр, помню: у мамы день рождения 12 марта.", MemoryTalk.recall("когда день рождения у моей мамы", mem, today))
+    }
+
+    @Test fun remindsToCongratulate() = withLang(Lang.RU) {
+        runBlocking {
+            var now = java.time.LocalDateTime.of(2027, 3, 11, 21, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val memory = MemoryManager(InMemoryMemoryStore())
+            memory.add("День рождения мамы владельца: 12 марта", MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, 0)
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, clock = { now }, random = Random(1))
+            assertEquals("Завтра день рождения у мамы — не забудь поздравить, мрр.", a.planLine(CompanionAgent.PlanMoment.EVENING))
+            now += 12 * 3_600_000L
+            assertEquals("Сегодня день рождения у мамы — не забудь поздравить! Мрр.", a.planLine(CompanionAgent.PlanMoment.MORNING))
+        }
+    }
+}
