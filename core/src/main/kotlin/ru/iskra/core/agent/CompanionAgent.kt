@@ -3,6 +3,7 @@ package ru.iskra.core.agent
 import ru.iskra.core.i18n.tr
 import ru.iskra.core.brain.CalculateTool
 import ru.iskra.core.brain.CareTalk
+import ru.iskra.core.brain.CrisisTalk
 import ru.iskra.core.brain.DateInfoTool
 import ru.iskra.core.brain.ForgetTool
 import ru.iskra.core.brain.MemoryTalk
@@ -260,7 +261,10 @@ class CompanionAgent(
         val today = localDate(nowMs)
         val all = memory.all()
         val notes = ArrayList<String>()
-        CareTalk.pending(conversation.recent(80), today)?.let { notes += CareTalk.note(it, tr(true, false)) }
+        // Words about not wanting to live in the last hours come before anything else, in every reply until then.
+        val careful = CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS)
+        if (careful) notes += CrisisTalk.note(tr(true, false))
+        CareTalk.pending(conversation.recent(80), today)?.takeIf { !careful || it.kind != CareTalk.Kind.CRISIS }?.let { notes += CareTalk.note(it, tr(true, false)) }
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
         val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
         // PlanTalk lists today's and tomorrow's plans first and the one to ask about last; asking how it went comes first here.
@@ -314,6 +318,9 @@ class CompanionAgent(
     }
 
     private val MONTHS_GEN = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+
+    /** How long after words about not wanting to live she stays gentle and the model is told to be careful. */
+    private val CAREFUL_HOURS = 12
 
     private fun localDate(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
     private fun localHour(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).hour
@@ -422,6 +429,12 @@ class CompanionAgent(
         if (old.isEmpty()) memory.add(note, MemoryKind.FACT, MemorySource.MODEL_PROPOSED, 3, nowMs)
     }
 
+    /**
+     * Within [CAREFUL_HOURS] of words about not wanting to live or hurting oneself: her own lines are gentle
+     * ([CrisisTalk.gentle]) and playful ones wait; the model is told to be careful in every reply.
+     */
+    fun careful(): Boolean = runCatching { CrisisTalk.recent(conversation.recent(80), clock(), CAREFUL_HOURS) }.getOrDefault(false)
+
     /** When she speaks up on her own ([ru.iskra.core.skills.ProactivePolicy]): what about the owner's plans fits the moment. */
     enum class PlanMoment { MORNING, EVENING, ANY }
 
@@ -477,7 +490,8 @@ class CompanionAgent(
      * and — only when there is no model — small talk. null: ask the model.
      */
     private suspend fun handleLocally(text: String, llmAvailable: Boolean, smallModel: Boolean = false): AgentReply? {
-        brain.crisis(text)?.let { return AgentReply(it.text, it.emotion) }
+        // Help numbers at once; a shorter answer if they heard them in the last few hours.
+        brain.crisis(text, again = CrisisTalk.recent(conversation.recent(40), clock(), 6))?.let { return AgentReply(it.text, it.emotion) }
         answerOffer(text, llmAvailable)?.let { return it }
         if (smallModel) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)

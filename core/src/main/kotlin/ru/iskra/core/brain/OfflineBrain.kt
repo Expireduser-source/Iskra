@@ -28,16 +28,9 @@ class OfflineBrain(private val random: Random = Random.Default) {
         return null
     }
 
-    fun crisis(text: String): Answer? {
-        if (!CRISIS.containsMatchIn(text.lowercase().replace('ё', 'е'))) return null
-        return Answer(tr(
-            "Мне очень жаль, что тебе сейчас так тяжело. Пожалуйста, не оставайся с этим в одиночку: позвони или напиши " +
-                "близкому человеку, а если есть опасность — звони 112, там помогут круглосуточно. Я рядом и могу просто побыть с тобой.",
-            "I'm really sorry it's so hard right now. Please don't stay alone with this: call or text someone close to you. " +
-                "In the US you can call or text 988 any time; elsewhere call your local emergency number (112 in Europe). " +
-                "I'm here and can just stay with you.",
-        ), Emotion.SAD)
-    }
+    /** Words about wanting to die or to hurt oneself ([CrisisTalk]); [again]: the numbers were given in the last hours. */
+    fun crisis(text: String, again: Boolean = false): Answer? =
+        if (CrisisTalk.said(text)) Answer(CrisisTalk.reply(again), Emotion.SAD) else null
 
     /** A riddle she asked and waits to hear guessed («загадай загадку»): the next short message is a guess. */
     private var riddle: Riddle? = null
@@ -238,9 +231,6 @@ class OfflineBrain(private val random: Random = Random.Default) {
             "Как насчёт тыквенного супа-пюре, запечённой картошки или блинчиков? Кошки голосуют за всё с рыбой.")
         private val FOOD_EN = listOf("Quick and tasty: pasta with cheese and garlic, an omelette with veggies, or rice with chicken. And a little fish for me, please. Mrr.",
             "How about pumpkin soup, baked potatoes or pancakes? Cats vote for anything with fish.")
-
-        private val CRISIS = Regex("""хочу\s+умереть|не\s+хочу\s+(?:больше\s+)?жить|покончить\s+с\s+собой|убить\s+себя|суицид|самоубийств|""" +
-            """свести\s+счеты\s+с\s+жизнью|kill\s+myself|want\s+to\s+die|suicid|end\s+my\s+life|don'?t\s+want\s+to\s+live""")
 
         private val GREETING_PREFIX = Regex("""^(?:привет(?:ик)?|здравствуй(?:те)?|хай|салют|доброе\s+утро|добрый\s+(?:день|вечер)|доброй\s+ночи|hi|hello|hey|good\s+(?:morning|afternoon|evening))(?![\p{L}\p{N}_])\s*""")
         private val GREET = Regex("""(?:привет(?:ик|ствую)?|здравствуй(?:те)?|хай|салют|здорово|йо|доброе\s+утро|добрый\s+(?:день|вечер)|доброй\s+ночи|утро|приветики|""" +

@@ -49,7 +49,17 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.LinkAnnotation
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLinkStyles
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import ru.iskra.core.agent.Links
 import ru.iskra.app.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -253,6 +263,29 @@ private fun Welcome(compact: Boolean, enabled: Boolean, onSend: (String) -> Unit
     }
 }
 
+/**
+ * Her reply with web links and phone numbers to tap ([Links]): a number opens the dialer with it filled in — the call
+ * itself is the owner's own tap there — and a link opens the browser.
+ */
+@Composable
+private fun linked(text: String): AnnotatedString {
+    val context = LocalContext.current
+    val color = MaterialTheme.colorScheme.primary
+    return remember(text, color) {
+        val spans = Links.find(text)
+        if (spans.isEmpty()) AnnotatedString(text) else buildAnnotatedString {
+            append(text)
+            val style = TextLinkStyles(SpanStyle(color = color, textDecoration = TextDecoration.Underline))
+            for (s in spans) addLink(LinkAnnotation.Url(s.uri, style) { openLink(context, s.uri) }, s.start, s.end)
+        }
+    }
+}
+
+private fun openLink(context: Context, uri: String) {
+    val action = if (uri.startsWith("tel:")) Intent.ACTION_DIAL else Intent.ACTION_VIEW
+    runCatching { context.startActivity(Intent(action, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
 @Composable
 private fun Bubble(m: UiMessage) {
     val shape = RoundedCornerShape(16.dp)
@@ -263,7 +296,8 @@ private fun Bubble(m: UiMessage) {
                 .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             if (!m.fromUser) Text(tr("${emotionEmoji(m.emotion)} Искра", "${emotionEmoji(m.emotion)} Iskra"), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-            Text(m.text, color = if (m.isError) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface)
+            Text(if (m.fromUser) AnnotatedString(m.text) else linked(m.text),
+                color = if (m.isError) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurface)
             m.actions.forEach { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }

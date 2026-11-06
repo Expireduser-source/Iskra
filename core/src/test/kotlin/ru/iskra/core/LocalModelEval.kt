@@ -115,9 +115,12 @@ class LocalModelEval {
                     }
                     // What the night job would keep: a recap of the oldest turns, made by this model.
                     val t1 = System.nanoTime()
+                    raw = ""
                     val recaps = runCatching { runBlocking { agent.summarizeOnPhone(maxChunks = 1) } }.getOrElse { -1 }
                     val episodes = memory.all().filter { it.kind == MemoryKind.EPISODE }.joinToString(" | ") { it.text }
                     doc.append("\n**Night recap** (%.1f s, saved: %s): %s\n".format(java.util.Locale.ROOT, (System.nanoTime() - t1) / 1e9, recaps, episodes.ifEmpty { "—" }))
+                    // Not kept: what the model wrote, to see why the filter refused it.
+                    if (episodes.isEmpty() && raw.isNotBlank()) doc.append("\n*(not kept; the model wrote: `${raw.take(700).replace("\n", " ⏎ ").replace("`", "'")}`)*\n")
                     fun median(xs: List<Double>) = xs.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
                     summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.0f |\n".format(java.util.Locale.ROOT,
                         median(stats.map { it.firstPieceMs / 1000.0 }), median(stats.map { it.totalMs / 1000.0 }), median(stats.map { it.piecesPerSecond }),

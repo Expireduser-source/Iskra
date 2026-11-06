@@ -35,6 +35,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.Dispatchers
+import ru.iskra.core.brain.CrisisTalk
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -622,9 +623,11 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val next = policy.record(trigger, now, ms, st)
         prefs.edit().putString("day", next.day).putInt("count", next.countToday).putLong("last", next.lastAtMs)
             .putString("morning", next.morningDay).putString("evening", next.eveningDay).apply()
-        val base = app.phrases.proactive(trigger)
         if (trigger != ProactiveTrigger.MORNING) {
             scope.launch {
+                // Within hours of words about not wanting to live: a gentle line instead of a playful one.
+                val careful = withContext(Dispatchers.IO) { runCatching { app.agent.careful() }.getOrDefault(false) }
+                val base = if (careful) CrisisTalk.gentle(false) else app.phrases.proactive(trigger)
                 // The owner's plans come first: «Как прошёл экзамен?» (it then stays in the chat, so the answer has its
                 // context), or in the evening tomorrow's plan.
                 val plan = runCatching {
@@ -635,12 +638,14 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
                 }.getOrNull()
                 if (plan != null) app.chat.reload()
                 if (!isActive || avatar == null) return@launch
-                deliverProactive(trigger, plan ?: base, next.countToday)
+                deliverProactive(trigger, plan ?: base, next.countToday, careful)
             }
             return
         }
         // Morning: the weather in the owner's city and today's reminders, only if known (≤ 3 s wait).
         scope.launch {
+            val careful = withContext(Dispatchers.IO) { runCatching { app.agent.careful() }.getOrDefault(false) }
+            val base = if (careful) CrisisTalk.gentle(true) else app.phrases.proactive(trigger)
             val w = if (s.weatherCity.isBlank()) null else withTimeoutOrNull(3_000) {
                 runCatching {
                     withContext(Dispatchers.IO) {
@@ -664,18 +669,19 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
                 )
             }
             if (plans.isNotEmpty()) app.chat.reload()
-            deliverProactive(trigger, (listOf(Moments.morning(greeting, w, today)) + plans).joinToString(" "), next.countToday)
+            deliverProactive(trigger, (listOf(Moments.morning(greeting, w, today)) + plans).joinToString(" "), next.countToday, careful)
             Diag.i("proactive", tr("Утренняя сводка: погода ${if (w != null) "есть" else "нет"}, напоминаний $today", "Morning brief: weather ${if (w != null) "yes" else "no"}, reminders $today"))
         }
     }
 
-    private fun deliverProactive(trigger: ProactiveTrigger, line: String, countToday: Int) {
+    /** [careful]: hours after words about not wanting to live — a soft look and no waving. */
+    private fun deliverProactive(trigger: ProactiveTrigger, line: String, countToday: Int, careful: Boolean = false) {
         val s = settings
         val app = IskraApp.instance
-        val emotion = if (trigger == ProactiveTrigger.EVENING) Emotion.SLEEPY else Emotion.HAPPY
+        val emotion = if (careful) Emotion.SHY else if (trigger == ProactiveTrigger.EVENING) Emotion.SLEEPY else Emotion.HAPPY
         CompanionBus.emit(AvatarCue.Feel(emotion))
         CompanionBus.emit(AvatarCue.Say(line))
-        avatar?.brain?.wave()
+        if (!careful) avatar?.brain?.wave()
         val music = (getSystemService(AUDIO_SERVICE) as android.media.AudioManager).isMusicActive
         val voice = s.proactiveVoice && plan?.proactiveVoice != false && s.ttsEnabled && !music
         if (voice) app.speaker.speak(line, emotion)
@@ -692,9 +698,13 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         val busy = avatar == null || app.speaker.speaking.value || app.chat.busy.value || MicArbiter.busy.value
         if (!Moments.charging(now, prefs.getLong("charging", 0L), s.proactive, quiet, screenOn && !isScreenLocked(), busy)) return
         prefs.edit().putLong("charging", now).apply()
-        CompanionBus.emit(AvatarCue.Feel(Emotion.HAPPY))
-        CompanionBus.emit(AvatarCue.Say(MomentLines.charging(app.phrases)))
-        Diag.i("proactive", tr("Реакция на зарядку (облачком)", "Charging reaction (bubble)"))
+        scope.launch {
+            // No playful line within hours of words about not wanting to live.
+            if (withContext(Dispatchers.IO) { runCatching { app.agent.careful() }.getOrDefault(false) }) return@launch
+            CompanionBus.emit(AvatarCue.Feel(Emotion.HAPPY))
+            CompanionBus.emit(AvatarCue.Say(MomentLines.charging(app.phrases)))
+            Diag.i("proactive", tr("Реакция на зарядку (облачком)", "Charging reaction (bubble)"))
+        }
     }
 
     override fun onTap() {

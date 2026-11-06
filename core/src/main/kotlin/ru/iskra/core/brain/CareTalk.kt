@@ -6,12 +6,13 @@ import java.time.LocalDate
 import java.time.ZoneId
 
 /**
- * Yesterday the owner said they were sad, ill or had a quarrel — today's first words are «как ты?». Nothing new is kept
+ * Yesterday the owner said they were sad, ill, had a quarrel or spoke of not wanting to live ([CrisisTalk]) — today's
+ * first words are «как ты?». Nothing new is kept
  * for it: the check-in comes from yesterday's messages in the chat, only when nothing later that day said it got better,
  * and only in the first exchange of the day (so it is asked once).
  */
 object CareTalk {
-    enum class Kind { LOW, SICK, QUARREL }
+    enum class Kind { CRISIS, LOW, SICK, QUARREL }
 
     data class Care(val kind: Kind, val ru: Boolean)
 
@@ -31,6 +32,7 @@ object CareTalk {
 
     /** What a message says about how the owner is, or null. */
     fun heard(text: String): Kind? = when {
+        CrisisTalk.said(text) -> Kind.CRISIS
         said(sick, text) || said(sickEn, text) -> Kind.SICK
         said(quarrel, text) || said(quarrelEn, text) -> Kind.QUARREL
         said(low, text) || said(lowEn, text) -> Kind.LOW
@@ -47,7 +49,9 @@ object CareTalk {
         val yesterday = turns.filter { it.role == Turn.Role.USER && day(it) == today.minusDays(1) }
         var found: Care? = null
         for (t in yesterday) {
-            heard(t.text)?.let { found = Care(it, t.text.any { c -> c in 'а'..'я' || c in 'А'..'Я' }) }
+            // A later «мне грустно» doesn't make words about not wanting to live less serious.
+            heard(t.text)?.takeIf { found?.kind != Kind.CRISIS || it == Kind.CRISIS }
+                ?.let { found = Care(it, t.text.any { c -> c in 'а'..'я' || c in 'А'..'Я' }) }
             if (better.containsMatchIn(t.text)) found = null // «было плохо, но уже лучше», or a later «полегчало»
         }
         return found
@@ -55,10 +59,12 @@ object CareTalk {
 
     /** «Как ты сегодня? Вчера тебе было нелегко — надеюсь, сегодня светлее. Мрр.» */
     fun ask(c: Care): String = if (c.ru) when (c.kind) {
+        Kind.CRISIS -> "Как ты сегодня? Вчера тебе было очень тяжело. Я рядом, если захочешь поговорить."
         Kind.LOW -> "Как ты сегодня? Вчера тебе было нелегко — надеюсь, сегодня светлее. Мрр."
         Kind.SICK -> "Как самочувствие? Мрр, выздоравливай скорее — я за тебя переживаю."
         Kind.QUARREL -> "Как ты? Помирились после вчерашнего? Мрр, надеюсь, всё наладилось."
     } else when (c.kind) {
+        Kind.CRISIS -> "How are you today? Yesterday was really hard for you. I'm here if you want to talk."
         Kind.LOW -> "How are you today? Yesterday was hard for you — I hope today's brighter. Mrr."
         Kind.SICK -> "How are you feeling? Mrr, get well soon — I've been worrying about you."
         Kind.QUARREL -> "How are you? Did you make up after yesterday? Mrr, I hope it's all okay now."
@@ -66,10 +72,12 @@ object CareTalk {
 
     /** For the model, in the first exchange of the day. */
     fun note(c: Care, ru: Boolean): String = if (ru) when (c.kind) {
+        Kind.CRISIS -> "вчера владельцу было очень тяжело, он говорил, что не хочет жить, — бережно спроси, как он сегодня, без шуток"
         Kind.LOW -> "вчера владельцу было грустно или тяжело — мягко спроси, как он сегодня"
         Kind.SICK -> "вчера владелец болел — спроси о самочувствии"
         Kind.QUARREL -> "вчера владелец с кем-то поссорился — бережно спроси, всё ли наладилось"
     } else when (c.kind) {
+        Kind.CRISIS -> "yesterday the owner was in a very dark place and spoke of not wanting to live — gently ask how they are today, no jokes"
         Kind.LOW -> "yesterday the owner felt down — gently ask how they are today"
         Kind.SICK -> "yesterday the owner was ill — ask how they feel"
         Kind.QUARREL -> "yesterday the owner had a quarrel — gently ask whether it's better now"

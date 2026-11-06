@@ -40,6 +40,7 @@ object SpeechText {
         .replace(Regex("[\\p{So}\\p{Cn}\\p{Cs}\\u200d\\ufe0f]"), " ")  // emoji
         .replace(Regex("[#_`>~]"), " ")
         .replace(Regex("https?://\\S+"), tr(" ссылка ", " link "))
+        .let { ru.iskra.core.agent.Links.speakable(it) }                // 8-800-2000-122 → «8, 800, 2000, 122»
         .replace(Regex("\\s+"), " ")
         .trim()
         .take(MAX_CHARS)
