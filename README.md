@@ -29,7 +29,8 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
   to km”), dates (“how many days until New Year”), coins and dice, small talk, the flashlight, volume, apps, settings,
   and “Surprise me” — tiny games with the world around you. Online without any account: weather and exchange rates.
 - **A brain on the phone:** download a small model once (Gemma 3 1B, or Google's new Gemma 4 E2B / E4B made for phones; 0.7–4.6 GB, chosen for your phone) and talk
-  **with no internet at all** — nothing you say leaves the phone. It also steps in when the cloud is unreachable.
+  **with no internet at all** — nothing you say leaves the phone. It also steps in when the cloud is unreachable. Or load
+  your own GGUF file — Gemma, Qwen, Llama 3, Mistral and Phi families are written to the way they were trained.
 - **A real conversation:** connect a **free brain with one tap** (OpenRouter — sign in with Google or e-mail, nothing to
   copy; a busy free model quietly hands over to another) or use your own key from DeepSeek, OpenAI, Anthropic Claude or
   any OpenAI-compatible server. The cloud brain checks facts on Wikipedia, counts with a real calculator, remembers what
@@ -42,7 +43,9 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
   prohibitions to its instructions. Settings → “Model freedom” has rules you can turn on: help in a crisis (helplines
   at once for “I don't want to live”: 112, Russia's 8-800-2000-122, 988 in the US, Samaritans 116 123; numbers open the
   dialer with a tap), “says she is a program when asked directly”, “no guilt trips”, “suggests a professional on health,
-  law and money”. Confirmation of actions on the phone and protection from commands hidden in notes always stay.
+  law and money”. Write your own instructions to the model there too (“call me captain, answer in one sentence”) — they
+  come before her usual manner. Confirmation of actions on the phone and protection from commands hidden in notes always
+  stay.
 - **For every phone and person:** English and Russian (follows the phone), Android 8 to 16, tablets and foldables,
   guides for Xiaomi, Samsung, Huawei, Honor, OPPO, OnePlus, vivo, Tecno and others, TalkBack, large fonts, light and
   dark themes, calm motion, battery modes and daily cloud spending limits.
