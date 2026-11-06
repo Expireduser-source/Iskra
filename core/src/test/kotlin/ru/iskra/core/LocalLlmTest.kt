@@ -59,7 +59,7 @@ class LocalLlmTest {
         assertEquals("<start_of_turn>user\nТы — Искра.\n\nПривет<end_of_turn>\n<start_of_turn>model\nМрр, привет!<end_of_turn>\n" +
             "<start_of_turn>user\nСейчас четверг.\n\nКак дела?<end_of_turn>\n<start_of_turn>model\n", ChatFormat.GEMMA.render(request))
         assertEquals("<|turn>system\nТы — Искра.<turn|>\n<|turn>user\nПривет<turn|>\n<|turn>model\nМрр, привет!<turn|>\n" +
-            "<|turn>user\nСейчас четверг.\n\nКак дела?<turn|>\n<|turn>model\n<|channel>thought\n<channel|>", ChatFormat.GEMMA4.render(request))
+            "<|turn>user\nСейчас четверг.\n\nКак дела?<turn|>\n<|turn>model\n", ChatFormat.GEMMA4.render(request))
         // The part before the situation is the same as in the previous turn's prompt: the model's cache stays useful.
         val before = ChatFormat.CHATML.render(request.copy(messages = request.messages.take(1)))
         assertTrue(ChatFormat.CHATML.render(request).startsWith(before.substringBefore("<|im_start|>system\nСейчас")))
@@ -82,10 +82,16 @@ class LocalLlmTest {
         assertEquals("Мрр, всё хорошо.", ru.iskra.core.agent.ReplyParser.parse("[neutral] [mrр] Мрр, всё хорошо.").text)
         assertEquals("I love winter evenings.", ru.iskra.core.agent.ReplyParser.parse("[excited] [I love winter evenings.]").text)
         assertEquals("Hi Tom!", ru.iskra.core.agent.ReplyParser.parse("[neutral] [Mood: Curious] Hi Tom!").text)
-        val g = LocalLlmProvider({ FakeEngine("Пользователь грустит, надо утешить.", "<channel|>", "[sad] Ох, обнимаю тебя.") }, ChatFormat.GEMMA4, "local:g")
+        // Gemma 4 opened its thought channel anyway (the opening tag may come in pieces): nothing of it is shown or kept.
+        val g = LocalLlmProvider({ FakeEngine("<", "|channel>thought\nПользователь грустит, надо утешить.", "<channel|>", "[sad] Ох, обнимаю тебя.") }, ChatFormat.GEMMA4, "local:g")
         val heard = StringBuilder()
         assertEquals("[sad] Ох, обнимаю тебя.", g.stream(request) { heard.append(it) }.text)
         assertEquals("[sad] Ох, обнимаю тебя.", heard.toString())
+        // A straight answer streams as it comes, piece by piece.
+        val pieces = ArrayList<String>()
+        val d = LocalLlmProvider({ FakeEngine("[happy] Привет, ", "Аня! Как ", "дела?", "<turn|>") }, ChatFormat.GEMMA4, "local:d")
+        assertEquals("[happy] Привет, Аня! Как дела?", d.stream(request) { pieces += it }.text)
+        assertTrue(pieces.size >= 2, pieces.toString())
     }
 
     @Test

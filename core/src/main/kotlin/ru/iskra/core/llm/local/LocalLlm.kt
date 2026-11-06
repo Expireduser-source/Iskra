@@ -107,7 +107,11 @@ enum class ChatFormat {
     CHATML_NO_THINK,
     /** Gemma 2/3: <start_of_turn>user/model, no system role. */
     GEMMA,
-    /** Gemma 4: <|turn>system/user/model … <turn|>, and an empty thought channel so it answers straight away. */
+    /**
+     * Gemma 4: <|turn>system/user/model … <turn|>. Thinking is off when the system turn has no <|think|>; then E2B and E4B
+     * answer right after <|turn>model (Google's model card). An empty thought channel there — what the bigger models
+     * write themselves — made E2B think aloud for a hundred tokens before most answers (ARM evaluation, 0.12.7).
+     */
     GEMMA4;
 
     companion object
@@ -169,7 +173,7 @@ enum class ChatFormat {
                     sb.append(text.trim()).append("<turn|>\n")
                     if (last && situation.isEmpty()) stable = sb.length
                 }
-                sb.append("<|turn>model\n<|channel>thought\n<channel|>")
+                sb.append("<|turn>model\n")
             }
         }
         return Prompt(sb.toString(), stable, head)
@@ -225,8 +229,10 @@ class LocalLlmProvider(
         // Small Qwen models sometimes slip Chinese characters into Russian or English; unless the person wrote them, drop them.
         val lastUser = (request.messages.lastOrNull { it is ChatMessage.User } as? ChatMessage.User)?.text.orEmpty()
         val guard = !lastUser.any(::isCjk)
-        // Gemma 4 may think in its "thought" channel before answering: hold the text until the channel closes.
-        val hold = format == ChatFormat.GEMMA4
+        // Gemma 4 answers straight away with thinking off; if it opens its thought channel anyway, nothing is shown until
+        // the channel closes. The beginning waits only while it could still be the channel's opening tag.
+        var gate = if (format == ChatFormat.GEMMA4) Gate.WAIT else Gate.OPEN
+        val held = StringBuilder()
         val think = ThinkFilter()
         val raw = StringBuilder()
         val t0 = System.nanoTime()
@@ -248,7 +254,29 @@ class LocalLlmProvider(
                         raw.append(piece)
                         val stop = format.stops.firstOrNull { raw.contains(it) }
                         if (stop != null) return@generate false
-                        var visible = think.feed(piece).let { if (guard) stripCjk(it) else it }
+                        val incoming = when (gate) {
+                            Gate.OPEN -> piece
+                            else -> {
+                                held.append(piece)
+                                if (gate == Gate.WAIT) {
+                                    val h = held.toString().trimStart()
+                                    gate = when {
+                                        h.startsWith(THOUGHT_OPEN) -> Gate.THINKING
+                                        THOUGHT_OPEN.startsWith(h) -> Gate.WAIT
+                                        else -> Gate.OPEN
+                                    }
+                                }
+                                when (gate) {
+                                    Gate.WAIT -> ""
+                                    Gate.OPEN -> held.toString().also { held.clear() }
+                                    Gate.THINKING -> held.indexOf(THOUGHT_CLOSE).let { end ->
+                                        if (end < 0) "" else held.substring(end + THOUGHT_CLOSE.length).also { held.clear(); gate = Gate.OPEN }
+                                    }
+                                }
+                            }
+                        }
+                        if (incoming.isEmpty()) return@generate scope.isActive
+                        var visible = think.feed(incoming).let { if (guard) stripCjk(it) else it }
                         if (!leadDone) {
                             lead.append(visible)
                             val trimmed = trimLead(lead.toString())
@@ -257,7 +285,7 @@ class LocalLlmProvider(
                                 cleanStart(trimmed, dropPurr)
                             }
                         }
-                        if (visible.isNotEmpty() && !hold) onText(visible)
+                        if (visible.isNotEmpty()) onText(visible)
                         scope.isActive
                     }
                 } catch (t: Throwable) {
@@ -267,21 +295,25 @@ class LocalLlmProvider(
                 if (cont.isActive) cont.resume(result)
             }
         }
-        if (!leadDone && !hold) cleanStart(lead.toString(), dropPurr).takeIf { it.isNotEmpty() }?.let(onText)
+        if (!leadDone) cleanStart(lead.toString(), dropPurr).takeIf { it.isNotEmpty() }?.let(onText)
         val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
         val (promptTokens, reused) = e.lastRead()
         onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000, promptTokens, promptTokens - reused))
         var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
-        if (hold) {
-            reply = reply.substringAfterLast("<channel|>").trim()
-            if (reply.isNotEmpty()) onText(cleanStart(if (guard) stripCjk(reply) else reply, dropPurr))
-        }
+        // What was shown is the part after the thought channel; the reply kept in the chat is the same.
+        if (format == ChatFormat.GEMMA4) reply = reply.substringAfterLast(THOUGHT_CLOSE).trim()
         val final = cleanStart(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()
         sincePurr = if (PURR.containsMatchIn(final)) 0 else sincePurr + 1
         LlmResponse(final, emptyList())
     }
 
+    /** Gemma 4's start of a reply: waiting to see whether it opens the thought channel, inside it, or the answer itself. */
+    private enum class Gate { WAIT, THINKING, OPEN }
+
     companion object {
+        private const val THOUGHT_OPEN = "<|channel>"
+        private const val THOUGHT_CLOSE = "<channel|>"
+
         /** Spaces and punctuation that can't start a reply (left over when a model begins with stray symbols). */
         fun trimLead(s: String): String = s.trimStart { it.isWhitespace() || it in ",，、;；:：" }
 
