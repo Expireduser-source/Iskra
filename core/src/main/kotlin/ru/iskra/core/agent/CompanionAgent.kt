@@ -369,6 +369,14 @@ class CompanionAgent(
 
     private val MONTHS_GEN = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
 
+    /**
+     * The tools a model on the phone gets (Gemma 4 only, [LlmProvider.nativeTools]): what people ask most in their own
+     * words. The phrase parser catches the usual wordings first; these are for the rest («не дай мне забыть вынуть пирог»).
+     */
+    private val PHONE_TOOLS = setOf(ru.iskra.core.tools.ToolNames.SET_TIMER, ru.iskra.core.tools.ToolNames.SET_ALARM,
+        ru.iskra.core.skills.SkillNames.SET_REMINDER, ru.iskra.core.skills.SkillNames.ADD_NOTE, ru.iskra.core.skills.SkillNames.WEATHER,
+        ru.iskra.core.tools.ToolNames.FLASHLIGHT, ru.iskra.core.tools.ToolNames.OPEN_APP)
+
     /** How long after words about not wanting to live she stays gentle and the model is told to be careful. */
     private val CAREFUL_HOURS = 12
 
@@ -720,7 +728,13 @@ class CompanionAgent(
             repeat(maxToolRounds) { round ->
                 val offerTools = round < maxToolRounds - 1
                 val request = LlmRequest(system = system, messages = messages,
-                    tools = if (offerTools && !small && provider.id !in noTools) tools.specs() else emptyList(), situation = situation,
+                    tools = when {
+                        !offerTools || provider.id in noTools -> emptyList()
+                        !small -> tools.specs()
+                        // Gemma 4 on the phone calls tools in its own markup: a few, each costs prompt reading once.
+                        provider.nativeTools -> tools.specs().filter { it.name in PHONE_TOOLS }
+                        else -> emptyList()
+                    }, situation = situation,
                     maxTokens = if (small) 320 else 600, temperature = if (small) 0.6 else 0.8)
                 suspend fun send(r: LlmRequest) = if (voice == null) provider.complete(r) else {
                     val stream = ReplyStream(voice, state.mood.dominantEmotion())

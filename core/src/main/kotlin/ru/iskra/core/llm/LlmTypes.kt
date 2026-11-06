@@ -54,8 +54,10 @@ data class LlmResponse(
 /** Every model backend (cloud or on-device) implements this. */
 interface LlmProvider {
     val id: String
-    /** A model running on the phone itself: short prompt, no tools, free and private. */
+    /** A model running on the phone itself: short prompt, free and private. */
     val onDevice: Boolean get() = false
+    /** A model on the phone that calls tools in its own markup (Gemma 4); other phone models get none. */
+    val nativeTools: Boolean get() = false
     suspend fun complete(request: LlmRequest): LlmResponse
 
     /**

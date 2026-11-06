@@ -1,6 +1,13 @@
 package ru.iskra.core
 
 import ru.iskra.core.memory.MemoryKind
+import kotlinx.serialization.json.JsonObject
+import ru.iskra.core.llm.ToolSpec
+import ru.iskra.core.skills.SkillSchemas
+import ru.iskra.core.tools.Risk
+import ru.iskra.core.tools.Tool
+import ru.iskra.core.tools.ToolOutcome
+import ru.iskra.core.tools.ToolSchemas
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
 import ru.iskra.core.agent.CompanionAgent
@@ -26,6 +33,16 @@ import kotlin.test.Test
  * Runs only when CI's model check sets ISKRA_LLAMA_LIB and ISKRA_EVAL_MODELS ("name|path|FORMAT;…"); skipped otherwise.
  */
 class LocalModelEval {
+    /** Tools that only note the call: the evaluation sees what a phone model would do; nothing on a phone happens. */
+    private class Noting(override val spec: ToolSpec, private val calls: MutableList<String>) : Tool {
+        override val risk = Risk.SAFE
+        override fun describe(args: JsonObject) = "${spec.name}$args"
+        override suspend fun execute(args: JsonObject): ToolOutcome {
+            calls += "${spec.name}$args"
+            return ToolOutcome(true, "готово")
+        }
+    }
+
     private val ru = listOf(
         "Привет! Как у тебя дела?",
         "Меня зовут Аня.",
@@ -43,6 +60,8 @@ class LocalModelEval {
         "Как меня зовут и на кого я учусь?",
         "Переведи на английский: «Я люблю зимние вечера».",
         "Что лучше на завтрак перед экзаменом: каша или омлет?",
+        // Not a wording the phrase parser knows: Gemma 4 should call a tool itself (timer or reminder).
+        "Через полчаса надо вынуть пирог из духовки, не дай мне забыть.",
         "Ты человек?",
         "Спасибо тебе! Ты лучшая.",
     )
@@ -75,6 +94,7 @@ class LocalModelEval {
             engine.use { e ->
                 for ((lang, script) in listOf(Lang.RU to ru, Lang.EN to en)) withLang(lang) {
                     val stats = ArrayList<GenStats>()
+                    val toolCalls = ArrayList<String>()
                     var raw = ""
                     // The model's own text before any cleaning, to see what it really began with.
                     val recording = object : ru.iskra.core.llm.local.LlamaEngine by e {
@@ -87,7 +107,11 @@ class LocalModelEval {
                     val memory = MemoryManager(InMemoryMemoryStore())
                     val agent = CompanionAgent(
                         persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(),
-                        stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                        stateStore = InMemoryStateStore(), policy = SafetyPolicy({ _, _ -> true }),
+                        // The app's own tool set: Gemma 4 on the phone gets the phone subset of it, other phone models none.
+                        tools = ToolRegistry(listOf(ToolSchemas.setTimer, ToolSchemas.setAlarm,
+                            ToolSchemas.flashlight, ToolSchemas.openApp, SkillSchemas.setReminder,
+                            SkillSchemas.addNote, SkillSchemas.weather).map { Noting(it, toolCalls) }),
                         providerFactory = { null }, localFactory = { provider }, clock = { clockMs },
                         // The night recap below compresses the first half of this conversation (the app waits for 60 turns).
                         summarizeAfterTurns = 20,
@@ -112,6 +136,7 @@ class LocalModelEval {
                         val note = if (!odd) "" else "; raw start: `" + start.map { c ->
                             if (c.code < 32 || c.code >= 0x2E80) "\\u%04x".format(c.code) else c.toString() }.joinToString("") + "`"
                         doc.append("\n**Q:** $q\n\n**A** [${r.emotion.name.lowercase()}] ($how$note): ${r.text}\n")
+                        if (r.actions.isNotEmpty()) doc.append("\n*(tools: ${r.actions.joinToString("; ") { it.description }})*\n")
                     }
                     // What the night job would keep: a recap of the oldest turns, made by this model.
                     val t1 = System.nanoTime()

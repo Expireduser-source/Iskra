@@ -1,0 +1,161 @@
+package ru.iskra.core
+
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import ru.iskra.core.agent.CompanionAgent
+import ru.iskra.core.agent.InMemoryConversationStore
+import ru.iskra.core.agent.InMemoryStateStore
+import ru.iskra.core.i18n.Lang
+import ru.iskra.core.i18n.withLang
+import ru.iskra.core.llm.ChatMessage
+import ru.iskra.core.llm.LlmRequest
+import ru.iskra.core.llm.ToolCall
+import ru.iskra.core.llm.local.ChatFormat
+import ru.iskra.core.llm.local.Gemma4Tools
+import ru.iskra.core.llm.local.LlamaEngine
+import ru.iskra.core.llm.local.LocalLlmProvider
+import ru.iskra.core.memory.InMemoryMemoryStore
+import ru.iskra.core.memory.MemoryManager
+import ru.iskra.core.persona.Personas
+import ru.iskra.core.tools.SafetyPolicy
+import ru.iskra.core.tools.ToolRegistry
+import ru.iskra.core.tools.ToolSchemas
+import kotlin.random.Random
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+/** Gemma 4 on the phone calls tools in Google's own markup (the model's chat template, 2026-07-09). */
+class Gemma4ToolsTest {
+    private val q = "<|\"|>"
+
+    @Test fun declarationsAreWrittenAsTheTemplateDoes() = withLang(Lang.EN) {
+        assertEquals("declaration:set_timer{description:${q}Start a timer in the system clock.$q,parameters:{properties:{" +
+            "label:{description:${q}Label$q,type:${q}STRING$q},seconds:{description:${q}Duration in seconds$q,type:${q}INTEGER$q}}," +
+            "required:[${q}seconds$q],type:${q}OBJECT$q}}", Gemma4Tools.declaration(ToolSchemas.setTimer))
+        assertEquals("declaration:volume{description:${q}Change the media volume.$q,parameters:{properties:{direction:{description:${q}Direction$q," +
+            "enum:[${q}up$q,${q}down$q,${q}mute$q,${q}unmute$q],type:${q}STRING$q}},required:[${q}direction$q],type:${q}OBJECT$q}}",
+            Gemma4Tools.declaration(ToolSchemas.volume))
+        assertEquals("declaration:open_camera{description:${q}Open the camera to take a photo.$q,parameters:{type:${q}OBJECT$q}}",
+            Gemma4Tools.declaration(ToolSchemas.openCamera))
+        assertEquals("<|tool>" + Gemma4Tools.declaration(ToolSchemas.setTimer) + "<tool|>", Gemma4Tools.declarations(listOf(ToolSchemas.setTimer)))
+    }
+
+    @Test fun callsAreRead() {
+        val (said, calls) = Gemma4Tools.parse("Ставлю! <|tool_call>call:set_timer{label:${q}пирог$q,seconds:1800}<tool_call|>")
+        assertEquals("Ставлю!", said)
+        assertEquals("set_timer", calls.single().name)
+        assertEquals("пирог", calls.single().arguments["label"]!!.jsonPrimitive.content)
+        assertEquals(1800, calls.single().arguments["seconds"]!!.jsonPrimitive.int)
+        // Cut off by the stop at <tool_call|>, nested values, two calls.
+        val (none, two) = Gemma4Tools.parse("<|tool_call>call:flashlight{on:true}<tool_call|><|tool_call>call:x{a:{b:[1,2,${q}c$q]},n:null}")
+        assertEquals("", none)
+        assertEquals(listOf("flashlight", "x"), two.map { it.name })
+        assertEquals(true, two[0].arguments["on"]!!.jsonPrimitive.content.toBoolean())
+        assertEquals("c", two[1].arguments["a"]!!.jsonObject["b"]!!.jsonArray[2].jsonPrimitive.content)
+        // Not a call: the text stays as it is.
+        assertEquals("Просто ответ" to emptyList(), Gemma4Tools.parse("Просто ответ"))
+        assertTrue(Gemma4Tools.parse("<|tool_call>нечто непонятное").second.isEmpty())
+    }
+
+    @Test fun aCallAndItsResultAreWrittenBack() {
+        val call = ToolCall("call_1", "set_timer", buildJsonObject { put("seconds", 300); put("label", "чай") })
+        assertEquals("<|tool_call>call:set_timer{label:${q}чай$q,seconds:300}<tool_call|>", Gemma4Tools.call(call))
+        assertEquals("<|tool_response>response:set_timer{value:${q}таймер запущен$q}<tool_response|>", Gemma4Tools.response("set_timer", "таймер запущен"))
+    }
+
+    /** The tool loop renders as one model turn that goes on after the result: no closing tag, no new header. */
+    @Test fun theTurnGoesOnAfterTheResult() = withLang(Lang.RU) {
+        val call = ToolCall("call_1", "set_timer", buildJsonObject { put("seconds", 1800) })
+        val r = LlmRequest(system = "Ты — Искра.", tools = listOf(ToolSchemas.setTimer), situation = "Сейчас 15:00.", messages = listOf(
+            ChatMessage.User("Через полчаса вынуть пирог — не дай мне забыть"),
+            ChatMessage.Assistant("", listOf(call)),
+            ChatMessage.ToolResult("call_1", "set_timer", "таймер запущен"),
+        ))
+        val p = ChatFormat.GEMMA4.prompt(r).text
+        assertTrue(p.startsWith("<|turn>system\nТы — Искра.<|tool>declaration:set_timer{"), p)
+        assertTrue(p.endsWith("<|turn>user\nСейчас 15:00.\n\nЧерез полчаса вынуть пирог — не дай мне забыть<turn|>\n" +
+            "<|turn>model\n<|tool_call>call:set_timer{seconds:1800}<tool_call|><|tool_response>response:set_timer{value:${q}таймер запущен$q}<tool_response|>"), p)
+        // Without tools nothing about them is written.
+        assertFalse(ChatFormat.GEMMA4.prompt(r.copy(tools = emptyList(), messages = r.messages.take(1))).text.contains("<|tool>"))
+    }
+
+    private class Scripted(vararg outputs: String) : LlamaEngine {
+        private val left = ArrayDeque(outputs.toList())
+        val prompts = mutableListOf<String>()
+        override val info = "scripted"
+        override val contextSize = 8192
+        override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, head: Int, onPiece: (String) -> Boolean): String {
+            prompts += prompt
+            val out = StringBuilder()
+            // Token by token, roughly: the special tags come whole, as llama.cpp gives them.
+            for (piece in Regex("""<\|tool_call>|<tool_call\|>|[^<]+|<""").findAll(left.removeFirstOrNull() ?: "[happy] Мрр!").map { it.value }) {
+                out.append(piece); if (!onPiece(piece)) break
+            }
+            return out.toString()
+        }
+        override fun cancel() = Unit
+        override fun close() = Unit
+    }
+
+    @Test fun theCallIsNeitherShownNorSpoken() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Scripted("Ставлю таймер! <|tool_call>call:set_timer{seconds:1800}<tool_call|>")
+            val p = LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:test")
+            val heard = StringBuilder()
+            val r = p.stream(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Через полчаса вынуть пирог")), tools = listOf(ToolSchemas.setTimer))) { heard.append(it) }
+            assertEquals("Ставлю таймер!", r.text)
+            assertEquals("set_timer", r.toolCalls.single().name)
+            assertFalse(heard.contains("tool_call"), heard.toString())
+            // No tools offered: a made-up call is dropped and not shown either.
+            val r2 = LocalLlmProvider({ Scripted("<|tool_call>call:set_timer{seconds:5}<tool_call|>") }, ChatFormat.GEMMA4, "local:test")
+                .complete(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Привет"))))
+            assertTrue(r2.toolCalls.isEmpty())
+            assertFalse(r2.text.contains("tool_call"))
+        }
+    }
+
+    /** The whole way: Gemma 4 on the phone calls the timer, the tool runs, the model answers in the same turn. */
+    @Test fun gemma4OnThePhoneSetsATimer() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Scripted("<|tool_call>call:set_timer{label:${q}пирог$q,seconds:1800}<tool_call|>", "[happy] Поставила таймер на полчаса — пирог не сгорит!")
+            val timer = RecordingTool()
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
+            val r = agent.handle("Через полчаса надо вынуть пирог из духовки, не дай мне забыть")
+            assertEquals(1800, timer.calls.single()["seconds"]!!.jsonPrimitive.int)
+            assertEquals("Поставила таймер на полчаса — пирог не сгорит!", r.text)
+            assertEquals(1, r.actions.size)
+            // The first prompt declared the tool; the second goes on after its result, in the same model turn.
+            assertTrue(engine.prompts[0].contains("<|tool>declaration:set_timer"))
+            assertTrue(engine.prompts[1].endsWith("<|tool_response>response:set_timer{value:${q}OK: таймер запущен$q}<tool_response|>"), engine.prompts[1].takeLast(200))
+        }
+    }
+
+    /** Other phone models get no tools; the cloud gets all of them. */
+    @Test fun onlyGemma4OnThePhoneGetsTools() {
+        assertTrue(LocalLlmProvider({ null }, ChatFormat.GEMMA4, "a").nativeTools)
+        assertFalse(LocalLlmProvider({ null }, ChatFormat.GEMMA, "b").nativeTools)
+        assertFalse(LocalLlmProvider({ null }, ChatFormat.CHATML, "c").nativeTools)
+    }
+
+    @Suppress("unused") private fun JsonObject.str(k: String) = (this[k] as? JsonPrimitive)?.content
+}
+
+/** The evaluation's tool request must reach the model: the phrase parser doesn't know this wording. */
+class EvalToolRequestTest {
+    @Test fun theParserLeavesItToTheModel() = withLang(Lang.RU) {
+        val now = java.time.LocalDateTime.of(2026, 11, 8, 15, 0)
+        assertEquals(null, ru.iskra.core.tools.CommandParser.parse("Через полчаса надо вынуть пирог из духовки, не дай мне забыть.", now))
+    }
+}

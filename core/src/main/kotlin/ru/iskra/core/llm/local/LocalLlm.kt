@@ -168,18 +168,48 @@ enum class ChatFormat {
                 sb.append("<start_of_turn>model\n")
             }
             GEMMA4 -> {
-                sb.append("<|turn>system\n").append(request.system.trim()).append("<turn|>\n")
+                sb.append("<|turn>system\n").append(request.system.trim())
+                // Tools are declared in the system turn, as Google's template does (Gemma4Tools).
+                if (request.tools.isNotEmpty()) sb.append(Gemma4Tools.declarations(request.tools))
+                sb.append("<turn|>\n")
                 head = sb.length
                 stable = sb.length
-                turns.forEachIndexed { i, (role, text) ->
-                    // A system turn is only expected first, so the per-message situation leads the last message.
-                    val last = i == turns.lastIndex
-                    sb.append("<|turn>").append(if (role == "assistant") "model" else "user").append('\n')
-                    if (last && situation.isNotEmpty()) { stable = sb.length; sb.append(situation).append("\n\n") }
-                    sb.append(text.trim()).append("<turn|>\n")
-                    if (last && situation.isEmpty()) stable = sb.length
+                val msgs = request.messages
+                val lastUser = msgs.indexOfLast { it is ChatMessage.User }
+                // After a tool's result the model goes on in the same turn: no closing tag, no new header.
+                var open = false
+                var i = 0
+                while (i < msgs.size) {
+                    when (val m = msgs[i]) {
+                        is ChatMessage.User -> {
+                            if (open) { sb.append("<turn|>\n"); open = false }
+                            // A system turn is only expected first, so the per-message situation leads the last message.
+                            val last = i == lastUser
+                            sb.append("<|turn>user\n")
+                            if (last && situation.isNotEmpty()) { stable = sb.length; sb.append(situation).append("\n\n") }
+                            sb.append(m.text.trim()).append("<turn|>\n")
+                            if (last && situation.isEmpty()) stable = sb.length
+                        }
+                        is ChatMessage.Assistant -> if (m.text.isNotBlank() || m.toolCalls.isNotEmpty()) {
+                            if (!open) sb.append("<|turn>model\n")
+                            // As the model wrote it: its words first, then the call and right after it the result.
+                            if (m.text.isNotBlank()) sb.append(m.text.trim())
+                            if (m.toolCalls.isEmpty()) { sb.append("<turn|>\n"); open = false } else {
+                                for (c in m.toolCalls) {
+                                    sb.append(Gemma4Tools.call(c))
+                                    val r = msgs.drop(i + 1).takeWhile { it is ChatMessage.ToolResult }.map { it as ChatMessage.ToolResult }
+                                        .firstOrNull { it.callId == c.id }
+                                    sb.append(Gemma4Tools.response(c.name, r?.content ?: ""))
+                                }
+                                while (i + 1 < msgs.size && msgs[i + 1] is ChatMessage.ToolResult) i++
+                                open = true
+                            }
+                        }
+                        is ChatMessage.ToolResult -> Unit // written right after its call
+                    }
+                    i++
                 }
-                sb.append("<|turn>model\n")
+                if (!open) sb.append("<|turn>model\n")
             }
             LLAMA3, PHI -> {
                 // Like ChatML: instructions first, the situation as a system turn right before the last message.
@@ -217,7 +247,7 @@ enum class ChatFormat {
     val stops: List<String> get() = when (this) {
         CHATML, CHATML_NO_THINK -> listOf("<|im_end|>", "<|im_start|>", "<|endoftext|>")
         GEMMA -> listOf("<end_of_turn>", "<start_of_turn>")
-        GEMMA4 -> listOf("<turn|>", "<|turn>")
+        GEMMA4 -> listOf("<turn|>", "<|turn>", Gemma4Tools.CALL_CLOSE)
         LLAMA3 -> listOf("<|eot_id|>", "<|start_header_id|>", "<|end_of_text|>")
         MISTRAL -> listOf("</s>", "[INST]")
         PHI -> listOf("<|end|>", "<|user|>", "<|assistant|>", "<|endoftext|>")
@@ -252,6 +282,7 @@ class LocalLlmProvider(
     private val onStats: ((GenStats) -> Unit)? = null,
 ) : LlmProvider {
     override val onDevice: Boolean get() = true
+    override val nativeTools: Boolean get() = format == ChatFormat.GEMMA4
     private val lock = Mutex()
     /** Replies since the last one with a «мрр»: small models began every reply with it, copying their own history. */
     private var sincePurr = 3
@@ -293,24 +324,30 @@ class LocalLlmProvider(
                         if (stop != null) return@generate false
                         val incoming = when (gate) {
                             Gate.OPEN -> piece
+                            Gate.CALL -> ""
                             else -> {
                                 held.append(piece)
                                 if (gate == Gate.WAIT) {
                                     val h = held.toString().trimStart()
                                     gate = when {
                                         h.startsWith(THOUGHT_OPEN) -> Gate.THINKING
-                                        THOUGHT_OPEN.startsWith(h) -> Gate.WAIT
+                                        h.startsWith(Gemma4Tools.CALL_OPEN) -> Gate.CALL
+                                        THOUGHT_OPEN.startsWith(h) || Gemma4Tools.CALL_OPEN.startsWith(h) -> Gate.WAIT
                                         else -> Gate.OPEN
                                     }
                                 }
                                 when (gate) {
-                                    Gate.WAIT -> ""
+                                    Gate.WAIT, Gate.CALL -> ""
                                     Gate.OPEN -> held.toString().also { held.clear() }
                                     Gate.THINKING -> held.indexOf(THOUGHT_CLOSE).let { end ->
                                         if (end < 0) "" else held.substring(end + THOUGHT_CLOSE.length).also { held.clear(); gate = Gate.OPEN }
                                     }
                                 }
                             }
+                        }.let { s ->
+                            // A tool call after some words: the words are shown, the call is not.
+                            if (format != ChatFormat.GEMMA4 || gate != Gate.OPEN) s
+                            else s.indexOf(Gemma4Tools.CALL_OPEN).let { at -> if (at < 0) s else { gate = Gate.CALL; s.substring(0, at) } }
                         }
                         if (incoming.isEmpty()) return@generate scope.isActive
                         var visible = think.feed(incoming).let { if (guard) stripCjk(it) else it }
@@ -339,13 +376,18 @@ class LocalLlmProvider(
         var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
         // What was shown is the part after the thought channel; the reply kept in the chat is the same.
         if (format == ChatFormat.GEMMA4) reply = reply.substringAfterLast(THOUGHT_CLOSE).trim()
+        // Gemma 4's tool calls: the words before the first call are the reply, the calls go to the agent (none if no tool
+        // was offered — a call made up anyway is just not shown).
+        val (said, made) = if (format == ChatFormat.GEMMA4) Gemma4Tools.parse(reply) else reply to emptyList()
+        val calls = if (request.tools.isEmpty()) emptyList() else made.filter { c -> request.tools.any { it.name == c.name } }
+        reply = said
         val final = cleanStart(if (guard) stripCjk(reply).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()
         sincePurr = if (PURR.containsMatchIn(final)) 0 else sincePurr + 1
-        LlmResponse(final, emptyList())
+        LlmResponse(final, calls)
     }
 
     /** Gemma 4's start of a reply: waiting to see whether it opens the thought channel, inside it, or the answer itself. */
-    private enum class Gate { WAIT, THINKING, OPEN }
+    private enum class Gate { WAIT, THINKING, OPEN, CALL }
 
     companion object {
         private const val THOUGHT_OPEN = "<|channel>"
