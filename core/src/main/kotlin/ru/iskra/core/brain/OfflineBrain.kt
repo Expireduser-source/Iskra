@@ -290,7 +290,7 @@ class OfflineBrain(private val random: Random = Random.Default) {
 
 /** Facts the owner tells about themselves, kept even without a model, and "забудь …". */
 object MemoryTalk {
-    class Fact(val text: String, val importance: Int, val reply: String)
+    class Fact(val text: String, val importance: Int, val reply: String, val kind: MemoryKind = MemoryKind.FACT)
 
     private val notNames = setOf("на", "в", "к", "домой", "работу", "гулять", "есть", "спать", "все", "так", "просто", "иначе", "по",
         "to", "for", "at", "home", "work", "out", "in", "on", "the", "a")
@@ -298,6 +298,9 @@ object MemoryTalk {
     private val name = Regex("""^(?:(?:привет|hi|hello|hey)[,!\s]+)?(?:меня\s+зовут|зови\s+меня|мое\s+имя|my\s+name\s+is|call\s+me|i'm\s+called)\s+(\p{L}[\p{L}-]{1,20})(?:\s+(\p{L}[\p{L}-]{1,20}))?[.!]?$""", RegexOption.IGNORE_CASE)
     private val city = Regex("""^(?:я\s+живу\s+в|i\s+live\s+in)\s+(?:городе\s+|the\s+city\s+of\s+)?(\p{L}[\p{L} -]{1,30})[.!]?$""", RegexOption.IGNORE_CASE)
     private val birthday = Regex("""^(?:мой\s+день\s+рождения|у\s+меня\s+день\s+рождения|я\s+родил(?:ся|ась)|my\s+birthday\s+is|i\s+was\s+born\s+on)\s+(.{3,30}?)[.!]?$""", RegexOption.IGNORE_CASE)
+    /** «у меня завтра день рождения», «сегодня мой день рождения», "my birthday is tomorrow" — the day is worked out. */
+    private val ownBirthday = Regex("""(?iu)(?:(?<!\p{L})мой|у\s+меня)\s+(?:\p{L}+\s+){0,2}(?:день\s+рождения|днюха)|(?<!\p{L})my\s+(?:\p{L}+\s+)?birthday""")
+    private val pastBirthday = Regex("""(?iu)(?<!\p{L})(?:был|была|прош[её]л|вчера|позавчера|was|yesterday)(?!\p{L})""")
     private val study = Regex("""^(?:а\s+)?я\s+(?:сейчас\s+)?учусь\s+((?:на|в|во)\s+[^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
     private val work = Regex("""^(?:а\s+)?я\s+работаю\s+((?:в|во|на)\s+[^,.;!?]{2,40}|[\p{L}-]{3,30}(?:ом|ем|ой|ей|ёй)(?:\s+[\p{L}-]{2,30})?)""", RegexOption.IGNORE_CASE)
     private val pet = Regex("""^у\s+меня\s+(?:есть\s+)?(кот|кошка|собака|пёс|пес|попугай|хомяк|кролик|черепаха)(?:\s*,)?\s+(?:по\s+имени|по\s+кличке|(?:его|её|ее)\s+зовут|зовут)\s+(\p{L}[\p{L}-]{1,20})""", RegexOption.IGNORE_CASE)
@@ -306,13 +309,54 @@ object MemoryTalk {
     private val studyEn = Regex("""^i(?:'m| am)?\s+(?:study(?:ing)?|a student of)\s+([^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
     private val workEn = Regex("""^i\s+work\s+((?:as|at|in)\s+[^,.;!?]{2,40})""", RegexOption.IGNORE_CASE)
     private val petEn = Regex("""^i\s+have\s+an?\s+(cat|dog|parrot|hamster|rabbit|turtle)\s+(?:named|called)\s+(\p{L}[\p{L}-]{1,20})""", RegexOption.IGNORE_CASE)
+
+    // Likes and dislikes: «я люблю пиццу», «обожаю джаз», «мне нравится гулять», «терпеть не могу дождь», "I love jazz".
+    private val likes = Regex("""(?iu)^(?:а\s+)?(?:я\s+)?(?:очень\s+|так\s+|просто\s+|безумно\s+|прям\s+|правда\s+|тоже\s+|ещё\s+|еще\s+|вообще\s+)?(люблю|обожаю|не\s+люблю|ненавижу|терпеть\s+не\s+могу|не\s+выношу)(,\s*|\s+)(.{2,80}?)[.!]*$""")
+    private val likesMe = Regex("""(?iu)^(?:а\s+)?мне\s+(?:очень\s+|тоже\s+|ещё\s+|еще\s+|вообще\s+)?(не\s+)?(нравится|нравятся)(,\s*|\s+)(.{2,80}?)[.!]*$""")
+    private val likesEn = Regex("""(?iu)^i\s+(?:really\s+|just\s+|absolutely\s+|also\s+|totally\s+|kinda\s+)?(love|adore|like|enjoy|hate|dislike|can't\s+stand|cannot\s+stand|don't\s+like|do\s+not\s+like)\s+(.{2,80}?)[.!]*$""")
+    /** Not about the owner's tastes: «люблю тебя», «нравится, как ты говоришь», "I like it", "I love you". */
+    private val notTaste = Regex("""(?iu)(?<!\p{L})(?:ты|тебя|тебе|тобой|твой|твоя|твоё|твое|твои|твоего|твою|твоих|искр\p{L}*|вас|вам|это|этот|эта|эту|эти|этой|этого|этих|такое|такие|так|его|её|ее|их|него|неё|нее|you|your|yours|iskra|it|this|that|these|those|them|him|her|when\s+you)(?!\p{L})|\?""")
+    private val taste = mapOf("люблю" to "любит", "обожаю" to "обожает", "не люблю" to "не любит", "ненавижу" to "ненавидит",
+        "терпеть не могу" to "терпеть не может", "не выношу" to "не выносит")
+    private val tasteEn = mapOf("love" to "loves", "adore" to "adores", "like" to "likes", "enjoy" to "enjoys", "hate" to "hates", "dislike" to "dislikes",
+        "can't stand" to "can't stand", "cannot stand" to "can't stand", "don't like" to "doesn't like", "do not like" to "doesn't like")
+    private val favorite = Regex("""(?iu)^(?:а\s+)?(?:мой|моя|моё|мое|мои)\s+(?:самый\s+|самая\s+|самое\s+|самые\s+)?(любим(?:ый|ая|ое|ые))\s+(вид\s+спорта|время\s+года|день\s+недели|[\p{L}-]+)\s*(?:[—–:-]\s*(?:это\s+)?|это\s+|\s)\s*([^?]{1,60}?)[.!]*$""")
+    private val favoriteEn = Regex("""(?iu)^my\s+(?:all-time\s+)?favou?rite\s+([\p{L} ]{2,25}?)\s+is\s+([^?]{1,60}?)[.!]*$""")
+
+    // Age: «мне 25 лет», "I'm 25".
+    private val age = Regex("""(?iu)^(?:а\s+)?(?:мне\s+(?:уже\s+)?(\d{1,3})(?:\s+(?:лет|год|года))?|i(?:'m|\s+am)\s+(\d{1,3})(?:\s+years?\s+old)?)(?:\s+уже)?[.!]*$""")
+
+    // Family: «мою сестру зовут Аня», «у меня есть брат Петя», "my sister's name is Anna".
+    private const val REL_NOM = "мама|мать|папа|отец|сестра|сестр[её]нка|брат|братик|дочь|дочка|сын|жена|муж|девушка|парень|бабушка|дедушка|дед|подруга|друг"
+    private const val REL_ACC = "маму|мать|папу|отца|сестру|сестр[её]нку|брата|братика|дочь|дочку|сына|жену|мужа|девушку|парня|бабушку|дедушку|деда|подругу|друга"
+    private val familyAcc = Regex("""(?iu)^(?:а\s+)?(?:мою|моего)\s+((?:старш|младш|лучш)\p{L}+\s+)?($REL_ACC)\s+зовут\s+(\p{L}[\p{L}-]{1,20})[.!]*$""")
+    private val familyNom = Regex("""(?iu)^(?:а\s+)?у\s+меня\s+(?:есть\s+)?((?:старш|младш|лучш)\p{L}+\s+)?($REL_NOM)(?:\s*,)?\s+(по\s+имени\s+|(?:его|её|ее)\s+зовут\s+|зовут\s+)?(\p{L}[\p{L}-]{1,20})[.!]*$""")
+    private const val REL_EN = "mom|mum|mother|dad|father|sister|brother|daughter|son|wife|husband|girlfriend|boyfriend|grandma|grandmother|grandpa|grandfather|best\\s+friend|friend"
+    private val familyEn = Regex("""(?iu)^(?:my\s+((?:older|younger|little|big)\s+)?($REL_EN)(?:'s\s+name\s+is|\s+is\s+(?:named|called))|i\s+have\s+an?\s+((?:older|younger|little|big)\s+)?($REL_EN)\s+(?:named|called))\s+(\p{L}[\p{L}-]{1,20})[.!]*$""")
+    private val accOf = mapOf("мама" to "маму", "мать" to "маму", "папа" to "папу", "отец" to "папу", "сестра" to "сестру", "сестрёнка" to "сестрёнку",
+        "сестренка" to "сестрёнку", "брат" to "брата", "братик" to "братика", "дочь" to "дочь", "дочка" to "дочку", "сын" to "сына", "жена" to "жену",
+        "муж" to "мужа", "девушка" to "девушку", "парень" to "парня", "бабушка" to "бабушку", "дедушка" to "дедушку", "дед" to "деда",
+        "подруга" to "подругу", "друг" to "друга", "мать" to "маму", "отца" to "папу", "сестренку" to "сестрёнку")
+
     private val askName = Regex("""^(?:а\s+)?(?:как\s+меня\s+зовут|ты\s+помнишь\s+как\s+меня\s+зовут|знаешь\s+как\s+меня\s+зовут|what's\s+my\s+name|what\s+is\s+my\s+name|do\s+you\s+know\s+my\s+name)\??$""", RegexOption.IGNORE_CASE)
     private val forget = Regex("""^(?:искра[,\s]+)?(?:забудь|удали\s+из\s+памяти|сотри\s+из\s+памяти|forget|delete\s+from\s+memory)(?:\s*[,:]?\s*(?:что|про|о|об|about|that))?\s+(.{2,200})$""", RegexOption.IGNORE_CASE)
     private val forgetAll = Regex("""^(?:забудь|сотри|очисти)\s+(?:все|всё|всю\s+память|память)(?:\s+(?:обо\s+мне|что\s+знаешь))?$|^(?:forget|erase)\s+(?:everything|all)(?:\s+about\s+me)?$""", RegexOption.IGNORE_CASE)
 
     private fun cap(s: String) = s.split('-').joinToString("-") { w -> w.lowercase().replaceFirstChar { it.uppercase() } }
+    private fun isRu(s: String) = s.any { it in 'а'..'я' || it in 'А'..'Я' || it == 'ё' }
+    private val monthsNom = listOf("январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь")
+    private val monthsGen = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+    private val monthsEn = listOf("January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December")
 
-    fun fact(text: String): Fact? {
+    /** «25 лет», «21 год», «32 года». */
+    fun years(n: Int): String = "$n " + when {
+        n % 100 in 11..14 -> "лет"
+        n % 10 == 1 -> "год"
+        n % 10 in 2..4 -> "года"
+        else -> "лет"
+    }
+
+    fun fact(text: String, today: java.time.LocalDate = java.time.LocalDate.now()): Fact? {
         val t = text.trim()
         name.find(t)?.let { m ->
             val first = m.groupValues[1]
@@ -342,24 +386,132 @@ object MemoryTalk {
         workEn.find(t)?.let { m -> return Fact("The owner works ${m.groupValues[1].trim()}", 4, "Got it: you work ${m.groupValues[1].trim()}.") }
         petEn.find(t)?.let { m -> return Fact("The owner has a ${m.groupValues[1].lowercase()} named ${cap(m.groupValues[2])}", 4,
             "Got it: your ${m.groupValues[1].lowercase()} ${cap(m.groupValues[2])}. Say mrr from me!") }
-        birthday.find(t)?.let { m ->
-            val d = m.groupValues[1].trim()
-            return Fact(tr("День рождения владельца: $d", "The owner's birthday: $d"), 5, tr("Запомнила: день рождения — $d. Мрр, обязательно поздравлю!", "Got it: your birthday is $d. Mrr, I'll be sure to celebrate!"))
+        birthdayFact(t, today)?.let { return it }
+        family(t)?.let { return it }
+        ageFact(t, today)?.let { return it }
+        favoriteFact(t)?.let { return it }
+        tasteFact(t)?.let { return it }
+        return null
+    }
+
+    private fun birthdayFact(t: String, today: java.time.LocalDate): Fact? {
+        val said = birthday.find(t)?.groupValues?.get(1)?.trim()?.takeIf { TimeTalk.monthDay(it) != null }
+        val ru = isRu(t)
+        val relative = if (said == null && ownBirthday.containsMatchIn(t) && !t.endsWith("?") && !pastBirthday.containsMatchIn(t))
+            PlanTalk.day(t, today)?.first else null
+        val d = said ?: relative?.let { if (ru) "${it.dayOfMonth} ${monthsGen[it.monthValue - 1]}" else "${monthsEn[it.monthValue - 1]} ${it.dayOfMonth}" } ?: return null
+        val reply = if (relative == today) tr("Мрр, так это же сегодня! С днём рождения! Запомнила — теперь буду поздравлять каждый год.",
+            "Mrr, that's today! Happy birthday! I'll remember and celebrate it every year.")
+            else tr("Запомнила: день рождения — $d. Мрр, обязательно поздравлю!", "Got it: your birthday is $d. Mrr, I'll be sure to celebrate!")
+        return Fact(if (ru) "День рождения владельца: $d" else "The owner's birthday: $d", 5, reply)
+    }
+
+    private fun family(t: String): Fact? {
+        familyAcc.find(t)?.let { m ->
+            val who = (m.groupValues[1] + m.groupValues[2]).lowercase().let { accOf[it] ?: it }
+            val name = cap(m.groupValues[3])
+            return Fact("${who.replaceFirstChar { it.uppercase() }} владельца зовут $name", 3, "Запомнила: ${yours(who)} $who зовут $name.")
+        }
+        familyNom.find(t)?.let { m ->
+            if (m.groupValues[3].isEmpty() && !m.groupValues[4].first().isUpperCase()) return null // «у меня есть сестра Аня», not «у меня мама врач»
+            val rel = m.groupValues[2].lowercase()
+            val mod = m.groupValues[1].trim().lowercase().takeIf { it.isNotEmpty() }?.let { modAcc(it, rel) }
+            val who = listOfNotNull(mod, accOf[rel] ?: rel).joinToString(" ")
+            val name = cap(m.groupValues[4])
+            return Fact("${who.replaceFirstChar { it.uppercase() }} владельца зовут $name", 3, "Запомнила: ${yours(who)} $who зовут $name.")
+        }
+        familyEn.find(t)?.let { m ->
+            val mod = (m.groupValues[1].ifEmpty { m.groupValues[3] }).trim().lowercase()
+            val rel = (m.groupValues[2].ifEmpty { m.groupValues[4] }).lowercase().replace(Regex("""\s+"""), " ")
+            val who = listOf(mod, rel).filter { it.isNotEmpty() }.joinToString(" ")
+            val name = cap(m.groupValues[5])
+            return Fact("The owner's $who is named $name", 3, "Got it: your $who's name is $name.")
+        }
+        return null
+    }
+
+    /** «младший» + «брат» → «младшего»; «старшая» + «сестра» → «старшую». */
+    private fun modAcc(mod: String, rel: String): String {
+        val feminine = rel.endsWith("а") || rel.endsWith("я") || rel == "дочь" || rel == "мать"
+        val stem = mod.dropLast(2)
+        return if (feminine) stem + "ую" else stem + "его"
+    }
+
+    /** «твою» сестру, «твоего» брата. */
+    private fun yours(whoAcc: String): String {
+        val last = whoAcc.split(' ').last()
+        return if (last.endsWith("у") || last.endsWith("ю") || last == "дочь" || last == "мать") "твою" else "твоего"
+    }
+
+    private fun ageFact(t: String, today: java.time.LocalDate): Fact? {
+        val m = age.find(NumberWords.digitize(t)) ?: return null
+        val n = (m.groupValues[1].ifEmpty { m.groupValues[2] }).toIntOrNull()?.takeIf { it in 5..110 } ?: return null
+        return if (isRu(t)) Fact("Владельцу ${years(n)} (на ${monthsNom[today.monthValue - 1]} ${today.year})", 4, "Запомнила: тебе ${years(n)}.")
+        else Fact("The owner is $n (as of ${monthsEn[today.monthValue - 1]} ${today.year})", 4, "Got it: you're $n.")
+    }
+
+    private fun favoriteFact(t: String): Fact? {
+        favorite.find(t)?.let { m ->
+            val value = m.groupValues[3].trim().trimEnd('.', '!', ',')
+            if (value.isEmpty() || notTaste.containsMatchIn(value)) return null
+            val adj = m.groupValues[1].lowercase()
+            val what = m.groupValues[2].lowercase()
+            val your = mapOf("любимый" to "твой", "любимая" to "твоя", "любимое" to "твоё", "любимые" to "твои")[adj] ?: "твой"
+            return Fact("${adj.replaceFirstChar { it.uppercase() }} $what владельца — $value", 3, "Запомнила: $your $adj $what — $value.", MemoryKind.PREFERENCE)
+        }
+        favoriteEn.find(t)?.let { m ->
+            val value = m.groupValues[2].trim()
+            if (notTaste.containsMatchIn(value)) return null
+            val what = m.groupValues[1].trim().lowercase()
+            return Fact("The owner's favorite $what is $value", 3, "Got it: your favorite $what is $value.", MemoryKind.PREFERENCE)
+        }
+        return null
+    }
+
+    /** The object of a taste, without what follows a comma («пиццу, но сегодня не хочу» → «пиццу»), unless it starts the clause («, когда тепло»). */
+    private fun tasteObject(sep: String, raw: String): String? {
+        val v = if (sep.startsWith(",")) raw.trim() else raw.split(Regex("""\s*,\s*|\s+(?:но|а|but)\s+""")).first().trim()
+        return v.trimEnd('.', '!', ',').takeIf { it.length in 2..60 && !notTaste.containsMatchIn(it) }
+    }
+
+    private fun tasteFact(t: String): Fact? {
+        likes.find(t)?.let { m ->
+            val verb = m.groupValues[1].lowercase().replace(Regex("""\s+"""), " ")
+            val obj = tasteObject(m.groupValues[2], m.groupValues[3]) ?: return null
+            val joiner = if (m.groupValues[2].startsWith(",")) ", " else " "
+            val third = taste[verb] ?: return null
+            val second = mapOf("любит" to "любишь", "обожает" to "обожаешь", "не любит" to "не любишь", "ненавидит" to "ненавидишь",
+                "терпеть не может" to "терпеть не можешь", "не выносит" to "не выносишь")[third]
+            return Fact("Владелец $third$joiner$obj", 3, "Запомнила: ты $second$joiner$obj.", MemoryKind.PREFERENCE)
+        }
+        likesMe.find(t)?.let { m ->
+            val not = if (m.groupValues[1].isNotBlank()) "не " else ""
+            val verb = m.groupValues[2].lowercase()
+            val obj = tasteObject(m.groupValues[3], m.groupValues[4]) ?: return null
+            val joiner = if (m.groupValues[3].startsWith(",")) ", " else " "
+            return Fact("Владельцу $not$verb$joiner$obj", 3, "Запомнила: тебе $not$verb$joiner$obj.", MemoryKind.PREFERENCE)
+        }
+        likesEn.find(t)?.let { m ->
+            val verb = m.groupValues[1].lowercase().replace(Regex("""\s+"""), " ")
+            val obj = tasteObject(" ", m.groupValues[2]) ?: return null
+            val third = tasteEn[verb] ?: return null
+            val second = when (third) { "doesn't like" -> "don't like"; "can't stand" -> "can't stand"; else -> verb }
+            return Fact("The owner $third $obj", 3, "Got it: you $second $obj.", MemoryKind.PREFERENCE)
         }
         return null
     }
 
     /** Facts from every sentence of a message («Меня зовут Аня. Я учусь на врача.»), not only from a one-sentence one. */
-    fun facts(text: String): List<Fact> {
-        val whole = fact(text)
+    fun facts(text: String, today: java.time.LocalDate = java.time.LocalDate.now()): List<Fact> {
+        val whole = fact(text, today)
         val parts = text.trim().split(Regex("""(?<=[.!?])\s+""")).map { it.trim() }.filter { it.isNotEmpty() }
         if (parts.size < 2) return listOfNotNull(whole)
-        return parts.mapNotNull { fact(it) }.distinctBy { it.text }.ifEmpty { listOfNotNull(whole) }
+        return parts.mapNotNull { fact(it, today) }.distinctBy { it.text }.ifEmpty { listOfNotNull(whole) }
     }
 
     fun asksName(text: String) = askName.matches(text.trim())
 
-    private enum class Topic { NAME, STUDY, WORK, CITY, PET, BIRTHDAY, ALL }
+    private enum class Topic { NAME, STUDY, WORK, CITY, PET, BIRTHDAY, AGE, FAMILY, LIKES, DISLIKES, FAVORITE, PLANS, ALL }
 
     // Each clause of a question about the owner; ё is read as е.
     private val topics: List<Pair<Topic, Regex>> = listOf(
@@ -369,26 +521,34 @@ object MemoryTalk {
         Topic.CITY to """(?:где|в\s+каком\s+городе)\s+я\s+живу|where\s+do\s+i\s+live""",
         Topic.PET to """как\s+зовут\s+(?:мо(?:его|ю)\s+)?(?:кота|кошку|собаку|пса|попугая|хомяка|кролика|черепаху)|what(?:'s|\s+is)\s+my\s+(?:cat|dog|parrot|hamster|rabbit|turtle)(?:'s)?\s+name""",
         Topic.BIRTHDAY to """когда\s+(?:у\s+меня\s+)?(?:мой\s+)?день\s+рождения|when(?:'s|\s+is)\s+my\s+birthday""",
+        Topic.AGE to """(?:(?:ты\s+)?(?:помнишь|знаешь)\s+)?сколько\s+мне\s+лет|how\s+old\s+am\s+i""",
+        Topic.FAMILY to """как\s+зовут\s+(?:мо(?:его|ю)\s+)?(?:(?:старш|младш|лучш)\p{L}+\s+)?(?:$REL_ACC)|what(?:'s|\s+is)\s+my\s+(?:(?:older|younger|little|big)\s+)?(?:$REL_EN)(?:'s)?\s+name""",
+        Topic.DISLIKES to """(?:(?:ты\s+)?(?:помнишь|знаешь)\s+)?что\s+я\s+не\s+люблю|что\s+мне\s+не\s+нравится|what\s+do\s+i\s+(?:hate|dislike)|what\s+don't\s+i\s+like""",
+        Topic.LIKES to """(?:(?:ты\s+)?(?:помнишь|знаешь)\s+)?что\s+я\s+(?:люблю|обожаю)|что\s+мне\s+нравится|what\s+do\s+i\s+(?:like|love|enjoy)""",
+        Topic.FAVORITE to """(?:какой|какая|какое|какие)\s+(?:у\s+меня\s+)?(?:мой|моя|мое|мои)?\s*(?:самый\s+|самая\s+|самое\s+|самые\s+)?любим\p{L}+\s+(\p{L}+(?:\s+\p{L}+)?)|what(?:'s|\s+is)\s+my\s+favou?rite\s+(\p{L}+(?:\s+\p{L}+)?)""",
+        Topic.PLANS to """какие\s+у\s+меня\s+планы(?:\s+на\s+(?:завтра|сегодня|неделю|выходные))?|что\s+у\s+меня\s+(?:завтра|сегодня|послезавтра|на\s+неделе|на\s+выходных)|what(?:'s|\s+are)\s+my\s+plans(?:\s+for\s+(?:today|tomorrow|the\s+week(?:end)?))?|what\s+do\s+i\s+have\s+(?:today|tomorrow|this\s+week(?:end)?)""",
         Topic.ALL to """что\s+ты\s+(?:обо|про)\s+мне\s+знаешь|что\s+ты\s+знаешь\s+(?:обо|про)\s+мне|what\s+do\s+you\s+know\s+about\s+me""",
-    ).map { (t, re) -> t to Regex("^(?:а\\s+)?(?:$re)$", RegexOption.IGNORE_CASE) }
+    ).map { (t, re) -> t to Regex("^(?:а\\s+)?(?:$re)$", setOf(RegexOption.IGNORE_CASE)) }
 
     private val pets = mapOf("кота" to "кот", "кошку" to "кошка", "собаку" to "собака", "пса" to "пёс", "попугая" to "попугай",
         "хомяка" to "хомяк", "кролика" to "кролик", "черепаху" to "черепаха")
 
     /**
      * A question about the owner that memory answers exactly: «как меня зовут и на кого я учусь?», «где я живу»,
-     * «как зовут моего кота», «что ты обо мне знаешь». Small models mixed this up («Ты называешь меня Искра?»). Every part
-     * of the message must be such a question and every fact must be in memory — otherwise null, and the model answers
-     * (it also sees the dialogue, where a fact may have just been told).
+     * «как зовут мою сестру», «что я люблю», «какие у меня планы на завтра», «что ты обо мне знаешь». Small models mixed
+     * this up («Ты называешь меня Искра?»). Every part of the message must be such a question and every fact must be in
+     * memory — otherwise null, and the model answers (it also sees the dialogue, where a fact may have just been told).
      */
-    fun recall(text: String, memories: List<MemoryItem>): String? {
+    fun recall(text: String, memories: List<MemoryItem>, today: java.time.LocalDate = java.time.LocalDate.now()): String? {
         val q = text.trim().lowercase().replace('ё', 'е').replace('’', '\'')
             .replace(Regex("""^(?:искра|iskra)[,!\s]+"""), "").replace(Regex("""^(?:скажи|напомни|tell\s+me)[,:\s]+"""), "")
+            .replace(Regex("""^(?:а\s+)?(?:ты\s+)?(?:помнишь|знаешь|не\s+забыла)\s*,\s*|^do\s+you\s+(?:remember|know)\s*,\s*"""), "")
         val clauses = q.split(Regex("""\s*[?!.]+\s*|\s*,\s*(?:а\s+|и\s+|and\s+)?|\s+(?:и|а\s+также|and)\s+""")).map { it.trim() }.filter { it.isNotEmpty() }
         if (clauses.isEmpty()) return null
-        val asked = clauses.map { c -> topics.firstOrNull { it.second.matches(c) }?.let { it.first to c } ?: return null }
+        val asked = clauses.map { c -> topics.firstNotNullOfOrNull { (t, re) -> re.matchEntire(c)?.let { t to it } } ?: return null }
         val isRu = text.any { it in 'а'..'я' || it in 'А'..'Я' }
-        fun about(re: String) = Regex(re, RegexOption.IGNORE_CASE).let { r -> memories.sortedByDescending { it.createdAtMs }.firstNotNullOfOrNull { r.find(it.text) } }
+        val newest = memories.sortedByDescending { it.createdAtMs }
+        fun about(re: String) = Regex(re, RegexOption.IGNORE_CASE).let { r -> newest.firstNotNullOfOrNull { r.find(it.text) } }
         val name = ownerName(memories)
         val study = if (isRu) about("""^Владелец учится (.+)$""")?.let { "ты учишься ${it.groupValues[1]}" }
             else about("""^The owner (studies|is learning) (.+)$""")?.let { if (it.groupValues[1] == "studies") "you study ${it.groupValues[2]}" else "you're learning ${it.groupValues[2]}" }
@@ -397,34 +557,137 @@ object MemoryTalk {
         val city = if (isRu) about("""^Владелец живёт в (.+)$""")?.let { "ты живёшь в ${it.groupValues[1]}" }
             else about("""^The owner lives in (.+)$""")?.let { "you live in ${it.groupValues[1]}" }
         val birthday = about("""^(?:День рождения владельца|The owner's birthday): (.+)$""")?.let { if (isRu) "твой день рождения — ${it.groupValues[1]}" else "your birthday is ${it.groupValues[1]}" }
+        val age = ageNow(newest, today, isRu)
         val petFacts = memories.mapNotNull { m ->
             Regex("""^У владельца есть (\p{L}+) по имени (.+)$""").find(m.text)?.let { it.groupValues[1] to it.groupValues[2] }
                 ?: Regex("""^The owner has an? (\p{L}+) named (.+)$""").find(m.text)?.let { it.groupValues[1] to it.groupValues[2] }
         }
+        val familyFacts = newest.mapNotNull { m ->
+            Regex("""^(\p{L}+(?:\s+\p{L}+)?) владельца зовут (.+)$""").find(m.text)?.let { Triple(it.groupValues[1].lowercase(), it.groupValues[2], true) }
+                ?: Regex("""^The owner's (.+) is named (.+)$""").find(m.text)?.let { Triple(it.groupValues[1].lowercase(), it.groupValues[2], false) }
+        }.distinctBy { it.first }
+        fun familyLine(f: Triple<String, String, Boolean>) = if (f.third) "${yours(f.first)} ${f.first} зовут ${f.second}" else "your ${f.first}'s name is ${f.second}"
         fun pet(clause: String): String? {
             val kind = if (isRu) pets.entries.firstOrNull { clause.contains(it.key) }?.value else Regex("""my\s+(\p{L}+)""").find(clause)?.groupValues?.get(1)
             val (k, n) = petFacts.firstOrNull { (k, _) -> kind == null || k == kind || (kind == "пёс" && k in setOf("пес", "собака")) || (kind == "собака" && k in setOf("пёс", "пес")) } ?: return null
             return if (isRu) "${mapOf("кот" to "твоего кота", "кошка" to "твою кошку", "собака" to "твою собаку", "пёс" to "твоего пса", "пес" to "твоего пса")[k] ?: "твоего питомца ($k)"} зовут $n"
             else "your $k's name is $n"
         }
+        fun relative(clause: String): String? {
+            val key = Regex("""(?iu)(?:$REL_ACC|$REL_EN)(?!\p{L})""").findAll(clause).lastOrNull()?.value?.lowercase()?.replace('ё', 'е') ?: return null
+            val norm = (accOf[key] ?: key).replace('ё', 'е')
+            return familyFacts.firstOrNull { f -> f.first.replace('ё', 'е').split(' ').last() == norm || f.first.split(' ').last() == key }?.let(::familyLine)
+        }
+        val tastes = tastes(newest, isRu)
+        fun favorite(m: MatchResult): String? {
+            val what = (m.groupValues[1].ifEmpty { m.groupValues[2] }).trim()
+            val stem = ru.iskra.core.memory.Stemmer.stem(what.split(' ').first())
+            return newest.firstNotNullOfOrNull { item ->
+                Regex("""^(Любим\p{L}+) (\p{L}+(?:\s+\p{L}+)?) владельца — (.+)$""").find(item.text)?.takeIf { ru.iskra.core.memory.Stemmer.stem(it.groupValues[2].split(' ').first()) == stem }
+                    ?.let { f -> "${mapOf("любимый" to "твой", "любимая" to "твоя", "любимое" to "твоё", "любимые" to "твои")[f.groupValues[1].lowercase()] ?: "твой"} ${f.groupValues[1].lowercase()} ${f.groupValues[2]} — ${f.groupValues[3]}" }
+                    ?: Regex("""^The owner's favorite (.+) is (.+)$""").find(item.text)?.takeIf { ru.iskra.core.memory.Stemmer.stem(it.groupValues[1].split(' ').first()) == stem }
+                        ?.let { f -> "your favorite ${f.groupValues[1]} is ${f.groupValues[2]}" }
+            }
+        }
+        val plans = PlanTalk.known(memories).filter { !it.done && !it.plan.date.isBefore(today) }
+        fun plans(clause: String): String? {
+            val until = when {
+                clause.contains("сегодня") || clause.contains("today") -> today
+                clause.contains("послезавтра") -> today.plusDays(2)
+                clause.contains("завтра") || clause.contains("tomorrow") -> today.plusDays(1)
+                else -> today.plusDays(7)
+            }
+            val from = if (clause.contains("послезавтра")) until else if (clause.contains("завтра") || clause.contains("tomorrow")) until else today
+            val due = plans.filter { !it.plan.date.isBefore(from) && !it.plan.date.isAfter(until) }.take(4)
+            if (due.isEmpty()) return null
+            return (if (isRu) "в планах: " else "your plans: ") + due.joinToString("; ") { "${PlanTalk.whenText(it.plan.date, today, isRu)} — ${it.plan.what}" }
+        }
         val parts = ArrayList<String>()
-        for ((topic, clause) in asked) parts += when (topic) {
+        for ((topic, m) in asked) parts += when (topic) {
             Topic.NAME -> name?.let { if (isRu) "тебя зовут $it" else "your name is $it" }
             Topic.STUDY -> study
             Topic.WORK -> work
             Topic.CITY -> city
-            Topic.PET -> pet(clause)
+            Topic.PET -> pet(m.value)
             Topic.BIRTHDAY -> birthday
+            Topic.AGE -> age
+            Topic.FAMILY -> relative(m.value)
+            Topic.LIKES -> tastes.likes
+            Topic.DISLIKES -> tastes.dislikes
+            Topic.FAVORITE -> favorite(m)
+            Topic.PLANS -> plans(m.value)
             Topic.ALL -> {
-                val known = listOfNotNull(name?.let { if (isRu) "тебя зовут $it" else "your name is $it" }, study, work, city, birthday) +
-                    petFacts.map { (k, n) -> if (isRu) "у тебя есть $k по имени $n" else "you have a $k named $n" }
+                val known = listOfNotNull(name?.let { if (isRu) "тебя зовут $it" else "your name is $it" }, age, study, work, city, birthday) +
+                    petFacts.map { (k, n) -> if (isRu) "у тебя есть $k по имени $n" else "you have a $k named $n" } +
+                    familyFacts.take(3).map(::familyLine) + listOfNotNull(tastes.likes) +
+                    listOfNotNull(plans.take(2).takeIf { it.isNotEmpty() }?.let { p -> (if (isRu) "в планах: " else "your plans: ") +
+                        p.joinToString("; ") { "${PlanTalk.whenText(it.plan.date, today, isRu)} — ${it.plan.what}" } })
                 if (known.isEmpty()) return null
-                val rest = memories.count { it.kind != MemoryKind.EPISODE } - known.size
+                // Memories the answer covers: one each for the simple facts, every pet, relative, taste and plan named.
+                val used = listOfNotNull(name, age, study, work, city, birthday).size + petFacts.size + familyFacts.take(3).size + tastes.likeCount + plans.take(2).size
+                val rest = memories.count { it.kind != MemoryKind.EPISODE } - used
                 return (if (isRu) "Вот что я о тебе знаю: " else "Here's what I know about you: ") + joined(known, isRu) + "." +
                     if (rest > 0) (if (isRu) " И ещё записей: $rest — их видно на вкладке «Память»." else " And $rest more entries — see the Memory tab.") else ""
             }
         } ?: return null
         return (if (isRu) "Мрр, помню: " else "Mrr, I remember: ") + joined(parts.distinct(), isRu) + "."
+    }
+
+    /** «тебе 25 лет» from «Владельцу 25 лет (на ноябрь 2026)», a year older for each year since (or each birthday, when known). */
+    private fun ageNow(newest: List<MemoryItem>, today: java.time.LocalDate, isRu: Boolean): String? {
+        val (n, said) = newest.firstNotNullOfOrNull { item ->
+            Regex("""^Владельцу (\d{1,3}) (?:лет|год|года) \(на (\p{L}+) (\d{4})\)$""").find(item.text)?.let { m ->
+                m.groupValues[1].toInt() to runCatching { java.time.LocalDate.of(m.groupValues[3].toInt(), monthsNom.indexOf(m.groupValues[2]) + 1, 1) }.getOrNull()
+            } ?: Regex("""^The owner is (\d{1,3}) \(as of (\p{L}+) (\d{4})\)$""").find(item.text)?.let { m ->
+                m.groupValues[1].toInt() to runCatching { java.time.LocalDate.of(m.groupValues[3].toInt(), monthsEn.indexOf(m.groupValues[2]) + 1, 1) }.getOrNull()
+            }
+        } ?: return null
+        val bd = birthday(newest)
+        val grown = when {
+            said == null -> 0
+            bd != null -> generateSequence(said) { it.plusDays(1) }.takeWhile { !it.isAfter(today) }.count { java.time.MonthDay.from(it) == bd && it.isAfter(said.withDayOfMonth(said.lengthOfMonth())) }
+            else -> java.time.temporal.ChronoUnit.YEARS.between(said, today).toInt()
+        }
+        val now = n + grown
+        return if (isRu) "тебе ${years(now)}" else "you're $now"
+    }
+
+    private class Tastes(val likes: String?, val dislikes: String?, val likeCount: Int)
+
+    /** What the owner likes and dislikes, as said to them: «ты любишь пиццу и джаз», «ты не любишь дождь». */
+    private fun tastes(newest: List<MemoryItem>, isRu: Boolean): Tastes {
+        val good = ArrayList<String>()
+        val bad = ArrayList<String>()
+        val loves = ArrayList<String>()
+        for (item in newest) {
+            val t = item.text
+            if (isRu) {
+                Regex("""^Владелец (любит|обожает|не любит|ненавидит|терпеть не может|не выносит)(,? .+)$""").find(t)?.let { m ->
+                    val obj = m.groupValues[2]
+                    when (m.groupValues[1]) {
+                        "любит" -> loves += obj.trim()
+                        "обожает" -> good += "ты обожаешь$obj"
+                        "не любит" -> bad += "ты не любишь$obj"
+                        "ненавидит" -> bad += "ты ненавидишь$obj"
+                        "терпеть не может" -> bad += "ты терпеть не можешь$obj"
+                        "не выносит" -> bad += "ты не выносишь$obj"
+                    }
+                }
+                Regex("""^Владельцу (не )?(нравится|нравятся)(,? .+)$""").find(t)?.let { m -> (if (m.groupValues[1].isEmpty()) good else bad) += "тебе ${m.groupValues[1]}${m.groupValues[2]}${m.groupValues[3]}" }
+            } else {
+                Regex("""^The owner (loves|adores|likes|enjoys|hates|dislikes|can't stand|doesn't like) (.+)$""").find(t)?.let { m ->
+                    val verb = m.groupValues[1]
+                    val second = mapOf("loves" to "love", "adores" to "adore", "likes" to "like", "enjoys" to "enjoy", "hates" to "hate", "dislikes" to "dislike",
+                        "can't stand" to "can't stand", "doesn't like" to "don't like")[verb]
+                    (if (verb in setOf("hates", "dislikes", "can't stand", "doesn't like")) bad else good) += "you $second ${m.groupValues[2]}"
+                }
+            }
+        }
+        val others = good.take(if (loves.isEmpty()) 4 else 3)
+        val all = (if (loves.isEmpty()) emptyList() else listOf("ты любишь " + joined(loves.take(4).map { it.removePrefix(",").trim() }, true))) + others
+        val likes = all.takeIf { it.isNotEmpty() }?.let { joined(it, isRu) }
+        val dislikes = bad.take(3).takeIf { it.isNotEmpty() }?.let { joined(it, isRu) }
+        return Tastes(likes, dislikes, loves.take(4).size + others.size)
     }
 
     private fun joined(parts: List<String>, ru: Boolean): String = when (parts.size) {
@@ -435,7 +698,7 @@ object MemoryTalk {
 
     /** The owner's name from memory ("Владельца зовут Аня" / "The owner's name is Anna"). */
     fun ownerName(memories: List<MemoryItem>): String? {
-        val re = Regex("""(?iu:владельца\s+зовут|имя\s+владельца\s*[—–-]?|the\s+owner's\s+name\s+is|owner's\s+name:?)\s+(\p{L}[\p{L}-]*(?:\s+\p{Lu}[\p{L}-]*)?)""")
+        val re = Regex("""(?iu:^владельца\s+зовут|имя\s+владельца\s*[—–-]?|the\s+owner's\s+name\s+is|owner's\s+name:?)\s+(\p{L}[\p{L}-]*(?:\s+\p{Lu}[\p{L}-]*)?)""")
         return memories.sortedByDescending { it.createdAtMs }.firstNotNullOfOrNull { re.find(it.text)?.groupValues?.get(1) }
     }
 

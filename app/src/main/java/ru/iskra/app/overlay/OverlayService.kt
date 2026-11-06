@@ -1,5 +1,6 @@
 package ru.iskra.app.overlay
 
+import ru.iskra.core.agent.CompanionAgent
 import ru.iskra.core.i18n.tr
 import android.Manifest
 import android.app.KeyguardManager
@@ -622,7 +623,22 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         prefs.edit().putString("day", next.day).putInt("count", next.countToday).putLong("last", next.lastAtMs)
             .putString("morning", next.morningDay).putString("evening", next.eveningDay).apply()
         val base = app.phrases.proactive(trigger)
-        if (trigger != ProactiveTrigger.MORNING) { deliverProactive(trigger, base, next.countToday); return }
+        if (trigger != ProactiveTrigger.MORNING) {
+            scope.launch {
+                // The owner's plans come first: «Как прошёл экзамен?» (it then stays in the chat, so the answer has its
+                // context), or in the evening tomorrow's plan.
+                val plan = runCatching {
+                    withContext(Dispatchers.IO) {
+                        app.agent.planLine(CompanionAgent.PlanMoment.ANY)
+                            ?: if (trigger == ProactiveTrigger.EVENING) app.agent.planLine(CompanionAgent.PlanMoment.EVENING) else null
+                    }
+                }.getOrNull()
+                if (plan != null) app.chat.reload()
+                if (!isActive || avatar == null) return@launch
+                deliverProactive(trigger, plan ?: base, next.countToday)
+            }
+            return
+        }
         // Morning: the weather in the owner's city and today's reminders, only if known (≤ 3 s wait).
         scope.launch {
             val w = if (s.weatherCity.isBlank()) null else withTimeoutOrNull(3_000) {
@@ -640,7 +656,15 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             val mem = runCatching { app.memory.all() }.getOrDefault(emptyList())
             val greeting = if (ru.iskra.core.brain.MemoryTalk.birthday(mem) == java.time.MonthDay.now())
                 ru.iskra.core.brain.MemoryTalk.birthdayGreeting(ru.iskra.core.brain.MemoryTalk.ownerName(mem)) else base
-            deliverProactive(trigger, Moments.morning(greeting, w, today), next.countToday)
+            // Today's plans («Сегодня экзамен — держу за тебя лапки!») and how yesterday's went.
+            val plans = withContext(Dispatchers.IO) {
+                listOfNotNull(
+                    runCatching { app.agent.planLine(CompanionAgent.PlanMoment.MORNING) }.getOrNull(),
+                    runCatching { app.agent.planLine(CompanionAgent.PlanMoment.ANY) }.getOrNull(),
+                )
+            }
+            if (plans.isNotEmpty()) app.chat.reload()
+            deliverProactive(trigger, (listOf(Moments.morning(greeting, w, today)) + plans).joinToString(" "), next.countToday)
             Diag.i("proactive", tr("Утренняя сводка: погода ${if (w != null) "есть" else "нет"}, напоминаний $today", "Morning brief: weather ${if (w != null) "yes" else "no"}, reminders $today"))
         }
     }

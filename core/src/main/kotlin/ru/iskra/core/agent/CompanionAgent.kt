@@ -8,6 +8,7 @@ import ru.iskra.core.brain.MemoryTalk
 import ru.iskra.core.brain.SearchMemoryTool
 import ru.iskra.core.brain.NumberWords
 import ru.iskra.core.brain.OfflineBrain
+import ru.iskra.core.brain.PlanTalk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -140,6 +141,8 @@ class CompanionAgent(
         require(text.length <= 4000) { "message too long" }
 
         val now = clock()
+        // The plan to ask about as it stands before this message (settled after the reply).
+        val dueBefore = runCatching { PlanTalk.due(PlanTalk.known(memory.all()), localDate(now), localHour(now)) }.getOrNull()
         var state = stateStore.load()
         if (state.lastUserMessageAtMs > 0) {
             val hours = (now - state.lastUserMessageAtMs) / 3_600_000.0
@@ -190,6 +193,7 @@ class CompanionAgent(
 
         conversation.append(Turn(Turn.Role.USER, text, now))
         if (reply.text.isNotBlank()) conversation.append(Turn(Turn.Role.ASSISTANT, reply.text, clock(), reply.emotion))
+        runCatching { settlePlans(text, reply.text, dueBefore, now) }
         // Local commands stay free; an unsuccessful cloud reply must not trigger another request.
         // Only a working cloud model summarizes: not one that just failed, not the slow model on the phone.
         if (provider != null && provider === cloud && reply.usedLlm && reply.error == null && reply.errorKind == null) maybeSummarize(provider)
@@ -230,11 +234,92 @@ class CompanionAgent(
 
     private val PASSING = setOf(LlmException.Kind.NETWORK, LlmException.Kind.RATE_LIMIT, LlmException.Kind.SERVER, LlmException.Kind.BAD_RESPONSE)
 
-    /** Things worth knowing today: the owner's birthday. */
+    /**
+     * Things worth knowing today: the owner's birthday, today's and tomorrow's plans (only in the first exchange of the
+     * day, so they aren't repeated in every reply) and the plan to ask about.
+     */
     private fun todayNotes(nowMs: Long): List<String> {
-        val today = java.time.Instant.ofEpochMilli(nowMs).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
-        val birthday = MemoryTalk.birthday(memory.all()) ?: return emptyList()
-        return if (birthday == java.time.MonthDay.from(today)) listOf(tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")) else emptyList()
+        val today = localDate(nowMs)
+        val all = memory.all()
+        val notes = ArrayList<String>()
+        if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
+        val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
+        notes += PlanTalk.notes(PlanTalk.known(all), today, localHour(nowMs), fresh, tr(true, false))
+        return notes
+    }
+
+    private fun localDate(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+    private fun localHour(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).hour
+
+    /**
+     * Plans mentioned in [text]: called-off ones are crossed out, new ones kept (the same event on another day moves it).
+     * Returns what to say without a model.
+     */
+    private fun notePlans(text: String, nowMs: Long): List<String> {
+        val today = localDate(nowMs)
+        val heard = PlanTalk.hear(text, today)
+        if (heard.isEmpty()) return emptyList()
+        val said = ArrayList<String>()
+        val known = PlanTalk.known(memory.all())
+        val crossed = ArrayList<String>()
+        for (head in heard.cancelled) known.filter { !it.done && !it.plan.date.isBefore(today) && PlanTalk.head(it.plan.what) == head }.forEach {
+            memory.delete(it.item.id); crossed += it.plan.what
+        }
+        if (crossed.isNotEmpty() && heard.plans.isEmpty()) said += PlanTalk.crossedOut(crossed.distinct(), crossed.first().any { it in 'а'..'я' })
+        for (heardPlan in heard.plans) {
+            // «Собеседование перенесли на среду»: the moved plan keeps what was known of it («собеседование в Яндекс»).
+            val p = crossed.firstOrNull { PlanTalk.head(it) == PlanTalk.head(heardPlan.what) && it.length > heardPlan.what.length && it.startsWith(heardPlan.what) }
+                ?.let { heardPlan.copy(what = it) } ?: heardPlan
+            when (val r = memory.add(p.memoryText, MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, nowMs)) {
+                is MemoryManager.AddResult.Added -> said += PlanTalk.noted(p, today)
+                is MemoryManager.AddResult.Duplicate -> {
+                    // «экзамен по физике» again on another day: the same event moved (or a new one) — keep the new date.
+                    val old = PlanTalk.known(listOf(r.existing)).firstOrNull()
+                    if (old != null && old.plan.date != p.date) { memory.update(r.existing.copy(text = p.memoryText)); said += PlanTalk.noted(p, today) }
+                    else if (old != null) said += PlanTalk.noted(p, today)
+                }
+                is MemoryManager.AddResult.Rejected -> {}
+            }
+        }
+        return said
+    }
+
+    /**
+     * After a reply: a plan counts as talked over (it becomes «было» and isn't asked about again) when the owner mentions it
+     * after the day, tells how it went on the day, or she just asked about it.
+     */
+    private fun settlePlans(text: String, reply: String, due: PlanTalk.Known?, nowMs: Long) {
+        val today = localDate(nowMs)
+        for (k in PlanTalk.known(memory.all())) {
+            if (k.done || k.plan.date.isAfter(today)) continue
+            val told = PlanTalk.mentions(k.plan, text) && (k.plan.date.isBefore(today) || PlanTalk.outcome(text))
+            val asked = due?.item?.id == k.item.id && PlanTalk.mentions(k.plan, reply)
+            if (told || asked) memory.update(k.item.copy(text = k.plan.doneText))
+        }
+    }
+
+    /** When she speaks up on her own ([ru.iskra.core.skills.ProactivePolicy]): what about the owner's plans fits the moment. */
+    enum class PlanMoment { MORNING, EVENING, ANY }
+
+    /**
+     * A line about the owner's plans for a moment of her own: the morning wishes luck for today, the evening speaks of
+     * tomorrow, any other time asks how a recent one went. The question goes into the dialogue (the answer then has its
+     * context) and is not asked again. null: nothing to say.
+     */
+    suspend fun planLine(moment: PlanMoment): String? = mutex.withLock {
+        val now = clock()
+        val today = localDate(now)
+        val known = PlanTalk.known(memory.all())
+        when (moment) {
+            PlanMoment.MORNING -> known.filter { !it.done && it.plan.date == today }.take(2).takeIf { it.isNotEmpty() }?.joinToString(" ") { PlanTalk.wish(it.plan) }
+            PlanMoment.EVENING -> known.filter { it.plan.date == today.plusDays(1) }.take(2).takeIf { it.isNotEmpty() }?.joinToString(" ") { PlanTalk.eve(it.plan) }
+            PlanMoment.ANY -> PlanTalk.due(known, today, localHour(now))?.let { k ->
+                val line = PlanTalk.ask(k.plan)
+                conversation.append(Turn(Turn.Role.ASSISTANT, line, now, Emotion.CURIOUS))
+                memory.update(k.item.copy(text = k.plan.doneText))
+                line
+            }
+        }
     }
 
     /** Provider ids whose model refused tools: their requests go without them from now on. */
@@ -267,18 +352,19 @@ class CompanionAgent(
         if (smallModel) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         MemoryTalk.forgetQuery(text)?.let { return forget(it) }
-        val facts = MemoryTalk.facts(text)
-        if (facts.isNotEmpty()) {
-            // Kept even if the model is weak at tools; with a model the reply is the model's (it now sees the facts).
-            val added = facts.map { f -> f to memory.add(f.text, MemoryKind.FACT, MemorySource.USER_EXPLICIT, f.importance, clock()) }
-            if (!llmAvailable) {
-                val kept = added.filter { it.second !is MemoryManager.AddResult.Rejected }.map { it.first.reply }
-                val refused = (added.firstOrNull { it.second is MemoryManager.AddResult.Rejected }?.second as? MemoryManager.AddResult.Rejected)?.reason
-                return AgentReply(kept.joinToString(" ").ifEmpty { tr("Не стану это запоминать: $refused.", "I won't remember that: $refused.") }, Emotion.HAPPY)
-            }
+        val today = localDate(clock())
+        val facts = MemoryTalk.facts(text, today)
+        // Kept even if the model is weak at tools; with a model the reply is the model's (it now sees the facts).
+        val added = facts.map { f -> f to memory.add(f.text, f.kind, MemorySource.USER_EXPLICIT, f.importance, clock()) }
+        // «Завтра экзамен», «в пятницу собеседование»: a dated plan, to wish luck on the day and ask how it went.
+        val planned = notePlans(text, clock())
+        if (!llmAvailable && (facts.isNotEmpty() || planned.isNotEmpty())) {
+            val kept = added.filter { it.second !is MemoryManager.AddResult.Rejected }.map { it.first.reply }
+            val refused = (added.firstOrNull { it.second is MemoryManager.AddResult.Rejected }?.second as? MemoryManager.AddResult.Rejected)?.reason
+            return AgentReply((kept + planned).joinToString(" ").ifEmpty { tr("Не стану это запоминать: $refused.", "I won't remember that: $refused.") }, Emotion.HAPPY)
         }
         // "Как меня зовут и на кого я учусь?": exact from memory without a model, and instead of a small one (they mixed it up).
-        if (!llmAvailable || smallModel) MemoryTalk.recall(text, memory.all())?.let { return AgentReply(it, Emotion.HAPPY) }
+        if (!llmAvailable || smallModel) MemoryTalk.recall(text, memory.all(), today)?.let { return AgentReply(it, Emotion.HAPPY) }
         if (!llmAvailable && MemoryTalk.asksName(text)) {
             val name = MemoryTalk.ownerName(memory.all())
             return if (name != null) AgentReply(tr("Тебя зовут $name. Мрр, как такое забыть!", "Your name is $name. Mrr, how could I forget!"), Emotion.HAPPY)
@@ -287,11 +373,16 @@ class CompanionAgent(
         val now = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault())
         // Speech recognisers write "двадцать пять": try the words as digits if the plain text isn't a command.
         val parsed = CommandParser.parse(text, now) ?: NumberWords.digitize(text).takeIf { it != text }?.let { CommandParser.parse(it, now) }
+        // «Запомни: завтра экзамен» is already kept as a plan, with its date worked out.
+        if (parsed is CommandParser.Parsed.Remember && planned.isNotEmpty()) return AgentReply(planned.joinToString(" "), Emotion.HAPPY)
         if (parsed != null) return command(parsed, llmAvailable)
         brain.utility(withBirthday(text), now)?.let { return AgentReply(it.text, it.emotion) }
         if (!llmAvailable) {
-            brain.chat(text, now, currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))
-                ?.let { return AgentReply(it.text, it.emotion) }
+            brain.chat(text, now, currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))?.let { a ->
+                // Small talk without a model still remembers to ask how the exam went (once).
+                val ask = PlanTalk.due(PlanTalk.known(memory.all()), today, now.hour)?.takeIf { !PlanTalk.mentions(it.plan, text) }
+                return AgentReply(if (ask != null) a.text + " " + PlanTalk.byTheWay(ask.plan) else a.text, a.emotion)
+            }
         }
         return null
     }
@@ -356,11 +447,12 @@ class CompanionAgent(
             val mem = memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true)
             system = composer.compact(persona.localized(), state.style) + "\n\n" + composer.compactProfile(mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
-            situation = listOf(composer.compactSituation(mem), composer.languageNudge(text, lastReply))
+            val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList())
+            situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, composer.languageNudge(text, lastReply))
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {
             system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty())
-            situation = composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()) + todayNotes(now))
+            situation = composer.situation(state.mood, memory.context(text, now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
         }
         val messages = ArrayList<ChatMessage>()
         // A small model's window of the dialogue moves in steps, not by one turn per message: its first turn stays put for

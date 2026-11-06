@@ -193,8 +193,9 @@ class BrainTest {
         val all = m.all()
         assertEquals("Мрр, помню: тебя зовут Аня, и ты учишься на врача.", MemoryTalk.recall("Как меня зовут и на кого я учусь?", all))
         assertEquals("Мрр, помню: твою кошку зовут Мурка.", MemoryTalk.recall("А как зовут мою кошку?", all))
-        assertEquals("Вот что я о тебе знаю: тебя зовут Аня, ты учишься на врача и у тебя есть кошка по имени Мурка. " +
-            "И ещё записей: 1 — их видно на вкладке «Память».", MemoryTalk.recall("Искра, что ты обо мне знаешь?", all))
+        // Tastes are named too (0.12.6): nothing is left over for "ещё записей".
+        assertEquals("Вот что я о тебе знаю: тебя зовут Аня, ты учишься на врача, у тебя есть кошка по имени Мурка и ты любишь зелёный чай.",
+            MemoryTalk.recall("Искра, что ты обо мне знаешь?", all))
         // Something memory doesn't hold, or a part that isn't about the owner: the model answers.
         assertNull(MemoryTalk.recall("Где я живу?", all))
         assertNull(MemoryTalk.recall("Как меня зовут и почему небо голубое?", all))

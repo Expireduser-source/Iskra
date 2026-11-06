@@ -29,10 +29,14 @@ class LocalModelEval {
         "Привет! Как у тебя дела?",
         "Меня зовут Аня.",
         "Я учусь на врача, сейчас сессия.",
+        "Завтра у меня экзамен по анатомии, волнуюсь.",
         "Посоветуй, как не заснуть на скучной лекции.",
         "Расскажи очень короткую сказку про кота-космонавта.",
         "Объясни простыми словами, что такое фотосинтез.",
         "Мне сегодня грустно, поддержи меня.",
+        "@+2d", // two days later: the exam was yesterday, she should ask how it went
+        "Привет, я вернулась!",
+        "Сдала на пятёрку!",
         "Как меня зовут и на кого я учусь?",
         "Переведи на английский: «Я люблю зимние вечера».",
         "Что лучше на завтрак перед экзаменом: каша или омлет?",
@@ -76,13 +80,20 @@ class LocalModelEval {
                             e.generate(prompt, maxTokens, temperature, stable, head, onPiece).also { raw = it }
                     }
                     val provider = LocalLlmProvider({ recording }, ChatFormat.valueOf(format), "local:$name", onStats = { stats += it })
+                    var clockMs = System.currentTimeMillis()
                     val agent = CompanionAgent(
                         persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
                         stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
-                        providerFactory = { null }, localFactory = { provider },
+                        providerFactory = { null }, localFactory = { provider }, clock = { clockMs },
                     )
                     doc.append("\n## ${lang.name}\n")
                     for (q in script) {
+                        if (q.startsWith("@+") && q.endsWith("d")) {
+                            val days = q.removePrefix("@+").removeSuffix("d").toInt()
+                            clockMs += days * 86_400_000L
+                            doc.append("\n*(${days} days later)*\n")
+                            continue
+                        }
                         val before = stats.size
                         raw = ""
                         val r = runBlocking { agent.handle(q) }

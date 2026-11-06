@@ -199,6 +199,8 @@ class MemoryManager(
     }
 
     fun all() = store.all()
+    /** Rewrites one memory in place (a plan becomes «было» once she asked how it went). */
+    fun update(item: MemoryItem) = store.update(item)
     fun delete(id: Long) { store.delete(id); onForget() }
     fun deleteAll() { store.deleteAll(); onForget() }
 
