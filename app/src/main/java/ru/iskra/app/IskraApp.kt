@@ -161,6 +161,7 @@ class IskraApp : Application() {
                     if (CompanionAccessibilityService.isConnected()) tr("включена.", "on.") else tr("выключена — системная навигация недоступна.", "off — system navigation unavailable.")
             },
             upcoming = { upcomingReminders(reminders, System.currentTimeMillis(), java.time.ZoneId.systemDefault()) },
+            crisisHelp = { settings.crisisHelp() },
         )
         speaker = Speaker(
             this,

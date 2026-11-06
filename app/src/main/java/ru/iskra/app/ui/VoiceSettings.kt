@@ -335,6 +335,19 @@ fun SkillsSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
             Hint(tr("Утром при первом включении экрана, после долгого перерыва, иногда вечером. Никогда — в тихие часы, при выключенном экране и чаще, чем выбрано. Голосом — только если не играет музыка.", "In the morning when the screen first turns on, when you come back after a long break, sometimes in the evening. Never during quiet hours, with the screen off or more often than chosen. Aloud — only if no music is playing."))
         }
     }
+    Section(tr("Помощь в кризисе", "Help in a crisis")) {
+        SwitchRow(s.crisisHelp, tr("Сразу давать телефоны помощи", "Give helpline numbers at once"), tag = "crisisHelp") { onChange(s.copy(crisisHelp = it)) }
+        Hint(if (s.crisisHelp) tr("На «жить не хочется», «хочу умереть», «режу себя» и похожие слова Искра сразу, с «мозгом» и без, отвечает " +
+                "телефонами помощи (112, 8-800-2000-122, психологи МЧС), полдня говорит бережно и назавтра спрашивает, как ты. " +
+                "Выключи, если хочешь, чтобы на такие слова отвечала сама модель — без заготовок и без добавок в её указаниях.",
+            "To “I don't want to live”, “I want to die”, “I cut myself” and the like, Iskra answers at once, with or without a brain, " +
+                "with helpline numbers (988, 116 123, 112), stays gentle for half a day and asks how you are the next day. Turn it " +
+                "off if you'd rather the model answer such words itself — no canned reply and nothing added to its instructions.")
+        else tr("Выключено: на такие слова отвечает сама модель (у облачных моделей и Gemma есть своя осторожность). Без «мозга» — обычные ответы. " +
+                "Если тебе тяжело: 112 при опасности, телефон доверия 8-800-2000-122 — бесплатно и круглосуточно.",
+            "Off: the model answers such words itself (cloud models and Gemma have their own caution). Without a brain — ordinary replies. " +
+                "If things are hard: your local emergency number if in danger; 988 in the US, Samaritans 116 123 in the UK and Ireland."))
+    }
     Section(tr("Напоминания", "Reminders")) {
         val exact = app.reminderScheduler.exact
         Text(if (exact) tr("✅ Напоминания приходят точно в срок", "✅ Reminders arrive exactly on time") else tr("⚠️ Android может прислать напоминание на несколько минут позже", "⚠️ Android may deliver a reminder a few minutes late"), fontSize = 14.sp)

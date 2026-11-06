@@ -110,6 +110,10 @@ class OfflineBrain(private val random: Random = Random.Default) {
     fun honesty(text: String): Answer? =
         if (matches(normalize(text), HUMAN)) Answer(pick("HUMAN", tr(HUMAN_RU, HUMAN_EN)), Emotion.NEUTRAL) else null
 
+    /** The model on the phone gave an empty answer twice: honest, and not «without a brain» — there is one. */
+    fun slipped(): Answer = Answer(tr("Мрр, мысль ускользнула. Скажешь ещё раз, другими словами?",
+        "Mrr, the thought slipped away. Could you say that again in other words?"), Emotion.SHY)
+
     fun fallback(text: String): Answer {
         val question = text.trim().endsWith("?") || QUESTION.containsMatchIn(normalize(text))
         return if (question) Answer(pick("NO_BRAIN_Q", tr(NO_BRAIN_Q_RU, NO_BRAIN_Q_EN)), Emotion.THINKING)

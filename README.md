@@ -42,6 +42,7 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
   with or without any brain — with people who can help: 112, Russia's free helpline 8-800-2000-122 and the МЧС
   psychologists, 988 in the US, Samaritans 116 123 in the UK and Ireland. A tap on a number opens the dialer (the call is
   yours to make). For the rest of the day she is gentle instead of playful, and the next day she asks how you are.
+  Settings → “Help in a crisis” turns all of it off: then the model answers such words itself, with nothing added.
 - **For every phone and person:** English and Russian (follows the phone), Android 8 to 16, tablets and foldables,
   guides for Xiaomi, Samsung, Huawei, Honor, OPPO, OnePlus, vivo, Tecno and others, TalkBack, large fonts, light and
   dark themes, calm motion, battery modes and daily cloud spending limits.

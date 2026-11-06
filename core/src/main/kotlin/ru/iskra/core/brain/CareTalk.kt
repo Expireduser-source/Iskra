@@ -31,8 +31,8 @@ object CareTalk {
     private fun said(re: Regex, text: String) = re.findAll(text).any { !negated.containsMatchIn(text.substring(0, it.range.first)) }
 
     /** What a message says about how the owner is, or null. */
-    fun heard(text: String): Kind? = when {
-        CrisisTalk.said(text) -> Kind.CRISIS
+    fun heard(text: String, crisis: Boolean = true): Kind? = when {
+        crisis && CrisisTalk.said(text) -> Kind.CRISIS
         said(sick, text) || said(sickEn, text) -> Kind.SICK
         said(quarrel, text) || said(quarrelEn, text) -> Kind.QUARREL
         said(low, text) || said(lowEn, text) -> Kind.LOW
@@ -41,16 +41,17 @@ object CareTalk {
 
     /**
      * The check-in due today: yesterday the owner said they were low, ill or quarrelled, nothing later that day said it
-     * passed, and there is no exchange today yet. [turns] are the recent dialogue, oldest first.
+     * passed, and there is no exchange today yet. [turns] are the recent dialogue, oldest first. [crisis]: «Помощь в
+     * кризисе» is on (words about not wanting to live count; off — they are left to the model).
      */
-    fun pending(turns: List<Turn>, today: LocalDate, zone: ZoneId = ZoneId.systemDefault()): Care? {
+    fun pending(turns: List<Turn>, today: LocalDate, zone: ZoneId = ZoneId.systemDefault(), crisis: Boolean = true): Care? {
         fun day(t: Turn) = Instant.ofEpochMilli(t.atMs).atZone(zone).toLocalDate()
         if (turns.any { day(it) == today }) return null
         val yesterday = turns.filter { it.role == Turn.Role.USER && day(it) == today.minusDays(1) }
         var found: Care? = null
         for (t in yesterday) {
             // A later «мне грустно» doesn't make words about not wanting to live less serious.
-            heard(t.text)?.takeIf { found?.kind != Kind.CRISIS || it == Kind.CRISIS }
+            heard(t.text, crisis)?.takeIf { found?.kind != Kind.CRISIS || it == Kind.CRISIS }
                 ?.let { found = Care(it, t.text.any { c -> c in 'а'..'я' || c in 'А'..'Я' }) }
             if (better.containsMatchIn(t.text)) found = null // «было плохо, но уже лучше», or a later «полегчало»
         }

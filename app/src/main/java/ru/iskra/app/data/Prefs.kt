@@ -106,6 +106,11 @@ data class AppSettings(
     val quietFrom: Int = 23,
     val quietTo: Int = 8,
     val proactiveVoice: Boolean = false,
+    /**
+     * «Помощь в кризисе»: words about wanting to die get help numbers at once and she stays gentle for half a day.
+     * Off — the model answers them itself, with nothing added to its instructions.
+     */
+    val crisisHelp: Boolean = true,
 ) {
     val voiceOrDefault get() = ttsVoice.ifBlank { ttsEngine.defaultVoice }
     val ttsModelOrDefault get() = ttsModel.ifBlank { ttsEngine.defaultModel }
@@ -151,7 +156,11 @@ class SettingsRepo(context: Context) {
         quietFrom = prefs.getInt("quietFrom", 23).coerceIn(0, 23),
         quietTo = prefs.getInt("quietTo", 8).coerceIn(0, 23),
         proactiveVoice = prefs.getBoolean("proactiveVoice", false),
+        crisisHelp = prefs.getBoolean("crisisHelp", true),
     )
+
+    /** Read on every message by the agent, so the switch works as soon as it is saved. */
+    fun crisisHelp(): Boolean = prefs.getBoolean("crisisHelp", true)
 
     /** Coordinates found for [AppSettings.weatherCity] (geocoded once, on «Найти»). */
     fun weatherPlace(): Place? {
@@ -183,7 +192,7 @@ class SettingsRepo(context: Context) {
         "priceInPerM" to s.priceInPerM, "priceOutPerM" to s.priceOutPerM, "priceTtsPerM" to s.priceTtsPerM, "currency" to s.currency,
         "avatarLook" to s.avatarLook.name, "economicalEar" to s.economicalEar,
         "weatherCity" to s.weatherCity, "proactive" to s.proactive.name, "quietFrom" to s.quietFrom, "quietTo" to s.quietTo,
-        "proactiveVoice" to s.proactiveVoice,
+        "proactiveVoice" to s.proactiveVoice, "crisisHelp" to s.crisisHelp,
     )
 
     /** Applies known, well-typed values from a backup over [base]; unknown names and wrong types are ignored. */
@@ -228,6 +237,7 @@ class SettingsRepo(context: Context) {
             quietFrom = int("quietFrom")?.coerceIn(0, 23) ?: base.quietFrom,
             quietTo = int("quietTo")?.coerceIn(0, 23) ?: base.quietTo,
             proactiveVoice = bool("proactiveVoice") ?: base.proactiveVoice,
+            crisisHelp = bool("crisisHelp") ?: base.crisisHelp,
         )
     }
 
@@ -266,6 +276,7 @@ class SettingsRepo(context: Context) {
             .putInt("quietFrom", s.quietFrom)
             .putInt("quietTo", s.quietTo)
             .putBoolean("proactiveVoice", s.proactiveVoice)
+            .putBoolean("crisisHelp", s.crisisHelp)
             .apply()
     }
 }

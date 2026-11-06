@@ -15,6 +15,8 @@ object ReplyParser {
     private val LEADING_TAGS = Regex("""^(?:\s*\[[^\]\s]{1,20}(?:\s[^\]\s]{1,20}){0,2}])+\s*""")
 
     private val PLACEHOLDER = Regex("""(?iu)(?:\b(?:Mr|Ms|Mrs)\.?/?(?:Mr|Ms|Mrs)?\.?\s*)?\[[^\]]{0,24}(?:name|имя|user|пользовател)[^\]]{0,24}],?\s*""")
+    /** Punctuation a reply can't begin with, left after the mood tag. */
+    private val STRAY_START = Regex("""^[!?.,;:)\]…]+\s*""")
 
     /** Removes unfilled slots; a sentence that began with one now begins with the next word, capitalised. */
     private fun withoutSlots(text: String): String {
@@ -52,6 +54,8 @@ object ReplyParser {
         if (text.length > 2 && text.first() == '[' && text.last() == ']' && text.count { it == '[' } == 1) text = text.substring(1, text.length - 1).trim()
         // A template slot left unfilled: "Mr./Ms. [person's name], what are you up to?" (Gemma 4 E2B in the evaluation).
         if (PLACEHOLDER.containsMatchIn(text)) text = withoutSlots(text)
+        // What was left after the tag: «[happy]! It's so nice…», «…Ты выглядишь…» (a small model in the evaluation).
+        text = text.replace(STRAY_START, "")
         return Parsed(text, emotion)
     }
 }

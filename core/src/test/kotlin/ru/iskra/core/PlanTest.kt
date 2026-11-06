@@ -671,7 +671,11 @@ class PhoneSummaryTest {
             assertEquals("6 ноября: Аня готовится к сессии на врача и волнуется перед экзаменом по анатомии.", memory.all().single().text)
             assertEquals(MemoryKind.EPISODE, memory.all().single().kind)
             assertEquals(34, convo.count())
-            assertTrue(phone.asked.single().messages.single().let { (it as ru.iskra.core.llm.ChatMessage.User).text.startsWith("Владелец: реплика 0") })
+            // The excerpt first, the task last (Gemma 4 E2B went on with a bare transcript as Iskra).
+            val asked = (phone.asked.single().messages.single() as ru.iskra.core.llm.ChatMessage.User).text
+            assertTrue(asked.contains("\n\nВладелец: реплика 0\n"), asked)
+            assertTrue(asked.startsWith("Отрывок переписки владельца телефона и ассистента «Искра»:"), asked)
+            assertTrue(asked.endsWith("Не продолжай переписку: ответь только пересказом или словом НЕТ."), asked)
         }
     }
 

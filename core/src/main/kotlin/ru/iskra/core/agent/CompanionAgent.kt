@@ -85,6 +85,11 @@ class CompanionAgent(
     private val historyTurns: Int = 16,
     private val maxToolRounds: Int = 4,
     private val summarizeAfterTurns: Int = 60,
+    /**
+     * «Помощь в кризисе» (Settings, on by default): words about wanting to die get help numbers at once and she stays
+     * gentle for half a day. Off: nothing of it — the model answers such words itself, as freely as any other.
+     */
+    private val crisisHelp: () -> Boolean = { true },
 ) {
     private val moodEngine = MoodEngine(persona.traits)
     private val mutex = Mutex()
@@ -168,10 +173,11 @@ class CompanionAgent(
             provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
             // The model on the phone failed (memory ran out, a damaged file): an honest answer without a model; the reason goes to the journal.
-            provider === onPhone -> askModel(provider, text, state, sink).let { r ->
+            provider === onPhone -> askPhone(provider, text, state, sink).let { r ->
                 if (r.errorKind == null) r
                 else (brain.chat(text, java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault()),
-                    currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all())) ?: brain.fallback(text))
+                    currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))
+                    ?: if (r.errorKind == LlmException.Kind.BAD_RESPONSE) brain.slipped() else brain.fallback(text))
                     .let { a -> AgentReply(a.text, a.emotion, r.actions, error = r.error) }
             }
             else -> askModel(provider, text, state, sink).let { r -> if (r.errorKind != null) rescue(text, state, sink, r) else r }.also { r ->
@@ -215,13 +221,25 @@ class CompanionAgent(
     }
 
     /**
+     * The model on the phone. A small model now and then answers with nothing but «…» (a matter of chance in sampling):
+     * then once more, and if that is empty too, a BAD_RESPONSE for the caller to answer without it.
+     */
+    private suspend fun askPhone(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?): AgentReply {
+        fun fine(r: AgentReply) = r.errorKind != null || r.actions.isNotEmpty() || r.text.any { it.isLetterOrDigit() }
+        val first = askModel(provider, text, state, sink)
+        if (fine(first)) return first
+        val second = askModel(provider, text, state, sink)
+        return if (fine(second)) second else second.copy(errorKind = LlmException.Kind.BAD_RESPONSE)
+    }
+
+    /**
      * The cloud failed: the model on the phone answers instead if there is one (with a short note when the owner
      * should fix something), otherwise small talk for passing failures, otherwise the error itself.
      */
     private suspend fun rescue(text: String, state: CompanionState, sink: ReplySink?, failed: AgentReply): AgentReply {
         val onPhone = if (failed.actions.isEmpty() && !failed.spoke) localFactory() else null   // never redo actions or speech
         if (onPhone != null) {
-            val r = askModel(onPhone, text, state, sink)
+            val r = askPhone(onPhone, text, state, sink)
             if (r.errorKind == null) {
                 val note = when (failed.errorKind) {
                     LlmException.Kind.AUTH, LlmException.Kind.BALANCE, LlmException.Kind.POLICY, LlmException.Kind.MODEL,
@@ -262,9 +280,10 @@ class CompanionAgent(
         val all = memory.all()
         val notes = ArrayList<String>()
         // Words about not wanting to live in the last hours come before anything else, in every reply until then.
-        val careful = CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS)
+        val crisis = crisisHelp()
+        val careful = crisis && CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS)
         if (careful) notes += CrisisTalk.note(tr(true, false))
-        CareTalk.pending(conversation.recent(80), today)?.takeIf { !careful || it.kind != CareTalk.Kind.CRISIS }?.let { notes += CareTalk.note(it, tr(true, false)) }
+        CareTalk.pending(conversation.recent(80), today, crisis = crisis)?.takeIf { !careful || it.kind != CareTalk.Kind.CRISIS }?.let { notes += CareTalk.note(it, tr(true, false)) }
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
         val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
         // PlanTalk lists today's and tomorrow's plans first and the one to ask about last; asking how it went comes first here.
@@ -433,7 +452,7 @@ class CompanionAgent(
      * Within [CAREFUL_HOURS] of words about not wanting to live or hurting oneself: her own lines are gentle
      * ([CrisisTalk.gentle]) and playful ones wait; the model is told to be careful in every reply.
      */
-    fun careful(): Boolean = runCatching { CrisisTalk.recent(conversation.recent(80), clock(), CAREFUL_HOURS) }.getOrDefault(false)
+    fun careful(): Boolean = crisisHelp() && runCatching { CrisisTalk.recent(conversation.recent(80), clock(), CAREFUL_HOURS) }.getOrDefault(false)
 
     /** When she speaks up on her own ([ru.iskra.core.skills.ProactivePolicy]): what about the owner's plans fits the moment. */
     enum class PlanMoment { MORNING, EVENING, ANY }
@@ -453,7 +472,7 @@ class CompanionAgent(
             PlanMoment.EVENING -> (MemoryTalk.theirBirthdays(memory.all()).filter { it.second == java.time.MonthDay.from(today.plusDays(1)) }.map { MemoryTalk.theirBirthdayLine(it.first, false) } +
                 known.filter { it.plan.date == today.plusDays(1) }.map { PlanTalk.eve(it.plan) }).take(2).takeIf { it.isNotEmpty() }?.joinToString(" ")
             // Yesterday was hard (sad, ill, a quarrel): «как ты?» comes before any plan.
-            PlanMoment.ANY -> CareTalk.pending(conversation.recent(80), today)?.let { c ->
+            PlanMoment.ANY -> CareTalk.pending(conversation.recent(80), today, crisis = crisisHelp())?.let { c ->
                 CareTalk.ask(c).also { conversation.append(Turn(Turn.Role.ASSISTANT, it, now, Emotion.SHY)) }
             } ?: PlanTalk.due(known, today, localHour(now))?.let { k ->
                 val line = PlanTalk.ask(k.plan)
@@ -491,7 +510,7 @@ class CompanionAgent(
      */
     private suspend fun handleLocally(text: String, llmAvailable: Boolean, smallModel: Boolean = false): AgentReply? {
         // Help numbers at once; a shorter answer if they heard them in the last few hours.
-        brain.crisis(text, again = CrisisTalk.recent(conversation.recent(40), clock(), 6))?.let { return AgentReply(it.text, it.emotion) }
+        if (crisisHelp()) brain.crisis(text, again = CrisisTalk.recent(conversation.recent(40), clock(), 6))?.let { return AgentReply(it.text, it.emotion) }
         answerOffer(text, llmAvailable)?.let { return it }
         if (smallModel) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
@@ -530,7 +549,7 @@ class CompanionAgent(
         if (!llmAvailable) {
             brain.chat(text, now, currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))?.let { a ->
                 // Small talk without a model still asks how the owner is after a hard day, or how the exam went (once).
-                val care = CareTalk.pending(conversation.recent(80), today)?.let { CareTalk.ask(it) }
+                val care = CareTalk.pending(conversation.recent(80), today, crisis = crisisHelp())?.let { CareTalk.ask(it) }
                 val ask = care ?: PlanTalk.due(PlanTalk.known(memory.all()), today, now.hour)?.takeIf { !PlanTalk.mentions(it.plan, text) }?.let { PlanTalk.byTheWay(it.plan) }
                     ?: if (shouldAskName()) tr("Кстати, а как тебя зовут? Хочу знать, как к тебе обращаться.", "By the way, what should I call you? I'd like to know your name.") else null
                 return AgentReply(if (ask != null) a.text + " " + ask else a.text, a.emotion)
@@ -603,7 +622,8 @@ class CompanionAgent(
             situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, composer.languageNudge(text, lastReply))
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {
-            system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty(), ownerFeminine = SelfGender.feminine(memory.all()))
+            system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty(),
+                ownerFeminine = SelfGender.feminine(memory.all()), crisisRule = crisisHelp())
             situation = composer.situation(state.mood, forPrompt(memory.context(text, now), now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
         }
         val messages = ArrayList<ChatMessage>()
@@ -611,9 +631,11 @@ class CompanionAgent(
         // several messages, so the cached beginning stays valid. 6–13 turns, about the same as before on average.
         val window = if (small) conversation.count().let { n -> n - maxOf(0, (n - 6) / 8 * 8) } else historyTurns
         for (t in conversation.recent(window)) messages += when (t.role) {
+            // «…» left by a reply that went wrong is not shown back: a small model copied it into every answer after
+            // (ARM evaluation, Gemma 3 1B: «…», «…Ты выглядишь очень интересно!», «…»).
+            Turn.Role.ASSISTANT -> if (small && t.text.none { it.isLetterOrDigit() }) continue else
+                ChatMessage.Assistant(if (small && t.emotion != null) "[${t.emotion.name.lowercase()}] ${t.text}" else t.text)
             Turn.Role.USER -> ChatMessage.User(t.text)
-            // A small model sees its earlier replies as it wrote them (mood tag included), so its cache matches them.
-            Turn.Role.ASSISTANT -> ChatMessage.Assistant(if (small && t.emotion != null) "[${t.emotion.name.lowercase()}] ${t.text}" else t.text)
         }
         // Providers require the dialogue to start with a user turn.
         while (messages.isNotEmpty() && messages.first() !is ChatMessage.User) messages.removeAt(0)
@@ -621,8 +643,10 @@ class CompanionAgent(
 
         var spoke = false
         // A woman is addressed «ты устала» even when the model wrote «ты устал» (heard and shown the same).
-        val feminine = SelfGender.feminine(memory.all()) == true && tr(true, false)
-        fun agree(t: String) = if (feminine) SelfGender.agreeFeminine(t) else t
+        val owner = SelfGender.feminine(memory.all())
+        val feminine = owner == true && tr(true, false)
+        // «милый/милая», «устал(а)» from a model that doesn't know: the right form, or no lone address at all.
+        fun agree(t: String) = (if (feminine) SelfGender.agreeFeminine(t) else t).let { if (tr(true, false)) SelfGender.slashes(it, owner) else it }
         val voice = sink?.let { out ->
             object : ReplySink {
                 override fun emotion(e: Emotion) = out.emotion(e)
@@ -707,13 +731,22 @@ class CompanionAgent(
         if (old.isEmpty()) return null
         val day = localDate(old.first().atMs)
         val transcript = old.joinToString("\n") { (if (it.role == Turn.Role.USER) tr("Владелец: ", "Owner: ") else "${persona.name}: ") + it.text.take(500) }
-        val r = provider.complete(LlmRequest(
-            system = tr("Сожми диалог в 1–3 предложения от третьего лица: только устойчиво полезное о владельце " +
-                "(планы, события, договорённости, предпочтения). Без паролей и чувствительных данных. " +
-                "Если ничего полезного нет — ответь ровно словом НЕТ.", "Compress the dialogue into 1–3 sentences in the third person: only lastingly useful facts about the owner (plans, events, agreements, preferences). No passwords or sensitive data. If there is nothing useful, answer with exactly the word NONE."),
-            messages = listOf(ChatMessage.User(transcript)),
+        val task = tr("Сожми диалог в 1–3 предложения от третьего лица: только устойчиво полезное о владельце " +
+            "(планы, события, договорённости, предпочтения). Без паролей и чувствительных данных. " +
+            "Если ничего полезного нет — ответь ровно словом НЕТ.", "Compress the dialogue into 1–3 sentences in the third person: only lastingly useful facts about the owner (plans, events, agreements, preferences). No passwords or sensitive data. If there is nothing useful, answer with exactly the word NONE.")
+        // A model on the phone given the bare transcript went on with it as Iskra (ARM evaluation, Gemma 4 E2B: «Искра: Я могу
+        // поискать…»): it gets the excerpt marked as one and the task after it, where it reads it last.
+        val request = if (!provider.onDevice) LlmRequest(system = task, messages = listOf(ChatMessage.User(transcript)), maxTokens = 200, temperature = 0.2)
+        else LlmRequest(
+            system = tr("Ты пересказываешь переписки кратко и точно.", "You retell chats briefly and accurately."),
+            messages = listOf(ChatMessage.User(tr(
+                "Отрывок переписки владельца телефона и ассистента «${persona.name}»:\n\n$transcript\n\nЗадание: $task " +
+                    "Не продолжай переписку: ответь только пересказом или словом НЕТ.",
+                "An excerpt of a chat between the phone's owner and the assistant “${persona.name}”:\n\n$transcript\n\nTask: $task " +
+                    "Don't continue the chat: answer only with the summary or the word NONE."))),
             maxTokens = 200, temperature = 0.2,
-        ))
+        )
+        val r = provider.complete(request)
         currentCoroutineContext().ensureActive()
         val summary = cleanSummary(r.text, provider.onDevice) ?: return null
         if (summary.isNotEmpty()) {

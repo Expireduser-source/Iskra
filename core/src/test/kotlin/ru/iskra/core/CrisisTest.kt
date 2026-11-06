@@ -143,6 +143,45 @@ class CrisisTest {
         }
     }
 
+    /** «Помощь в кризисе» off (Settings): nothing of it — the model answers such words itself, with nothing added. */
+    @Test fun switchedOffTheModelAnswersFreely() = withLang(Lang.RU) {
+        runBlocking {
+            var now = LocalDateTime.of(2026, 11, 6, 22, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            val phone = PhoneModel()
+            val convo = InMemoryConversationStore()
+            var help = false
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = convo,
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { phone }, random = Random(1), clock = { now }, crisisHelp = { help })
+            val r = agent.handle("Я больше не хочу жить")
+            assertEquals("Я тут. Что случилось?", r.text) // the model's own answer
+            assertFalse(phone.asked.single().situation.contains("бережной"))
+            assertFalse(agent.careful())
+            // The next day: no crisis check-in either (only ordinary care, which these words alone don't start).
+            now += 10 * 3_600_000L
+            agent.handle("Привет")
+            assertFalse(phone.asked.last().situation.contains("не хочет жить"), phone.asked.last().situation)
+            // Switched back on: from the next message.
+            help = true
+            assertTrue(agent.careful())
+            assertTrue(agent.handle("жить не хочется").text.contains("8-800-2000-122"))
+            Unit
+        }
+    }
+
+    @Test fun theCloudPromptHasTheRuleOnlyWhenOn() = withLang(Lang.RU) {
+        val c = ru.iskra.core.agent.PromptComposer()
+        val style = ru.iskra.core.persona.StyleProfile()
+        assertTrue(c.stable(Personas.ISKRA, style, toolsAvailable = false).contains("желании умереть"))
+        assertFalse(c.stable(Personas.ISKRA, style, toolsAvailable = false, crisisRule = false).contains("желании умереть"))
+        withLang(Lang.EN) {
+            assertTrue(c.stable(Personas.ISKRA.localized(), style, toolsAvailable = false).contains("wanting to die"))
+            assertFalse(c.stable(Personas.ISKRA.localized(), style, toolsAvailable = false, crisisRule = false).contains("wanting to die"))
+        }
+        Unit
+    }
+
     @Test fun gentleLines() = withLang(Lang.RU) {
         assertEquals("Доброе утро. Я рядом.", CrisisTalk.gentle(morning = true))
         assertFalse(CrisisTalk.gentle(morning = false, Random(3)).contains("Мрр"))

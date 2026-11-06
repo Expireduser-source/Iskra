@@ -33,11 +33,12 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         else -> null
     }
 
-    fun stable(persona: PersonaSpec, style: StyleProfile, toolsAvailable: Boolean, ownerFeminine: Boolean? = null): String = buildString {
+    fun stable(persona: PersonaSpec, style: StyleProfile, toolsAvailable: Boolean, ownerFeminine: Boolean? = null, crisisRule: Boolean = true): String = buildString {
         appendLine(tr("Ты — ${persona.name}, ${persona.selfDescription}", "You are ${persona.name}, ${persona.selfDescription}"))
         appendLine()
         appendLine(tr("Незыблемые правила:", "Unbreakable rules:"))
         persona.boundaries.forEach { appendLine("- $it") }
+        if (crisisRule && persona.crisisRule.isNotEmpty()) appendLine("- ${persona.crisisRule}")
         appendLine(tr("- Говори правду. Не знаешь или не уверена — так и скажи или проверь инструментом. Не выдумывай факты, числа, даты, имена, цитаты и ссылки.",
             "- Tell the truth. If you don't know or aren't sure, say so or check with a tool. Never invent facts, numbers, dates, names, quotes or links."))
         appendLine()

@@ -109,6 +109,44 @@ object SelfGender {
         return out.toString()
     }
 
+    private val slash = Regex("""(?<!\p{L})(\p{IsCyrillic}+)/(\p{IsCyrillic}+)(?!\p{L})""")
+    private val paren = Regex("""(?<!\p{L})(\p{IsCyrillic}{2,})\(а\)""")
+
+    /** «милый»/«милая», «вернулся»/«вернулась» → (masculine, feminine); «и/или», «чай/кофе» → null. */
+    private fun pair(a: String, b: String): Pair<String, String>? {
+        fun fem(w: String) = w.lowercase().let { it.endsWith("ась") || it.endsWith("а") || (it.endsWith("я") && !it.endsWith("ся")) }
+        if (a.lowercase().commonPrefixWith(b.lowercase()).length < 2 || fem(a) == fem(b)) return null
+        return if (fem(b)) a to b else b to a
+    }
+
+    /**
+     * «Ой, милый/милая», «ты устал(а)?»: a model hedging because it doesn't know whom it talks to. When the owner's way of
+     * speaking is known ([feminine]), the matching form stays; while it isn't, a lone form of address («Ой, милый/милая.»)
+     * goes and the rest is left as it is.
+     */
+    fun slashes(text: String, feminine: Boolean?): String {
+        if (!text.contains('/') && !text.contains("(а)")) return text
+        if (feminine != null) return text
+            .replace(paren) { m -> if (feminine) m.groupValues[1] + "а" else m.groupValues[1] }
+            .replace(slash) { m ->
+                val (a, b) = m.destructured
+                pair(a, b)?.let { (if (feminine) it.second else it.first).let { w -> if (a[0].isUpperCase()) w.replaceFirstChar(Char::uppercaseChar) else w } } ?: m.value
+            }
+        fun gendered(a: String, b: String) = pair(a, b) != null
+        // An address on its own: «Милый/милая, не грусти» → «Не грусти»; «Не грусти, милый/милая, всё…» → «Не грусти, всё…»;
+        // «Ой, милый/милая.» → «Ой.»
+        return text
+            .replace(Regex("""(^|[.!?…]\s+)(\p{IsCyrillic}+)/(\p{IsCyrillic}+)\s*,\s*(\p{L})""")) { m ->
+                if (gendered(m.groupValues[2], m.groupValues[3])) m.groupValues[1] + m.groupValues[4].uppercase() else m.value
+            }
+            .replace(Regex(""",\s*(\p{IsCyrillic}+)/(\p{IsCyrillic}+)\s*,""")) { m ->
+                if (gendered(m.groupValues[1], m.groupValues[2])) "," else m.value
+            }
+            .replace(Regex(""",\s*(\p{IsCyrillic}+)/(\p{IsCyrillic}+)(?=\s*[.!?…]|\s*$)""")) { m ->
+                if (gendered(m.groupValues[1], m.groupValues[2])) "" else m.value
+            }
+    }
+
     /** What memory holds: true — feminine, false — masculine, null — not known yet. */
     fun feminine(memories: List<MemoryItem>): Boolean? = memories.sortedByDescending { it.createdAtMs }
         .firstNotNullOfOrNull { when (it.text) { FEMININE_RU -> true; MASCULINE_RU -> false; else -> null } }
