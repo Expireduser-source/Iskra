@@ -139,6 +139,38 @@ class Gemma4ToolsTest {
         }
     }
 
+    /** E4B wrote the whole call as text, without its markup (ARM evaluation, 0.15.0): it is still the call, and not shown. */
+    @Test fun aCallWithoutItsMarkupIsStillACall() = withLang(Lang.RU) {
+        runBlocking {
+            val bare = "set_timer{label:${q}Яйца всмятку$q, minutes:5}"
+            assertEquals(true, Gemma4Tools.bareStart(bare, listOf("set_timer")))
+            assertEquals(true, Gemma4Tools.bareStart("call:$bare", listOf("set_timer")))
+            assertEquals(null, Gemma4Tools.bareStart("set_ti", listOf("set_timer")))
+            assertEquals(false, Gemma4Tools.bareStart("Ставлю таймер", listOf("set_timer")))
+            assertEquals(false, Gemma4Tools.bareStart("set_timer — это инструмент", listOf("set_timer")))
+            assertEquals(false, Gemma4Tools.bareStart(bare, emptyList()))
+            val engine = Scripted(bare, "[happy] Засекла пять минут — будут всмятку!")
+            val timer = RecordingTool()
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
+            val heard = StringBuilder()
+            val r = agent.handle("Сварю яйца всмятку — засеки, сколько нужно", object : ru.iskra.core.voice.ReplySink {
+                override fun emotion(e: ru.iskra.core.persona.Emotion) = Unit
+                override fun sentence(text: String, emotion: ru.iskra.core.persona.Emotion) { heard.append(text) }
+            })
+            assertEquals(5, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
+            assertEquals("Засекла пять минут — будут всмятку!", r.text)
+            assertFalse(heard.contains("set_timer"), heard.toString())
+            // Words that only begin like a tool's name stay words.
+            val said = StringBuilder()
+            LocalLlmProvider({ Scripted("[happy] settle down, мрр") }, ChatFormat.GEMMA4, "local:test")
+                .stream(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Привет")), tools = listOf(ToolSchemas.setTimer))) { said.append(it) }
+            assertTrue(said.contains("settle down"), said.toString())
+        }
+    }
+
     /** The whole way: Gemma 4 on the phone calls the timer, the tool runs, the model answers in the same turn. */
     @Test fun gemma4OnThePhoneSetsATimer() = withLang(Lang.RU) {
         runBlocking {

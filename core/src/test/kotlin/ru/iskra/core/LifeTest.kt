@@ -283,6 +283,8 @@ class DiaryFilterTest {
         assertEquals("Сегодня я поболтала с Аней.", write("7 ноября, суббота. Сегодня я поболтала с Аней.").first)
         // A date inside the first sentence stays.
         assertEquals("7 ноября я впервые поговорила с Аней.", write("7 ноября я впервые поговорила с Аней.").first)
+        // Italics around it (E4B): the asterisks go, her words stay.
+        assertEquals("Мрр... Сегодня я поболтала с Аней.", write("*Мрр... Сегодня я поболтала с Аней.*").first)
     }
 }
 

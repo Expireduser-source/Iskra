@@ -88,12 +88,38 @@ object Gemma4Tools {
     fun response(name: String, content: String): String = "<|tool_response>response:$name{value:$Q$content$Q}<tool_response|>"
 
     /**
-     * What the model wrote: the text before its first call, and the calls (`<|tool_call>call:name{…}`, the closing tag may
-     * be cut off by the stop). A call that can't be read is dropped — the text stays.
+     * Whether [start] — the beginning of a reply — is a call written without its markup: `set_timer{…}` or
+     * `call:set_timer{…}`, with one of [names]. E4B wrote «set_timer{label:<|"|>Яйца всмятку<|"|>, minutes:5}» as its whole
+     * reply (ARM evaluation, 0.15.0): no timer, and those words in the chat. Null while it can't be told yet (a beginning
+     * of a name), false when it isn't one.
      */
-    fun parse(text: String): Pair<String, List<ToolCall>> {
+    fun bareStart(start: String, names: Collection<String>): Boolean? {
+        if (names.isEmpty() || start.isEmpty()) return false
+        if ("call:".startsWith(start)) return null
+        val s = if (start.startsWith("call:")) start.substring(5) else start
+        var undecided = false
+        for (n in names) {
+            if (s.startsWith(n)) {
+                val rest = s.substring(n.length).trimStart()
+                if (rest.isEmpty()) undecided = true else if (rest[0] == '{') return true
+            } else if (n.startsWith(s)) undecided = true
+        }
+        return if (undecided) null else false
+    }
+
+    /**
+     * What the model wrote: the text before its first call, and the calls (`<|tool_call>call:name{…}`, the closing tag may
+     * be cut off by the stop). A call that can't be read is dropped — the text stays. A reply that is a call of one of
+     * [names] written without the markup ([bareStart]) is that call.
+     */
+    fun parse(text: String, names: Collection<String> = emptyList()): Pair<String, List<ToolCall>> {
         val first = text.indexOf(CALL_OPEN)
-        if (first < 0) return text to emptyList()
+        if (first < 0) {
+            val t = text.trimStart()
+            if (bareStart(t, names) == true) Reader(if (t.startsWith("call:")) t else "call:$t").readCall()
+                ?.takeIf { (name, _) -> name in names }?.let { (name, args) -> return "" to listOf(ToolCall("call_1", name, args)) }
+            return text to emptyList()
+        }
         val calls = ArrayList<ToolCall>()
         var at = first
         while (at >= 0) {

@@ -1034,7 +1034,8 @@ class CompanionAgent(
         val dateLine = Regex("""(?iu)^(?:\d{1,2}\s+\p{L}+|\p{L}+\s+\d{1,2})(?:[,.\s]+\d{4})?(?:[,.\s]+\p{L}+)?[.:!]?$""")
         val s = ReplyParser.parse(raw).text.replace("**", "").replace("__", "").replace(Regex("""(?m)^#+\s*"""), "")
             .lines().map { it.trim() }.filter { it.isNotEmpty() }.dropWhile { dateLine.matches(it) }.joinToString(" ")
-            .trim().trim('"', '«', '»')
+            // A single asterisk around it: E4B wrote «*Мрр... Сегодня я поболтала с Аней…*» (ARM evaluation).
+            .trim().trim('*').trim().trim('"', '«', '»')
             .replace(Regex("""(?iu)^(?:дорогой\s+дневник|dear\s+diary)[\s,!.:—-]*"""), "")
             // The heading on the same line: E4B wrote «Дневник Искры, 7 ноября (Суббота) Сегодня я…» (ARM evaluation).
             .replace(Regex("""(?iu)^(?:(?:мой\s+)?дневник\s+искры|(?:iskra'?s|my)\s+diary)[\s,.:—-]*"""), "")

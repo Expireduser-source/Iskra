@@ -357,6 +357,8 @@ class LocalLlmProvider(
         // Gemma 4 answers straight away with thinking off; if it opens its thought channel anyway, nothing is shown until
         // the channel closes. The beginning waits only while it could still be the channel's opening tag.
         val forced = format.forcedCall(request)
+        // The tools offered this turn: a reply that begins with one of them and «{» is a call written without its markup.
+        val toolNames = if (format == ChatFormat.GEMMA4) request.tools.map { it.name } else emptyList()
         var gate = when {
             forced != null -> Gate.CALL
             format == ChatFormat.GEMMA4 -> Gate.WAIT
@@ -397,7 +399,8 @@ class LocalLlmProvider(
                                         h.startsWith(THOUGHT_OPEN) -> Gate.THINKING
                                         h.startsWith(Gemma4Tools.CALL_OPEN) -> Gate.CALL
                                         THOUGHT_OPEN.startsWith(h) || Gemma4Tools.CALL_OPEN.startsWith(h) -> Gate.WAIT
-                                        else -> Gate.OPEN
+                                        // A call written without its markup is not shown either (E4B, 0.15.0).
+                                        else -> when (Gemma4Tools.bareStart(h, toolNames)) { true -> Gate.CALL; null -> Gate.WAIT; false -> Gate.OPEN }
                                     }
                                 }
                                 when (gate) {
@@ -446,7 +449,7 @@ class LocalLlmProvider(
         if (format == ChatFormat.GEMMA4) reply = reply.substringAfterLast(THOUGHT_CLOSE).trim()
         // Gemma 4's tool calls: the words before the first call are the reply, the calls go to the agent (none if no tool
         // was offered — a call made up anyway is just not shown).
-        val (said, made) = if (format == ChatFormat.GEMMA4) Gemma4Tools.parse(forced.orEmpty() + reply) else reply to emptyList()
+        val (said, made) = if (format == ChatFormat.GEMMA4) Gemma4Tools.parse(forced.orEmpty() + reply, toolNames) else reply to emptyList()
         val calls = if (request.tools.isEmpty()) emptyList() else made.filter { c -> request.tools.any { it.name == c.name } }
         reply = said
         val final = cleanStart(if (guard) stripForeign(reply, allowed).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()
