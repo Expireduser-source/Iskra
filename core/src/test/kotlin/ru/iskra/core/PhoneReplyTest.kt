@@ -109,7 +109,7 @@ class PhoneReplyTest {
         runBlocking {
             val phone = Scripted("[shy] Uh... I think so.", "[shy] Нет, я программа, которая живёт в телефоне.")
             assertEquals("Нет, я программа, которая живёт в телефоне.", agent(phone).handle("Ты человек?").text)
-            assertTrue(phone.asked[1].situation.endsWith("(ответ — по-русски)"), phone.asked[1].situation)
+            assertTrue(phone.asked[1].situation.endsWith("Ответь по-русски."), phone.asked[1].situation)
             val translator = Scripted("[neutral] I love winter evenings.")
             assertEquals("I love winter evenings.", agent(translator).handle("Переведи на английский: «Я люблю зимние вечера»").text)
             assertEquals(1, translator.asked.size)

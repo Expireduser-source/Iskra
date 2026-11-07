@@ -337,8 +337,6 @@ class CompanionAgent(
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
         // Her own small holiday: a week, a month, a hundred days, a year since she was born.
         currentState().let { st -> Life.milestone(lived(st, nowMs))?.let { notes += Life.milestoneNote(it, bornAt(st, nowMs), nowMs) } }
-        // What she wrote in her diary about the last day they talked: on the first message of a new day.
-        if (conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } != false) diaryNote(today)?.let { notes += it }
         val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
         // PlanTalk lists today's and tomorrow's plans first and the one to ask about last; asking how it went comes first here.
         val plans = PlanTalk.notes(PlanTalk.known(all), today, localHour(nowMs), fresh, tr(true, false))
@@ -350,6 +348,9 @@ class CompanionAgent(
                 else "${if (day == 0) "today" else "tomorrow"} is the owner's $who's birthday — remind them to congratulate"
         }
         if (shouldAskName()) notes += tr("ты ещё не знаешь, как зовут собеседника — если к месту, спроси (один раз)", "you don't know the person's name yet — if it fits, ask (once)")
+        // What she wrote in her diary about the last day they talked, on the first message of a new day — last of all: before
+        // the plans it displaced «Как прошёл экзамен?» for the phone model, which reads only the first note (ARM evaluation).
+        if (fresh) diaryNote(today)?.let { notes += it }
         return notes
     }
 
@@ -1021,7 +1022,11 @@ class CompanionAgent(
 
     /** Her entry, or "" when there is nothing to write, or null when the model wrote something else (a chat, a list). */
     private fun cleanDiary(raw: String, who: String): String? {
-        val s = ReplyParser.parse(raw).text.trim().trim('"', '«', '»')
+        // One plain paragraph: E4B began with a heading «**7 ноября. Суббота.**» (ARM evaluation), kept as the whole entry.
+        val dateLine = Regex("""(?iu)^(?:\d{1,2}\s+\p{L}+|\p{L}+\s+\d{1,2})(?:[,.\s]+\d{4})?(?:[,.\s]+\p{L}+)?[.:!]?$""")
+        val s = ReplyParser.parse(raw).text.replace("**", "").replace("__", "").replace(Regex("""(?m)^#+\s*"""), "")
+            .lines().map { it.trim() }.filter { it.isNotEmpty() }.dropWhile { dateLine.matches(it) }.joinToString(" ")
+            .trim().trim('"', '«', '»')
             .replace(Regex("""(?iu)^(?:дорогой\s+дневник|dear\s+diary)[\s,!.:—-]*"""), "").trim()
         if (s.trimEnd('.', '!').equals("нет", ignoreCase = true) || s.trimEnd('.').equals("none", ignoreCase = true)) return ""
         if (s.length !in 15..500) return null

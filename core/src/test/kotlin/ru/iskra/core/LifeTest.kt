@@ -251,6 +251,11 @@ class DiaryFilterTest {
         }
     }
 
+    @Test fun aHeadingAndMarkdownGo() {
+        assertEquals("Сегодня я пообщалась с Аней. Мне было приятно её поддержать.",
+            write("**7 ноября. Суббота.**\n\nСегодня я пообщалась с Аней.\nМне было приятно её поддержать.").first)
+    }
+
     @Test fun listsAndSomeoneElsesDiaryAreNotKept() {
         assertNull(write("1. Забегая за Анной, я видел её на улице, подражая кошкодевочке.").first)
         assertNull(write("- Поговорили\n- Посмеялись").first)
@@ -265,5 +270,36 @@ class DiaryFilterTest {
         val long = "Сегодня было много всего интересного. ".repeat(12).trim()
         val kept = write(long).first!!
         assertTrue(kept.length <= 400 && kept.endsWith("."), kept)
+    }
+}
+
+/** The phone model reads only the first of today's notes: asking how the exam went comes before recalling the diary. */
+class DiaryOrderTest {
+    private fun at(day: Int, hour: Int = 12) = LocalDateTime.of(2026, 11, day, hour, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    private class Phone : LlmProvider {
+        override val id = "local:test"
+        override val onDevice = true
+        val asked = mutableListOf<LlmRequest>()
+        override suspend fun complete(request: LlmRequest): LlmResponse { asked += request; return LlmResponse("[happy] Мрр!", emptyList()) }
+    }
+
+    @Test fun thePlanBeforeTheDiary() = withLang(Lang.RU) {
+        runBlocking {
+            var now = at(6, 15)
+            val phone = Phone()
+            val diary = ru.iskra.core.memory.InMemoryDiaryStore()
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { phone }, random = Random(1), clock = { now }, diary = diary)
+            agent.handle("Меня зовут Аня")
+            agent.handle("Завтра у меня экзамен по анатомии")
+            diary.add("2026-11-06", "Сегодня Аня рассказала про экзамен — я держу за неё лапки!", at(7, 3))
+            now = at(8, 10)
+            agent.handle("Привет, я вернулась!")
+            val s = phone.asked.last().situation
+            assertTrue(s.contains("экзамен") && !s.contains("дневник"), s)
+        }
     }
 }

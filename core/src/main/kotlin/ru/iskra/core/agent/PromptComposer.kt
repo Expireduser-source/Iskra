@@ -214,10 +214,11 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
     }
 
     /**
-     * The reminder of the reply's language, as a note in brackets like the situation's other notes: as a bare «Ответь
-     * по-русски.» before the message, E4B answered it first — «Хорошо, я отвечу по-русски.» (ARM evaluation, 0.15.0).
+     * The reminder of the reply's language. As a note in brackets the light model went on in English («Oh my goodness!…»),
+     * so it is the plain «Ответь по-русски.» that worked for it; E4B answered that first — «Хорошо, я отвечу по-русски.» —
+     * and [dropNudgeAnswer] takes it out of the reply (ARM evaluations, 0.15.0).
      */
-    private fun nudgeFor(asked: Char) = if (asked == 'r') "(ответ — по-русски)" else "(the reply is in English)"
+    private fun nudgeFor(asked: Char) = if (asked == 'r') "Ответь по-русски." else "Answer in English."
 
     /** «Хорошо, я отвечу по-русски.» at the start of a reply: an answer to the reminder, not to the person. */
     fun dropNudgeAnswer(reply: String): String = NUDGE_ANSWER.replaceFirst(reply, "").let { if (it.isBlank()) reply else it }
