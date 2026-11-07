@@ -61,6 +61,85 @@ class Smoke:
                 f.write(data)
         else:
             self.note(f"screenshot {name} failed")
+        self.audit(name)
+
+    def idle_cost(self, name, seconds=10):
+        """Frames drawn and processor time taken while the app only shows itself (animations on): the battery question
+        of 0.16.0's living header and of her on the home screen. The emulator draws in software, so the processor share
+        is far above a phone's; the frame rate is the app's own. Written to idle.txt and as a notice."""
+        pid = sh(f"pidof {PKG}").strip().split(" ")[0]
+        if not pid:
+            return
+        def ticks():
+            st = sh(f"cat /proc/{pid}/stat") or sh(f"run-as {PKG} cat /proc/{pid}/stat")
+            f = st[st.rfind(")") + 2:].split() if ")" in st else []
+            return int(f[11]) + int(f[12]) if len(f) > 12 else None  # utime + stime, in clock ticks (100 a second)
+        sh(f"dumpsys gfxinfo {PKG} reset")
+        t0, c0 = time.time(), ticks()
+        time.sleep(seconds)
+        c1, took = ticks(), time.time() - t0
+        g = sh(f"dumpsys gfxinfo {PKG}")
+        frames = re.search(r"Total frames rendered:\s*(\d+)", g)
+        jank = re.search(r"Janky frames:\s*(\d+)", g)
+        line = f"{name}: " + (f"{int(frames.group(1)) / took:.1f} frames/s" if frames else "frames unknown") + \
+            (f" ({jank.group(1)} janky)" if jank else "") + \
+            (f", processor {100.0 * (c1 - c0) / 100 / took:.0f}% of one core" if c0 is not None and c1 is not None else "")
+        print(line, flush=True)
+        with open(os.path.join(self.out, "idle.txt"), "a") as f:
+            f.write(line + "\n")
+        self.idle = getattr(self, "idle", []) + [line]
+
+    def density(self):
+        if not getattr(self, "_density", 0):
+            found = re.findall(r"density:\s*(\d+)", sh("wm density"))
+            self._density = int(found[-1]) if found else 160
+        return self._density
+
+    def audit(self, name):
+        """What TalkBack and a finger meet on this screen (0.16.1): every control of the app has a name to be read out,
+        and is at least 48 dp across (the size Android's Accessibility Scanner asks for). Written to a11y.txt; the
+        summary is a warning, never a failure."""
+        nodes = self.nodes()
+        if not nodes:
+            return
+        parent = {}
+        for n in nodes:
+            for c in n.findall("node"):
+                parent[c] = n
+        def bounds(n):
+            return list(map(int, re.findall(r"-?\d+", n.get("bounds", "[0,0][0,0]"))))
+        def named(n):
+            return any((d.get("text") or "").strip() or (d.get("content-desc") or "").strip() for d in n.iter("node"))
+        def clipped(n):
+            # Cut by the edge of a list it scrolls in: its size on screen is not its size.
+            x1, y1, x2, y2 = bounds(n)
+            p = parent.get(n)
+            while p is not None:
+                if p.get("scrollable") == "true":
+                    a1, b1, a2, b2 = bounds(p)
+                    return y1 <= b1 or y2 >= b2 or x1 <= a1 or x2 >= a2
+                p = parent.get(p)
+            return False
+        found = []
+        dp = 160.0 / self.density()
+        for n in nodes:
+            if n.get("package") != PKG or "true" not in (n.get("clickable"), n.get("long-clickable"), n.get("checkable")):
+                continue
+            x1, y1, x2, y2 = bounds(n)
+            if x2 <= x1 or y2 <= y1:
+                continue
+            what = n.get("resource-id", "").split("/")[-1] or (n.get("text") or n.get("content-desc") or n.get("class", "")).strip()[:40]
+            if not named(n):
+                found.append(f"{name}: a control without a name for TalkBack ({what or n.get('class')}, {n.get('bounds')})")
+            w, h = (x2 - x1) * dp, (y2 - y1) * dp
+            if (w < 47.5 or h < 47.5) and not clipped(n):
+                found.append(f"{name}: «{what}» is {w:.0f}×{h:.0f} dp — smaller than 48 dp to touch")
+        if not hasattr(self, "a11y"):
+            self.a11y = []
+        self.a11y += found
+        with open(os.path.join(self.out, "a11y.txt"), "a") as f:
+            f.write(f"## {name}: {sum(1 for n in nodes if n.get('package') == PKG and n.get('clickable') == 'true')} controls, "
+                    f"{len(found)} findings\n" + "".join(f"- {x}\n" for x in found))
 
     def nodes(self):
         for _ in range(3):
@@ -637,6 +716,12 @@ def main():
         tapped = s.tap_id("chat_surprise", quiet=True)
         time.sleep(5)
         s.save(rec)
+        # What being alive costs when nothing happens: the chat with her living portrait, then her on the home screen.
+        time.sleep(3)
+        s.idle_cost("chat, idle")
+        sh("input keyevent KEYCODE_HOME")
+        time.sleep(5)
+        s.idle_cost("home screen with her, idle")
         s.animations(False)
         s.restart()
         if tapped:
@@ -724,6 +809,14 @@ def main():
         annotate("error", f"Iskra is not running on API {a.api}", "The process is gone without a crash report (ANR or killed).")
     for p in s.problems:
         annotate("warning", f"Emulator check, API {a.api}", p)
+    if getattr(s, "idle", []):
+        annotate("notice", f"Idle cost, API {a.api}{' ' + a.lang if a.lang else ''} (software drawing on the emulator)", "\n".join(s.idle))
+    a11y = getattr(s, "a11y", [])
+    if a11y:
+        annotate("warning", f"Accessibility, API {a.api}{' ' + a.lang if a.lang else ''}: {len(a11y)} findings",
+                 "\n".join(sorted(set(a11y)))[:6000])
+    else:
+        annotate("notice", f"Accessibility, API {a.api}", "every control of the app on the screens above has a name and is 48 dp or more")
     print(f"API {a.api}: {s.n} screenshots, crashes: {len(crashes)}, alive: {alive}", flush=True)
     annotate("notice", f"Emulator check, API {a.api}", f"{s.n} screenshots, crashes: {len(crashes)}, process alive: {alive}")
     sys.exit(1 if crashes or not alive else 0)
