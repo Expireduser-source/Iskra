@@ -336,6 +336,7 @@ class LocalLlmProvider(
         val budget = minOf(maxTokens, request.maxTokens)
         val rendered = format.prompt(fit(request, e.contextSize - budget, perToken))
         val prompt = rendered.text
+        if (request.warmUp) return warmUp(e, rendered)
         // Small Qwen models sometimes slip Chinese characters into Russian or English; unless the person wrote them, drop them.
         val lastUser = (request.messages.lastOrNull { it is ChatMessage.User } as? ChatMessage.User)?.text.orEmpty()
         // …and Llama 3.2 1B slipped in Devanagari («Мैं Аня»): letters of a script the person didn't write in go, unless they
@@ -440,6 +441,27 @@ class LocalLlmProvider(
         val final = cleanStart(if (guard) stripForeign(reply, allowed).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()
         sincePurr = if (PURR.containsMatchIn(final)) 0 else sincePurr + 1
         return LlmResponse(final, calls)
+    }
+
+    /**
+     * Reads [rendered] into the engine's cache and writes nothing (one token, dropped): the next message's prompt begins
+     * the same, so only its own part is read then.
+     */
+    private suspend fun warmUp(e: LlamaEngine, rendered: Prompt): LlmResponse {
+        val t0 = System.nanoTime()
+        withContext(Dispatchers.IO) {
+            try {
+                e.generate(rendered.text, 1, 0.1f, rendered.stable, rendered.head) { false }
+            } catch (t: IllegalArgumentException) {
+                if (t.message.orEmpty().contains("too long")) throw PromptTooLong(t)
+                throw LlmException("on-device: ${t.message}", LlmException.Kind.SERVER, t)
+            }
+        }
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        val (promptTokens, reused) = e.lastRead()
+        if (promptTokens >= 200) charsPerToken = rendered.text.length.toDouble() / promptTokens
+        onStats?.invoke(GenStats(rendered.text.length, ms, 0, 0, ms, promptTokens, promptTokens - reused))
+        return LlmResponse("", emptyList())
     }
 
     /** Gemma 4's start of a reply: waiting to see whether it opens the thought channel, inside it, or the answer itself. */

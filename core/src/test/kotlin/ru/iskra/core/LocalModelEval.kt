@@ -120,6 +120,14 @@ class LocalModelEval {
                         summarizeAfterTurns = 20,
                     )
                     doc.append("\n## ${lang.name}\n")
+                    // What the app does when the chat is opened: the instructions (and Gemma 4's tools) read ahead of the
+                    // first message. Its reading is not a reply, so it stays out of the medians.
+                    val beforeWarm = stats.size
+                    val tw = System.nanoTime()
+                    val warmed = runBlocking { agent.warmUpPhone() }
+                    val warmTokens = stats.drop(beforeWarm).lastOrNull()?.promptTokens ?: 0
+                    while (stats.size > beforeWarm) stats.removeAt(stats.lastIndex)
+                    doc.append("\n*(read ahead when the chat opens: %s, %d tokens, %.1f s)*\n".format(java.util.Locale.ROOT, warmed, warmTokens, (System.nanoTime() - tw) / 1e9))
                     for (q in script) {
                         if (q.startsWith("@+") && q.endsWith("d")) {
                             val days = q.removePrefix("@+").removeSuffix("d").toInt()

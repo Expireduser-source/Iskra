@@ -275,8 +275,12 @@ object LocalBrain {
         unload()
         _state.value = State.Ready(model, target.length())
         Diag.i("local", tr("Модель на телефоне готова: ", "On-phone model ready: ") + model.id + " (${target.length() / 1_000_000} MB)")
-        // Right away, while the owner looks at the card: which threads suit this phone (seconds, once per model).
-        scope.launch { runCatching { tune() }.onFailure { Diag.w("local", "tune: ${it.message}") } }
+        // Right away, while the owner looks at the card: which threads suit this phone (seconds, once per model), then the
+        // instructions and tools read ahead, so the first message doesn't wait for them.
+        scope.launch {
+            runCatching { tune() }.onFailure { Diag.w("local", "tune: ${it.message}") }
+            runCatching { ru.iskra.app.IskraApp.instance.agent.warmUpPhone() }.onFailure { Diag.w("local", "warm-up: ${it.message}") }
+        }
     }
 
     private suspend fun currentCoroutineContextActive() = kotlinx.coroutines.currentCoroutineContext().isActive

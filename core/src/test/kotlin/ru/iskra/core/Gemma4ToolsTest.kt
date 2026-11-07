@@ -312,6 +312,12 @@ object Gemma4Tools2 {
         override fun cancel() = Unit
         override fun close() = Unit
     }
+
+    /** A cloud brain that answers anything. */
+    class Cloud : ru.iskra.core.llm.LlmProvider {
+        override val id = "cloud:test"
+        override suspend fun complete(request: LlmRequest) = ru.iskra.core.llm.LlmResponse("[happy] Мрр!", emptyList())
+    }
 }
 
 /**
@@ -385,6 +391,50 @@ class PromptFitTest {
             assertEquals(0, engine.refused)
             fun turns(prompt: String) = Regex("Реплика номер").findAll(prompt).count()
             assertTrue(turns(engine.prompts[1]) >= turns(engine.prompts[0]) * 13 / 10, "${turns(engine.prompts[0])} → ${turns(engine.prompts[1])}")
+        }
+    }
+}
+
+/** The phone model reads the beginning of its next prompt ahead of time (ARM evaluation: Gemma 4's first reply read ~930 tokens). */
+class WarmUpTest {
+    @Test fun theNextPromptBeginsWithWhatWasRead() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Gemma4Tools2.Scripted("[happy] Привет, Аня!", "[happy] Удачи на экзамене!", "[happy] Мрр, давай!")
+            val convo = InMemoryConversationStore()
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = convo,
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(RecordingTool())), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
+            agent.handle("Меня зовут Аня, я учусь на врача")
+            agent.handle("Завтра у меня экзамен по анатомии")
+            val turns = convo.count()
+            assertTrue(agent.warmUpPhone())
+            val read = engine.prompts.last()
+            assertEquals(turns, convo.count(), "nothing is added to the dialogue")
+            agent.handle("Поболтаем?")
+            val next = engine.prompts.last()
+            // Everything read but the opening of a model turn is the beginning of the next prompt: instructions, tools,
+            // what she knows about Аня, the dialogue so far.
+            assertTrue(read.endsWith("<|turn>model\n"), read.takeLast(80))
+            assertTrue(next.startsWith(read.removeSuffix("<|turn>model\n")), "read:\n${read.takeLast(300)}\n\nnext:\n${next.take(read.length + 100).takeLast(400)}")
+            assertTrue(read.contains("<|tool>declaration:set_timer"))
+        }
+    }
+
+    @Test fun notWhenTheCloudAnswersOrThereIsNoModel() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Gemma4Tools2.Scripted()
+            fun agent(cloud: Boolean, phone: Boolean) = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { if (cloud) Gemma4Tools2.Cloud() else null },
+                localFactory = { if (phone) LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") else null }, random = Random(1))
+            assertFalse(agent(cloud = true, phone = true).warmUpPhone())
+            assertFalse(agent(cloud = false, phone = false).warmUpPhone())
+            assertTrue(engine.prompts.isEmpty())
+            // With no dialogue yet: the instructions and tools alone.
+            assertTrue(agent(cloud = false, phone = true).warmUpPhone())
+            assertTrue(engine.prompts.single().startsWith("<|turn>system\n"))
         }
     }
 }

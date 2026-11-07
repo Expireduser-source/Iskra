@@ -58,6 +58,20 @@ class ChatController(private val app: IskraApp) {
         }
     }
 
+    /**
+     * The chat is open: the model on the phone reads the beginning of its next prompt now, while the person types, so the
+     * reply doesn't wait for it (Gemma 4 with its tools: ~930 tokens the first time after a download or an update). When
+     * it is already read, a few tokens; with a cloud brain, nothing.
+     */
+    fun warmUp() {
+        if (_busy.value) return
+        scope.launch {
+            val ms = SystemClock.elapsedRealtime()
+            val read = withContext(Dispatchers.IO) { runCatching { app.agent.warmUpPhone() }.getOrDefault(false) }
+            if (read) Diag.i("timing", tr("Подсказка прочитана заранее: ${SystemClock.elapsedRealtime() - ms} мс", "Prompt read ahead: ${SystemClock.elapsedRealtime() - ms} ms"))
+        }
+    }
+
     fun send(text: String) {
         val t = text.trim()
         if (t.isEmpty() || _busy.value) return

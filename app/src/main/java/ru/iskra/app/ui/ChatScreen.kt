@@ -156,6 +156,8 @@ fun ChatScreen(
                 else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
     if (autoVoice) LaunchedEffect(Unit) { delay(400); micTapped() }
+    // While the person types, the model on the phone reads its instructions and the dialogue so far.
+    LaunchedEffect(Unit) { app.chat.warmUp() }
 
     // Following the tail is the owner's choice. A drag pauses it; reaching the end resumes it.
     // Read scroll state in a snapshot flow, not in composition: scrolling must not recompose the chat.

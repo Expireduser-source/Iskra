@@ -692,11 +692,9 @@ class CompanionAgent(
         var profile = ""
         if (small) {
             // Steady facts go with the instructions (cached); only memories matching this message come next to it.
-            val mem = forPrompt(memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true), now)
-            system = composer.compact(persona.localized(), rules(), tools = provider.nativeTools)
-            // Learned about the person, so it changes now and then: after the tools, which then stay read.
-            profile = listOf(composer.compactPersonal(state.style, SelfGender.feminine(memory.all()), ownWords()), composer.compactProfile(mem, now))
-                .filter { it.isNotBlank() }.joinToString("\n\n")
+            val mem = phoneMemory(text, now)
+            system = phoneSystem(provider)
+            profile = phoneProfile(state, mem, now)
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
             val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList()).take(1)
             situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, nudge ?: composer.languageNudge(text, lastReply))
@@ -706,26 +704,7 @@ class CompanionAgent(
                 ownerFeminine = SelfGender.feminine(memory.all()), rules = rules(), ownWords = ownWords())
             situation = composer.situation(state.mood, forPrompt(memory.context(text, now), now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
         }
-        val messages = ArrayList<ChatMessage>()
-        // A small model's window of the dialogue moves in steps, not by one turn per message: its first turn stays put for
-        // several messages, so the cached beginning stays valid. 6–13 turns, about the same as before on average.
-        val window = if (small) conversation.count().let { n -> n - maxOf(0, (n - 6) / 8 * 8) } else historyTurns
-        val shown = conversation.recent(window).let { turns ->
-            if (!small || !hideOtherScript) turns else {
-                val off = turns.indices.filter { turns[it].role == Turn.Role.ASSISTANT && composer.otherScript(text, turns[it].text) }
-                    .flatMap { i -> listOf(i, i - 1).filter { j -> j >= 0 && (j == i || turns[j].role == Turn.Role.USER) } }.toSet()
-                turns.filterIndexed { i, _ -> i !in off }
-            }
-        }
-        for (t in shown) messages += when (t.role) {
-            // «…» left by a reply that went wrong is not shown back: a small model copied it into every answer after
-            // (ARM evaluation, Gemma 3 1B: «…», «…Ты выглядишь очень интересно!», «…»).
-            Turn.Role.ASSISTANT -> if (small && t.text.none { it.isLetterOrDigit() }) continue else
-                ChatMessage.Assistant(if (small && t.emotion != null) "[${t.emotion.name.lowercase()}] ${t.text}" else t.text)
-            Turn.Role.USER -> ChatMessage.User(t.text)
-        }
-        // Providers require the dialogue to start with a user turn.
-        while (messages.isNotEmpty() && messages.first() !is ChatMessage.User) messages.removeAt(0)
+        val messages = history(small, text, hideOtherScript)
         messages += ChatMessage.User(text)
 
         var spoke = false
@@ -750,13 +729,7 @@ class CompanionAgent(
             repeat(maxToolRounds) { round ->
                 val offerTools = round < maxToolRounds - 1
                 val request = LlmRequest(system = system, messages = messages, profile = profile,
-                    tools = when {
-                        !offerTools || provider.id in noTools -> emptyList()
-                        !small -> tools.specs()
-                        // Gemma 4 on the phone calls tools in its own markup: a few, each costs prompt reading once.
-                        provider.nativeTools -> tools.specs().filter { it.name in PHONE_TOOLS }
-                        else -> emptyList()
-                    }, situation = situation, forceTool = forceTool.takeIf { round == 0 },
+                    tools = if (offerTools) toolsFor(provider) else emptyList(), situation = situation, forceTool = forceTool.takeIf { round == 0 },
                     maxTokens = if (small) 320 else 600, temperature = if (small) 0.6 else 0.8)
                 suspend fun send(r: LlmRequest) = if (voice == null) provider.complete(r) else {
                     val stream = ReplyStream(voice, state.mood.dominantEmotion())
@@ -805,6 +778,81 @@ class CompanionAgent(
             throw e
         } catch (e: LlmException) {
             return AgentReply(e.userMessage(), Emotion.SAD, actions, error = e.message, errorKind = e.kind, spoke = spoke)
+        }
+    }
+
+    /** What a small model is shown of memory for [text]: steady facts, the latest episode, memories matching the message. */
+    private fun phoneMemory(text: String, now: Long) =
+        forPrompt(memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true), now)
+
+    /** A small model's instructions: who she is and how she answers (Gemma 4's tools are declared right after them). */
+    private fun phoneSystem(provider: LlmProvider) = composer.compact(persona.localized(), rules(), tools = provider.nativeTools)
+
+    /** Learned about the person, so it changes now and then: after the instructions and tools, which then stay read. */
+    private fun phoneProfile(state: CompanionState, mem: ru.iskra.core.memory.MemoryContext, now: Long) =
+        listOf(composer.compactPersonal(state.style, SelfGender.feminine(memory.all()), ownWords()), composer.compactProfile(mem, now))
+            .filter { it.isNotBlank() }.joinToString("\n\n")
+
+    /** The tools [provider] is offered: all for the cloud, a few for Gemma 4 on the phone, none for other phone models. */
+    private fun toolsFor(provider: LlmProvider) = when {
+        provider.id in noTools -> emptyList()
+        !provider.onDevice -> tools.specs()
+        // Gemma 4 on the phone calls tools in its own markup: a few, each costs prompt reading once.
+        provider.nativeTools -> tools.specs().filter { it.name in PHONE_TOOLS }
+        else -> emptyList()
+    }
+
+    /**
+     * The dialogue so far as a model is shown it, without the message being answered ([text]: what it is compared with
+     * when [hideOtherScript]).
+     */
+    private fun history(small: Boolean, text: String, hideOtherScript: Boolean): ArrayList<ChatMessage> {
+        val messages = ArrayList<ChatMessage>()
+        // A small model's window of the dialogue moves in steps, not by one turn per message: its first turn stays put for
+        // several messages, so the cached beginning stays valid. 6–13 turns, about the same as before on average.
+        val window = if (small) conversation.count().let { n -> n - maxOf(0, (n - 6) / 8 * 8) } else historyTurns
+        val shown = conversation.recent(window).let { turns ->
+            if (!small || !hideOtherScript) turns else {
+                val off = turns.indices.filter { turns[it].role == Turn.Role.ASSISTANT && composer.otherScript(text, turns[it].text) }
+                    .flatMap { i -> listOf(i, i - 1).filter { j -> j >= 0 && (j == i || turns[j].role == Turn.Role.USER) } }.toSet()
+                turns.filterIndexed { i, _ -> i !in off }
+            }
+        }
+        for (t in shown) messages += when (t.role) {
+            // «…» left by a reply that went wrong is not shown back: a small model copied it into every answer after
+            // (ARM evaluation, Gemma 3 1B: «…», «…Ты выглядишь очень интересно!», «…»).
+            Turn.Role.ASSISTANT -> if (small && t.text.none { it.isLetterOrDigit() }) continue else
+                ChatMessage.Assistant(if (small && t.emotion != null) "[${t.emotion.name.lowercase()}] ${t.text}" else t.text)
+            Turn.Role.USER -> ChatMessage.User(t.text)
+        }
+        // Providers require the dialogue to start with a user turn.
+        while (messages.isNotEmpty() && messages.first() !is ChatMessage.User) messages.removeAt(0)
+        return messages
+    }
+
+    /**
+     * Reads the beginning of the next prompt into the model on the phone ahead of time — instructions, Gemma 4's tools,
+     * what she knows about the person, the dialogue so far — so the next message reads only itself. The app calls it
+     * when a chat is opened and after the model is set up: in the ARM evaluation Gemma 4's first reply read ~930 tokens
+     * of instructions and tools (26 s on two cores for E2B, 51 s for E4B). Already read — a few tokens. Nothing when a
+     * cloud brain answers or there is no model on the phone; true when the prompt was read.
+     */
+    suspend fun warmUpPhone(): Boolean = mutex.withLock {
+        val now = clock()
+        if (cloudPause?.takeIf { now < it.first } == null && providerFactory() != null) return@withLock false
+        val provider = localFactory()?.takeIf { it.onDevice } ?: return@withLock false
+        // Nothing is new to this "message": every memory counts as known, as it will for the next one.
+        memoryBefore = null
+        val request = LlmRequest(system = phoneSystem(provider), messages = history(small = true, text = "", hideOtherScript = false),
+            profile = phoneProfile(stateStore.load(), phoneMemory("", now), now), tools = toolsFor(provider),
+            maxTokens = 320, temperature = 0.6, warmUp = true)
+        try {
+            provider.complete(request)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
         }
     }
 

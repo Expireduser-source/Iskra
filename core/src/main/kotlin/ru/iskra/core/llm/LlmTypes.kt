@@ -48,6 +48,11 @@ data class LlmRequest(
      * didn't call it gets the beginning of that call written for it and fills in the arguments (Gemma 4). Others ignore it.
      */
     val forceTool: String? = null,
+    /**
+     * Only read the prompt into an on-device model's cache, ahead of the next message ([ru.iskra.core.agent.CompanionAgent.warmUpPhone]):
+     * nothing is written or shown. Others ignore it.
+     */
+    val warmUp: Boolean = false,
 ) {
     /** The instructions with the steady facts, for a format that has nothing between them. */
     val systemWithProfile: String get() = if (profile.isBlank()) system.trim() else system.trim() + "\n\n" + profile.trim()
