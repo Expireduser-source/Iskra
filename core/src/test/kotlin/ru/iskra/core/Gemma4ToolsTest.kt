@@ -142,6 +142,24 @@ class Gemma4ToolsTest {
         }
     }
 
+    /** A small model repeating its call after the result: the timer is set once, the model is told it's done. */
+    @Test fun aRepeatedCallIsNotDoneTwice() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Scripted("<|tool_call>call:set_timer{seconds:1800}<tool_call|>", "<|tool_call>call:set_timer{seconds:1800}<tool_call|>",
+                "[happy] Таймер на полчаса стоит!")
+            val timer = RecordingTool()
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
+            val r = agent.handle("Через полчаса надо вынуть пирог из духовки, не дай мне забыть")
+            assertEquals(1, timer.calls.size)
+            assertEquals(1, r.actions.size)
+            assertEquals("Таймер на полчаса стоит!", r.text)
+            assertTrue(engine.prompts[2].endsWith("{value:${q}Уже сделано: OK: таймер запущен$q}<tool_response|>"), engine.prompts[2].takeLast(200))
+        }
+    }
+
     /** Other phone models get no tools; the cloud gets all of them. */
     @Test fun onlyGemma4OnThePhoneGetsTools() {
         assertTrue(LocalLlmProvider({ null }, ChatFormat.GEMMA4, "a").nativeTools)

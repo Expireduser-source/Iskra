@@ -103,4 +103,22 @@ class TranscriptFixesTest {
         assertNull(PlanTalk.outcomeNote(known, null, "Сдала на пятёрку!", true))
         assertNull(PlanTalk.outcomeNote(known, "Как прошёл экзамен по анатомии?", "Нормально", true))
     }
+
+    /**
+     * ARM evaluation, Gemma 3 1B: «Рассказывай подробнее! Я очень рада узнать, как прошел экзамен.» — no question mark, so
+     * no note, and «Сдала на пятёрку!» was met with «Не переживай сильно». Asking to tell counts; and right after a plan, a
+     * message telling how something went gets the note even unasked.
+     */
+    @Test fun aNoteAfterAskingToTellOrRightAfterThePlan() {
+        val known = PlanTalk.known(listOf(ru.iskra.core.memory.MemoryItem(1, MemoryKind.FACT, "5 ноября 2026 у владельца было: экзамен по анатомии",
+            MemorySource.USER_EXPLICIT, 3, 0, 0)))
+        val told = PlanTalk.outcomeNote(known, "О, это здорово! Рассказывай подробнее! Я очень рада узнать, как прошел экзамен.", "Сдала на пятёрку!", true)
+        assertEquals("владелец рассказал, как прошло: «Сдала на пятёрку!» — это хорошая новость, порадуйся вместе", told)
+        val day = java.time.LocalDate.of(2026, 11, 6)
+        assertEquals(told, PlanTalk.outcomeNote(known, "Привет! Как дела?", "Сдала на пятёрку!", true, day))
+        assertEquals("владелец рассказал, как прошло: «Завалила, двойка» — это огорчение, поддержи", PlanTalk.outcomeNote(known, null, "Завалила, двойка", true, day))
+        // Unasked, a mere «Хорошо» is agreement, not news; a plan a week ago is not «right after».
+        assertNull(PlanTalk.outcomeNote(known, "Пойдём гулять?", "Хорошо", true, day))
+        assertNull(PlanTalk.outcomeNote(known, "Привет! Как дела?", "Сдала на пятёрку!", true, day.plusDays(7)))
+    }
 }

@@ -317,7 +317,7 @@ class CompanionAgent(
         val notes = ArrayList<String>()
         // «Как прошёл экзамен?» — «Сдала на пятёрку!»: whether it's good or bad news, before anything else.
         val asked = conversation.recent(1).lastOrNull()?.takeIf { it.role == Turn.Role.ASSISTANT }?.text
-        PlanTalk.outcomeNote(PlanTalk.known(all), asked, messageText, tr(true, false))?.let { notes += it }
+        PlanTalk.outcomeNote(PlanTalk.known(all), asked, messageText, tr(true, false), today)?.let { notes += it }
         // Words about not wanting to live in the last hours come before anything else, in every reply until then.
         val crisis = (ModelRule.CRISIS in rules())
         val careful = crisis && (crisisAgain != null || CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS))
@@ -736,6 +736,8 @@ class CompanionAgent(
             }
         }
         val actions = mutableListOf<ActionRecord>()
+        // Calls made in this reply, by name and arguments.
+        val done = HashMap<Pair<String, kotlinx.serialization.json.JsonObject>, ActionRecord>()
         // Text the model already said in tool rounds ("Ставлю таймер…"): heard, so also shown.
         val said = StringBuilder()
         var emotion: Emotion? = null
@@ -778,11 +780,17 @@ class CompanionAgent(
                 if (parsed.text.isNotBlank()) said.append(parsed.text).append(' ')
                 messages += ChatMessage.Assistant(response.text, response.toolCalls, response.providerBlocks)
                 for (call in response.toolCalls) {
-                    val record = policy.run(tools[call.name], call.name, call.arguments)
-                    actions += record
+                    // The same call again in this reply (a small model repeating itself after the result): not done twice —
+                    // two reminders for one pie — the model gets what the first one did.
+                    val before = done[call.name to call.arguments]
+                    val record = before ?: policy.run(tools[call.name], call.name, call.arguments).also {
+                        actions += it
+                        done[call.name to call.arguments] = it
+                    }
                     messages += ChatMessage.ToolResult(
                         callId = call.id, toolName = call.name,
-                        content = (if (record.outcome.ok) "OK: " else tr("ОШИБКА: ", "ERROR: ")) + record.outcome.message,
+                        content = (if (before != null) tr("Уже сделано: ", "Already done: ") else "") +
+                            (if (record.outcome.ok) "OK: " else tr("ОШИБКА: ", "ERROR: ")) + record.outcome.message,
                         isError = !record.outcome.ok,
                     )
                 }

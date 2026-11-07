@@ -489,18 +489,28 @@ object PlanTalk {
      * meet a top grade with «Ох, ну вот так…» (ARM evaluation, Gemma 3 1B). null when it isn't such an answer or the
      * tone isn't clear.
      */
-    fun outcomeNote(known: List<Known>, asked: String?, text: String, ru: Boolean): String? {
-        if (asked == null || !asked.contains('?') || text.trimEnd().endsWith("?") || text.length > 160 || !verdict(text)) return null
-        if (known.none { mentions(it.plan, asked) }) return null
+    fun outcomeNote(known: List<Known>, asked: String?, text: String, ru: Boolean, today: LocalDate? = null): String? {
+        if (text.trimEnd().endsWith("?") || text.length > 160 || !verdict(text)) return null
+        // She asked about the plan — with a question or by asking to tell («Рассказывай подробнее!», Gemma 3 1B, which then
+        // met «Сдала на пятёрку!» with «Не переживай сильно»).
+        val invited = asked != null && (asked.contains('?') || INVITE.containsMatchIn(asked)) && known.any { mentions(it.plan, asked) }
+        // Or she didn't, but a plan was in the last days and the message says how something went («Сдала на пятёрку!»):
+        // whatever it was about, its tone is what the model needs.
+        val recent = today != null && outcome(text) &&
+            known.any { !it.plan.date.isAfter(today) && !it.plan.date.isBefore(today.minusDays(3)) }
+        if (!invited && !recent) return null
         val quote = text.trim().replace(Regex("""\s+"""), " ").take(80)
         return when (tone(text)) {
-            1 -> if (ru) "владелец рассказал, как прошло: «$quote» — это хорошая новость, порадуйся вместе с ним"
+            1 -> if (ru) "владелец рассказал, как прошло: «$quote» — это хорошая новость, порадуйся вместе"
                 else "the owner told how it went: «$quote» — that's good news, be happy for them"
-            -1 -> if (ru) "владелец рассказал, как прошло: «$quote» — это огорчение, поддержи его"
+            -1 -> if (ru) "владелец рассказал, как прошло: «$quote» — это огорчение, поддержи"
                 else "the owner told how it went: «$quote» — that's a disappointment, comfort them"
             else -> null
         }
     }
+
+    /** Her asking to be told how it went without a question mark. */
+    private val INVITE = Regex("""(?iu)(?<!\p{L})(?:расскажи\p{L}*|рассказывай\p{L}*|поделись|делись|tell\s+me|how\s+(?:did|was))(?!\p{L})""")
 
     /**
      * The plan to ask about now: one that was 1–3 days ago, or an exam or a doctor today after 19:00, not asked yet.
