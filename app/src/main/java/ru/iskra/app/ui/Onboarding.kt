@@ -221,6 +221,7 @@ fun Onboarding(onDone: () -> Unit) {
                                             Text(tr("Разрешить", "Allow"))
                                         } else SwitchRow(shown, tr("Показать Искру на экране", "Show Iskra on screen"), tag = "overlay_switch") { on ->
                                             shown = on
+                                            if (on) hop++
                                             app.settings.save(app.settings.load().copy(overlayEnabled = on))
                                             if (on) {
                                                 if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
@@ -228,7 +229,10 @@ fun Onboarding(onDone: () -> Unit) {
                                                 OverlayService.start(ctx)
                                             } else OverlayService.stop(ctx)
                                         }
-                                        if (overlay) Hint(tr("Пока я на экране, Android показывает значок в уведомлениях — так он меня не выгружает.", "While I'm on screen, Android shows an icon in the notifications — that way it doesn't unload me."))
+                                        // While her own screens are open she is in them, not over them: say where she will be.
+                                        if (overlay) Hint(if (shown) tr("Я появлюсь поверх других приложений, как только ты выйдешь отсюда. Пока я на экране, Android показывает значок в уведомлениях — так он меня не выгружает.",
+                                                "I'll appear over other apps as soon as you leave this one. While I'm on screen, Android shows an icon in the notifications — that way it doesn't unload me.")
+                                            else tr("Пока я на экране, Android показывает значок в уведомлениях — так он меня не выгружает.", "While I'm on screen, Android shows an icon in the notifications — that way it doesn't unload me."))
                                     }
                                     2 -> {
                                         Title(tr("Голос", "Voice"))

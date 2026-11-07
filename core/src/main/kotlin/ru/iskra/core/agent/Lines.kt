@@ -7,8 +7,16 @@ import kotlin.random.Random
 object Lines {
     private fun pick(rnd: Random, vararg options: String) = options[rnd.nextInt(options.size)]
 
-    fun actionDone(rnd: Random, what: String) = pick(rnd,
-        tr("Готово: $what. Мрр.", "Done: $what. Mrr."), tr("Сделала — $what.", "Did it — $what."), tr("Есть! $what.", "Got it! $what."), tr("$what — пожалуйста, хозяин моего телефона.", "$what — you're welcome, keeper of my phone."))
+    /**
+     * What she did, in a line: «Есть! Таймер на 2 мин.». A sentence begins with a capital («Есть! таймер…» was seen in the
+     * 0.16.0 screenshots), and no «хозяин» — the owner may well be a woman.
+     */
+    fun actionDone(rnd: Random, what: String): String {
+        val w = what.trim().trimEnd('.')
+        val cap = w.replaceFirstChar { it.uppercase() }
+        return pick(rnd, tr("Готово: $w. Мрр.", "Done: $w. Mrr."), tr("Сделала — $w.", "Did it — $w."), tr("Есть! $cap.", "Got it! $cap."),
+            tr("$cap — обращайся!", "$cap — any time!"))
+    }
 
     fun actionFailed(rnd: Random, why: String) = pick(rnd,
         tr("Фыр… не вышло: $why", "Hmph… didn't work: $why"), tr("Не получилось: $why", "Couldn't do it: $why"), tr("Хм, споткнулась: $why", "Hm, I tripped: $why"))

@@ -412,7 +412,9 @@ fun Appear(animate: Boolean, modifier: Modifier = Modifier, delayMs: Int = 0, fr
     }
     Box(modifier.graphicsLayer {
         val v = p.value
-        alpha = (v * 1.6f).coerceIn(0f, 1f)
+        // Never wholly invisible: on a slow frame (the emulator stalled ~1 s right after a send) the new message would
+        // vanish until the next one.
+        alpha = (0.45f + v * 0.9f).coerceIn(0f, 1f)
         translationY = (1f - v) * 14.dp.toPx()
         val s = 0.94f + 0.06f * v
         scaleX = s; scaleY = s

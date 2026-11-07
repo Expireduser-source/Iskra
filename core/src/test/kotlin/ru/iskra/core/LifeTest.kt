@@ -362,3 +362,17 @@ class DiaryOrderTest {
         }
     }
 }
+
+/** Her lines about what she did start their sentences with a capital and call nobody «хозяин» (0.16.0 screenshots). */
+class DoneLineTest {
+    @Test fun aDoneLineIsASentence() = withLang(Lang.RU) {
+        val seen = (0 until 40).map { ru.iskra.core.agent.Lines.actionDone(Random(it), "таймер на 2 мин") }.toSet()
+        assertTrue(seen.size >= 3, seen.toString())
+        for (line in seen) {
+            assertFalse(line.contains("хозяин"), line)
+            assertFalse(Regex("""[!.]\s+\p{Ll}""").containsMatchIn(line), line)
+            assertTrue(line.first().isUpperCase(), line)
+        }
+        assertTrue(seen.contains("Есть! Таймер на 2 мин."), seen.toString())
+    }
+}

@@ -596,12 +596,18 @@ def main():
     video = a.api >= 33
     if video:
         s.animations(True)
-        rec = s.record("birth", 9)
     t0 = time.time()
     sh(f"am start -W -n {MAIN}", timeout=120)
     print(f"first start: {time.time() - t0:.1f} s", flush=True)
     if video:
-        time.sleep(5)
+        # The first start after install is slow on the emulator (the birth was over before the window showed): it warms
+        # the app up, and the second start — the introduction again, as it was never finished — is recorded.
+        time.sleep(6)
+        sh(f"am force-stop {PKG}")
+        time.sleep(1)
+        rec = s.record("birth", 9)
+        sh(f"am start -n {MAIN}", timeout=120)
+        time.sleep(6)
         s.shot("birth-end")
         s.save(rec)
         s.animations(False)

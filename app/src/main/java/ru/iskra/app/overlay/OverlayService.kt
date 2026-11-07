@@ -480,10 +480,9 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             }
         }
         scope.launch { app.chat.replies.collect { spoken -> if (!spoken) ear?.replyFinished() } }
-        // Her own screens in front: she rests and lets taps through (see setPassThrough).
-        scope.launch { app.ownScreenInFront.collect { setPassThrough(it) } }
-        // A chat in front: she is in it (its header), so here she steps away until it closes (see setAway).
-        scope.launch { app.chatInFront.collect { setAway(it) } }
+        // Her own screens in front: she is in them (the chat header, the introduction), so here she steps away until they
+        // close (see setAway) — half transparent over the app she still covered «Дальше», «Стереть всё» and the tabs.
+        scope.launch { combine(app.ownScreenInFront, app.chatInFront) { own, chat -> own || chat }.collect { setAway(it) } }
         // A dangerous action asked for confirmation, but no chat screen is open (e.g. voice command):
         // open the quick chat so the dialog is visible. Overlay permission allows this from the background.
         scope.launch {
@@ -607,37 +606,24 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     }
 
     /**
-     * While one of Iskra's own screens is in front she rests: half transparent and taps go through her to the
-     * app and the keyboard (she would otherwise cover buttons like «Дальше» or the keyboard's Enter key).
-     * Alpha ≤ 0.8 is also what Android 12+ needs to let touches pass an overlay to another app's window (the keyboard).
-     */
-    private var passThrough = false
-
-    /** Sets touchability and alpha from [windowHidden] and [passThrough]; true if something changed. */
-    private fun touchMode(lp: WindowManager.LayoutParams): Boolean {
-        val notTouchable = windowHidden || passThrough || away
-        val flags = if (notTouchable) lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        else lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
-        val alpha = if (passThrough) 0.55f else 1f
-        if (flags == lp.flags && lp.alpha == alpha) return false
-        lp.flags = flags; lp.alpha = alpha
-        return true
-    }
-
-    private fun setPassThrough(on: Boolean) {
-        if (passThrough == on) return
-        passThrough = on
-        val v = avatar ?: return
-        val lp = params ?: return
-        if (touchMode(lp)) try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
-    }
-
-    /**
-     * A chat is in front (0.16.0): she is in it — alive in its header — so the character on the screen fades out, stops
-     * drawing and lets everything through; her bubble would only repeat the chat. When the chat closes she comes back with
-     * a little pop. With Android's animations off the change is instant (the system scales these to 0).
+     * One of Iskra's own screens is in front (0.16.0): she is in it — alive in the chat header, in the introduction — so
+     * the character on the screen fades out, stops drawing and lets everything through; her bubble would only repeat the
+     * chat. Before, she rested half transparent over the app and still covered «Дальше», «Стереть всё» and the tabs.
+     * Faded out, her window is INVISIBLE: Android 12+ lets touches pass an invisible window of another app to the one
+     * below (the keyboard), as it does a window of alpha ≤ 0.8. When the screens close she comes back with a little pop
+     * and sparks. With Android's animations off the change is instant (the system scales these to 0).
      */
     private var away = false
+
+    /** Sets touchability from [windowHidden] and [away]; true if something changed. */
+    private fun touchMode(lp: WindowManager.LayoutParams): Boolean {
+        val notTouchable = windowHidden || away
+        val flags = if (notTouchable) lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+        else lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+        if (flags == lp.flags && lp.alpha == 1f) return false
+        lp.flags = flags; lp.alpha = 1f
+        return true
+    }
 
     private fun setAway(on: Boolean) {
         if (away == on) return
@@ -648,8 +634,10 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         if (on) {
             handler.removeCallbacks(hideBubble)
             bubble?.let { it.animate().cancel(); it.visibility = View.GONE }
-            v.animate().alpha(0f).scaleX(0.86f).scaleY(0.86f).setDuration(180).withEndAction { if (away) v.stop() }.start()
+            v.animate().alpha(0f).scaleX(0.86f).scaleY(0.86f).setDuration(180)
+                .withEndAction { if (away) { v.stop(); v.visibility = View.INVISIBLE } }.start()
         } else {
+            if (!windowHidden) v.visibility = View.VISIBLE
             v.start()
             v.brain.appearAgain()
             v.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(320).setInterpolator(android.view.animation.OvershootInterpolator(1.8f)).start()

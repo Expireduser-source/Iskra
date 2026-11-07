@@ -203,6 +203,13 @@ fun ChatScreen(
     if (autoVoice) LaunchedEffect(Unit) { delay(400); micTapped() }
     // While the person types, the model on the phone reads its instructions and the dialogue so far.
     LaunchedEffect(Unit) { app.chat.warmUp() }
+    // Her faces beside messages are drawn ahead, so the first reply (and «думает») doesn't wait for her layers to decode.
+    val facePx = with(LocalDensity.current) { 30.dp.roundToPx() }
+    LaunchedEffect(facePx) {
+        withContext(Dispatchers.Default) {
+            for (e in listOf(Emotion.THINKING, Emotion.NEUTRAL, Emotion.HAPPY, Emotion.CURIOUS)) RigFaces.render(ctx.applicationContext, facePx, e)
+        }
+    }
 
     // Following the tail is the owner's choice. A drag pauses it; reaching the end resumes it.
     // Read scroll state in a snapshot flow, not in composition: scrolling must not recompose the chat.
