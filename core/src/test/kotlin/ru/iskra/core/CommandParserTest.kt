@@ -19,6 +19,15 @@ class CommandParserTest {
         assertEquals("30", p.args["minute"]!!.jsonPrimitive.content)
         assertEquals("19", tool("разбуди меня в 7 вечера").args["hour"]!!.jsonPrimitive.content)
         assertNull(CommandParser.parse("поставь будильник на 25:00"))
+        // In words, with «завтра», as a question.
+        fun hm(s: String) = tool(s).let { it.args["hour"]!!.jsonPrimitive.content + ":" + it.args["minute"]!!.jsonPrimitive.content }
+        assertEquals("7:0", hm("Разбуди меня завтра в семь"))
+        assertEquals("6:30", hm("Поставь будильник на завтра на 6:30"))
+        assertEquals("7:0", hm("Разбудишь меня в 7 утра?"))
+        assertEquals("8:15", hm("заведи будильник на восемь пятнадцать"))
+        assertEquals("14:0", hm("разбуди меня в 2 дня"))
+        assertEquals("6:0", hm("будильник на 6 завтра утром"))
+        assertNull(CommandParser.parse("разбуди меня, когда приедем"))
     }
 
     @Test fun timer() {
@@ -27,6 +36,9 @@ class CommandParserTest {
         assertEquals("1800", tool("таймер на полчаса").args["seconds"]!!.jsonPrimitive.content)
         assertEquals("7200", tool("таймер 2 часа").args["seconds"]!!.jsonPrimitive.content)
         assertEquals("180", tool("Искра, таймер на три минуты!").args["seconds"]!!.jsonPrimitive.content)
+        assertEquals("300", tool("Засеки 5 минут").args["seconds"]!!.jsonPrimitive.content)
+        assertEquals("600", tool("засеки мне десять минут").args["seconds"]!!.jsonPrimitive.content)
+        assertNull(CommandParser.parse("засеки, сколько нужно"))
     }
 
     @Test fun simpleCommands() {

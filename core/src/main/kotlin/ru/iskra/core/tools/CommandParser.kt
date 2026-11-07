@@ -28,6 +28,16 @@ object CommandParser {
         "двадцать" to 20, "тридцать" to 30, "сорок" to 40, "полчаса" to 30, "пару" to 2,
     )
 
+    /** «семь», «двенадцать» as the hour of an alarm. */
+    private val hourWords = mapOf("час" to 1, "один" to 1, "два" to 2, "три" to 3, "четыре" to 4, "пять" to 5, "шесть" to 6,
+        "семь" to 7, "восемь" to 8, "девять" to 9, "десять" to 10, "одиннадцать" to 11, "двенадцать" to 12)
+    private val minuteWords = mapOf("ноль ноль" to 0, "десять" to 10, "пятнадцать" to 15, "двадцать" to 20, "тридцать" to 30,
+        "сорок" to 40, "сорок пять" to 45, "пятьдесят" to 50)
+    private val alarm = Regex("""^(?:(?:поставь|заведи|установи|включи)(?:те)? )?(?:мне )?(?:будильник|разбуди(?:те)?(?: меня)?|разбудишь(?: меня)?)""" +
+        """(?: на завтра| завтра)?(?: утром)?(?: на| в| к)? (\d{1,2}|""" + "один|два|три|четыре|пять|шесть|семь|восемь|девять|десять|одиннадцать|двенадцать|час" +
+        """)(?:(?:[:. ]| и )(\d{2}|ноль ноль|десять|пятнадцать|двадцать|тридцать|сорок пять|сорок|пятьдесят))?""" +
+        """(?: (утра|вечера|дня|ночи)| часов| час| часа)?(?: завтра)?(?: утром)?$""")
+
     fun parse(input: String, now: java.time.LocalDateTime = java.time.LocalDateTime.now()): Parsed? {
         val raw = input.trim()
         val t = raw.lowercase().replace('ё', 'е').trimEnd('.', '!', '?', ' ')
@@ -45,18 +55,22 @@ object CommandParser {
         skills(raw, t, now)?.let { return it }
         CurrencyWords.parse(raw)?.let { return Parsed.Tool(BrainNames.CURRENCY, it) }
 
-        // Alarm: "поставь будильник на 7:30", "разбуди меня в 6", "будильник на 07 15"
-        Regex("""^(?:поставь |заведи |установи )?(?:будильник|разбуди меня)(?: на| в)? (\d{1,2})(?:[:. ](\d{2}))?(?: утра| вечера| часов| час| часа)?$""")
-            .find(t)?.let { m ->
-                var h = m.groupValues[1].toInt()
-                val min = m.groupValues[2].ifEmpty { "0" }.toInt()
-                if (t.contains("вечера") && h in 1..11) h += 12
-                if (h !in 0..23 || min !in 0..59) return null
-                return Parsed.Tool(ToolNames.SET_ALARM, args { put("hour", h); put("minute", min) })
+        // Alarm: "поставь будильник на 7:30", "разбуди меня в 6", "будильник на 07 15", «разбуди меня завтра в семь»,
+        // «поставь будильник на завтра на 6:30», «разбудишь меня в 7 утра?» — the next such time on the clock.
+        alarm.find(t)?.let { m ->
+            var h = m.groupValues[1].let { it.toIntOrNull() ?: hourWords[it] } ?: return null
+            val min = m.groupValues[2].let { if (it.isEmpty()) 0 else it.toIntOrNull() ?: minuteWords[it] } ?: return null
+            when (m.groupValues[3]) {
+                "вечера" -> if (h in 1..11) h += 12
+                "дня" -> if (h in 1..6) h += 12
+                "ночи" -> if (h == 12) h = 0
             }
+            if (h !in 0..23 || min !in 0..59) return null
+            return Parsed.Tool(ToolNames.SET_ALARM, args { put("hour", h); put("minute", min) })
+        }
 
-        // Timer: "таймер на 5 минут", "поставь таймер на 30 секунд", "таймер на полчаса", "таймер 2 часа"
-        Regex("""^(?:поставь |заведи |запусти )?таймер(?: на)? (\d{1,4}|[а-я]+)(?: (секунд[уы]?|сек|минут[уы]?|мин|час(?:а|ов)?))?$""")
+        // Timer: "таймер на 5 минут", "поставь таймер на 30 секунд", "таймер на полчаса", "таймер 2 часа", «засеки 5 минут»
+        Regex("""^(?:(?:поставь |заведи |запусти )?таймер|засеки(?: мне)?(?: время)?)(?: на)? (\d{1,4}|[а-я]+)(?: (секунд[уы]?|сек|минут[уы]?|мин|час(?:а|ов)?))?$""")
             .find(t)?.let { m ->
                 val numText = m.groupValues[1]
                 val n = numText.toIntOrNull() ?: numberWords[numText] ?: return null
