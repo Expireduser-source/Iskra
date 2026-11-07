@@ -265,7 +265,7 @@ class CompanionAgent(
             val again = askModel(provider, text, state, sink, nudge, hideOtherScript = told).let { it.copy(text = composer.dropNudgeAnswer(it.text)) }
             return if (again.errorKind == null && again.text.any { it.isLetterOrDigit() } && composer.wrongLanguage(text, again.text) == null) again else first
         }
-        if (fine(first) && first.errorKind == null && first.actions.isEmpty() && ActionPromise.made(first.text)) {
+        if (fine(first) && first.errorKind == null && first.actions.isEmpty() && (ActionPromise.made(first.text) || ActionPromise.offered(first.text, text))) {
             // A question back («Я поставлю таймер. Сколько минут?») is not a broken promise: the answer comes next, and no
             // call is to be forced before it.
             if (first.text.trimEnd().endsWith("?")) return first

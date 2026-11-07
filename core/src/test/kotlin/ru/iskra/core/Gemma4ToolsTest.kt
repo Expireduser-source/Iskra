@@ -315,6 +315,29 @@ class ActionPromiseTest {
         }
     }
 
+    /** An offer of what was asked for is a promise too (E4B, ARM evaluation 0.15.0); without the request it is just an offer. */
+    @Test fun anOfferOfWhatWasAskedIsDone() = withLang(Lang.RU) {
+        val p = ru.iskra.core.agent.ActionPromise
+        val offer = "Я могу поставить таймер на 3 минуты, чтобы яйца всмятку сварились."
+        assertTrue(p.offered(offer, "Сварю яйца всмятку — засеки, сколько нужно"))
+        assertFalse(p.offered(offer, "Как сварить яйца всмятку?"))
+        assertTrue(p.offered("Давай засечь три минуты!", "Засеки время для яиц"))
+        assertFalse(p.offered("Я рада за тебя!", "Поставь таймер"))
+        assertEquals("set_timer", p.tool(offer))
+        runBlocking {
+            val engine = Gemma4Tools2.Scripted("[happy] $offer", "{minutes:3}<tool_call|>", "[happy] Поставила таймер на три минуты!")
+            val timer = RecordingTool()
+            val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Сварю яйца всмятку — засеки, сколько нужно")
+            assertEquals(3, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
+            assertEquals("Поставила таймер на три минуты!", r.text)
+            // The same offer when only asked how: no timer, the words stay.
+            val asked = RecordingTool()
+            val words = agent(Gemma4Tools2.Scripted("[happy] Варить три минуты. $offer"), ChatFormat.GEMMA4, asked).handle("Как сварить яйца всмятку?")
+            assertTrue(asked.calls.isEmpty())
+            assertTrue(words.text.startsWith("Варить три минуты."), words.text)
+        }
+    }
+
     @Test fun aPromiseNothingCameOfIsOwned() = withLang(Lang.RU) {
         runBlocking {
             // A phone model without tools can only promise: it is said that nothing is set.
