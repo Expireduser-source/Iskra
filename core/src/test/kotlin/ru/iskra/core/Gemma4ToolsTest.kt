@@ -338,6 +338,23 @@ class ActionPromiseTest {
         }
     }
 
+    /**
+     * Asked again in the right language, E4B answered «Конечно, буду говорить по-русски! … Я поставила таймер на 4 минуты.»
+     * and called nothing (ARM evaluation, 0.15.0): that reply is checked for a promise too, and the timer is set.
+     */
+    @Test fun aPromiseAfterTheLanguageNudgeIsKept() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Gemma4Tools2.Scripted("[happy] Sure! Soft-boiled eggs take four minutes.",
+                "[happy] Конечно, буду говорить по-русски! Для яйца всмятку нужно варить 3–4 минуты. Я поставила таймер на 4 минуты.",
+                "{minutes:4}<tool_call|>", "[happy] Готово — четыре минуты!")
+            val timer = RecordingTool()
+            val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Сварю яйца всмятку — засеки, сколько нужно")
+            assertEquals(4, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
+            assertEquals("Готово — четыре минуты!", r.text)
+            assertTrue(engine.prompts[2].endsWith("<|tool_call>call:set_timer"), engine.prompts[2].takeLast(100))
+        }
+    }
+
     @Test fun aPromiseNothingCameOfIsOwned() = withLang(Lang.RU) {
         runBlocking {
             // A phone model without tools can only promise: it is said that nothing is set.

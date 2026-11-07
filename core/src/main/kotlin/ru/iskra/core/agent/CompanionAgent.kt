@@ -261,11 +261,15 @@ class CompanionAgent(
         val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
         val told = composer.languageNudge(text, lastReply).isNotEmpty()
         // Not after an action: the second try would do it again (two timers for one request).
+        var reply = first
         if (fine(first) && first.errorKind == null && first.actions.isEmpty()) composer.wrongLanguage(text, first.text)?.let { nudge ->
             val again = askModel(provider, text, state, sink, nudge, hideOtherScript = told).let { it.copy(text = composer.dropNudgeAnswer(it.text)) }
-            return if (again.errorKind == null && again.text.any { it.isLetterOrDigit() } && composer.wrongLanguage(text, again.text) == null) again else first
+            if (again.errorKind == null && again.text.any { it.isLetterOrDigit() } && composer.wrongLanguage(text, again.text) == null) reply = again
         }
-        if (fine(first) && first.errorKind == null && first.actions.isEmpty() && (ActionPromise.made(first.text) || ActionPromise.offered(first.text, text))) {
+        // A promise is checked in the reply that stays, the one in the right language too: E4B, asked again in Russian,
+        // answered «Я поставила таймер на 4 минуты.» and called nothing (ARM evaluation, 0.15.0).
+        if (fine(reply) && reply.errorKind == null && reply.actions.isEmpty() && (ActionPromise.made(reply.text) || ActionPromise.offered(reply.text, text))) {
+            val first = reply
             // A question back («Я поставлю таймер. Сколько минут?») is not a broken promise: the answer comes next, and no
             // call is to be forced before it.
             if (first.text.trimEnd().endsWith("?")) return first
@@ -280,6 +284,7 @@ class CompanionAgent(
             sink?.sentence(ActionPromise.note(), last.emotion)
             return last.copy(text = last.text.trimEnd() + " " + ActionPromise.note())
         }
+        if (reply !== first) return reply
         if (fine(first)) return first
         val second = askModel(provider, text, state, sink)
         return if (fine(second)) second else second.copy(errorKind = LlmException.Kind.BAD_RESPONSE)

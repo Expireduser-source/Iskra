@@ -117,6 +117,10 @@ class PhoneReplyTest {
             val polite = Scripted("[shy] Uh... I think so.", "[shy] Хорошо, я отвечу по-русски. Нет, я цифровая жизнь из этого телефона.")
             assertEquals("Нет, я цифровая жизнь из этого телефона.", agent(polite).handle("Ты человек?").text)
             assertEquals("Хорошо, договорились.", ru.iskra.core.agent.PromptComposer().dropNudgeAnswer("Хорошо, договорились."))
+            // E4B, 0.15.0: «Конечно, буду говорить по-русски!» before the answer.
+            assertEquals("Для яйца всмятку нужно варить 3–4 минуты.",
+                ru.iskra.core.agent.PromptComposer().dropNudgeAnswer("Конечно, буду говорить по-русски! Для яйца всмятку нужно варить 3–4 минуты."))
+            assertEquals("Перехожу к делу.", ru.iskra.core.agent.PromptComposer().dropNudgeAnswer("Перехожу к делу."))
             // Still English after the nudge: the first answer stays (better than none).
             val stubborn = Scripted("[shy] Uh... I think so.", "[shy] Sorry, English only.")
             assertEquals("Uh... I think so.", agent(stubborn).handle("Ты человек?").text)

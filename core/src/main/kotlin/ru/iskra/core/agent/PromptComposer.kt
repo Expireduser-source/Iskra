@@ -228,7 +228,10 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
     fun dropNudgeAnswer(reply: String): String = NUDGE_ANSWER.replaceFirst(reply, "").let { if (it.isBlank()) reply else it }
 
     private val NUDGE_ANSWER = Regex("""(?iu)^(\s*(?:\[[^\]\n]{1,24}]\s*)?)(?:(?:хорошо|ладно|конечно|окей|ок|ok|okay|sure|of course)[,!.]?\s+)?""" +
-        """(?:я\s+)?(?:отвечу|буду\s+отвечать|отвечаю|перехожу\s+на\s+русский|i'?ll\s+answer|i\s+will\s+answer|answering)\s+(?:тебе\s+)?(?:по-русски|на\s+русском|in\s+english)[.!]*\s*""")
+        // …and «Конечно, буду говорить по-русски!» (E4B, 0.15.0).
+        """(?:я\s+)?(?:отвечу|отвечаю|буду\s+(?:отвечать|говорить|писать)|говорю|пишу|перейду|перехожу|""" +
+        """i'?ll\s+(?:answer|reply|speak|write)|i\s+will\s+(?:answer|reply|speak|write)|answering|speaking)\s+""" +
+        """(?:тебе\s+|с\s+тобой\s+)?(?:по-русски|на\s+русск(?:ий|ом)(?:\s+языке)?|in\s+english)[.!]*\s*""")
 
     private val translation = Regex("(?iu)(перев[её]д|переведи|по-английски|по-русски|на английск|на русск|translat|in russian|in english)")
 
