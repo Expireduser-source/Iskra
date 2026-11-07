@@ -11,6 +11,24 @@ import kotlin.test.assertTrue
 class AvatarBrainTest {
     private fun brain() = AvatarBrain(1080f, 2400f, 200f, Random(1), startX = 500f, startY = 300f)
 
+    /** 0.16.0: sparks when she appears (and comes back after a chat), hearts rising when she is petted. */
+    @Test fun sparksWhenSheAppearsAndHeartsWhenPetted() {
+        val b = brain()
+        val first = b.update(0f)
+        assertTrue(first.appear < 0.05f, "appearing at ${first.appear}")
+        repeat(30) { b.update(1f / 30f) }
+        assertEquals(1f, b.update(1f / 30f).appear)
+        assertTrue(b.update(0f).hearts < 0f)
+        b.petted()
+        repeat(11) { b.update(1f / 30f) }
+        val p = b.update(1f / 30f)
+        assertTrue(p.hearts in 0.2f..0.3f, "hearts at ${p.hearts}")
+        repeat(40) { b.update(1f / 30f) }
+        assertTrue(b.update(1f / 30f).hearts < 0f, "hearts are gone")
+        b.appearAgain()
+        assertTrue(b.update(1f / 30f).appear < 0.1f)
+    }
+
     @Test fun fallsToFloorAfterRelease() {
         val b = brain()
         b.dragStart(); b.dragTo(400f, 200f); b.dragEnd(0f, 0f)

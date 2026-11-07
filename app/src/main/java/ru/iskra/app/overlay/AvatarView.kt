@@ -77,7 +77,7 @@ class AvatarView(
     private val gestures = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
         override fun onDown(e: MotionEvent) = true
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean { host.onTap(); brain.tapped(); return true }
-        override fun onDoubleTap(e: MotionEvent): Boolean { brain.tapped(); host.onDoubleTap(); return true }
+        override fun onDoubleTap(e: MotionEvent): Boolean { brain.tapped(); brain.petted(); host.onDoubleTap(); return true }
         override fun onLongPress(e: MotionEvent) { if (!dragging) host.onLongPress() }
     })
 
@@ -91,7 +91,7 @@ class AvatarView(
         ViewCompat.replaceAccessibilityAction(this, AccessibilityActionCompat.ACTION_LONG_CLICK, tr("открыть приложение", "open the app")) { _, _ ->
             host.onLongPress(); true
         }
-        ViewCompat.addAccessibilityAction(this, tr("Погладить", "Pet her")) { _, _ -> brain.tapped(); host.onDoubleTap(); true }
+        ViewCompat.addAccessibilityAction(this, tr("Погладить", "Pet her")) { _, _ -> brain.tapped(); brain.petted(); host.onDoubleTap(); true }
         ViewCompat.addAccessibilityAction(this, tr("Убрать с экрана", "Remove from screen")) { _, _ -> host.onHide(); true }
     }
 
