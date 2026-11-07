@@ -29,8 +29,10 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
   to km”), dates (“how many days until New Year”), coins and dice, small talk, the flashlight, volume, apps, settings,
   and “Surprise me” — tiny games with the world around you. Online without any account: weather and exchange rates.
 - **A brain on the phone:** download a small model once (Gemma 3 1B, or Google's new Gemma 4 E2B / E4B made for phones; 0.7–4.6 GB, chosen for your phone) and talk
-  **with no internet at all** — nothing you say leaves the phone. It also steps in when the cloud is unreachable. Or load
-  your own GGUF file — Gemma, Qwen, Llama 3, Mistral and Phi families are written to the way they were trained.
+  **with no internet at all** — nothing you say leaves the phone. It also steps in when the cloud is unreachable. Gemma 4
+  there also does what you ask in your own words: timers, alarms, reminders, notes, the flashlight, apps (and the weather
+  when online). Or load your own GGUF file — Gemma, Qwen, Llama 3, Mistral and Phi families are written to the way they
+  were trained.
 - **A real conversation:** connect a **free brain with one tap** (OpenRouter — sign in with Google or e-mail, nothing to
   copy; a busy free model quietly hands over to another) or use your own key from DeepSeek, OpenAI, Anthropic Claude or
   any OpenAI-compatible server. The cloud brain checks facts on Wikipedia, counts with a real calculator, remembers what

@@ -9,7 +9,7 @@ Iskra is a small animated cat-girl who lives on your phone's screen. Tap her to 
 • the flashlight, volume, apps, settings, web search
 • “Surprise me” — tiny games with the world around you
 
-<b>A brain on the phone.</b> Download a small model once and it answers with no internet at all — nothing you say to it leaves the phone.
+<b>A brain on the phone.</b> Download a small model once and it answers with no internet at all — nothing you say to it leaves the phone. Gemma 4 also sets timers, alarms and reminders, writes notes and turns on the flashlight when you ask in your own words.
 
 <b>A real conversation when you want one.</b> Connect a free “brain” with one tap (OpenRouter: sign in with Google or e-mail, nothing to copy) or use your own key from DeepSeek, OpenAI, Anthropic Claude or any OpenAI-compatible server. The cloud brain checks facts on Wikipedia, counts with a calculator, knows exchange rates, remembers what matters about you and prepares calendar events, routes and music. Replies arrive sentence by sentence and can be spoken with natural cloud voices or the free system voice. Say “Iskra” or “Spark” and she listens — recognized right on the phone.
 

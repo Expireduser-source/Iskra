@@ -1,2 +1,5 @@
-• The phone model (Gemma 4) sets timers, alarms and reminders, writes notes, checks the weather, turns on the flashlight and opens apps by itself — whatever words you use, offline
+• The phone model (Gemma 4) sets timers, alarms and reminders, writes notes, checks the weather, turns on the flashlight and opens apps — whatever words you use
+• “Don't let me forget…”, “Can you remind me…?”, “Wake me up tomorrow at 7” — done at once, with any model or none
+• The phone model keeps the whole conversation in mind after an action, and answers faster
+• She is glad for your good news even when she didn't ask
 • Risky actions still need your confirmation
