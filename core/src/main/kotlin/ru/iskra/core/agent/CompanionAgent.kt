@@ -254,8 +254,13 @@ class CompanionAgent(
             return if (again.errorKind == null && again.text.any { it.isLetterOrDigit() } && composer.wrongLanguage(text, again.text) == null) again else first
         }
         if (fine(first) && first.errorKind == null && first.actions.isEmpty() && ActionPromise.made(first.text)) {
-            // «Я поставлю таймер» with nothing called: Gemma 4 once more, told to call; still nothing — said honestly.
-            val again = if (provider.nativeTools) askModel(provider, text, state, sink, ActionPromise.nudge()) else null
+            // A question back («Я поставлю таймер. Сколько минут?») is not a broken promise: the answer comes next, and no
+            // call is to be forced before it.
+            if (first.text.trimEnd().endsWith("?")) return first
+            // «Я поставлю таймер» with nothing called: Gemma 4 once more, told to call — and when the promise says which tool,
+            // with that call begun for it, so it only fills in the arguments; still nothing — said honestly.
+            val promised = ActionPromise.tool(first.text)?.takeIf { it in PHONE_TOOLS }
+            val again = if (provider.nativeTools) askModel(provider, text, state, sink, ActionPromise.nudge(), forceTool = promised) else null
             if (again != null && again.errorKind == null && again.actions.isNotEmpty()) return again
             val last = again?.takeIf { it.errorKind == null && it.text.any(Char::isLetterOrDigit) } ?: first
             // A question back («Сколько времени тебе нужно?») is not a broken promise: the answer comes next.
@@ -381,7 +386,7 @@ class CompanionAgent(
 
     /**
      * The tools a model on the phone gets (Gemma 4 only, [LlmProvider.nativeTools]): what people ask most in their own
-     * words. The phrase parser catches the usual wordings first; these are for the rest («не дай мне забыть вынуть пирог»).
+     * words. The phrase parser catches the usual wordings first; these are for the rest («сварю яйца всмятку — засеки»).
      */
     private val PHONE_TOOLS = setOf(ru.iskra.core.tools.ToolNames.SET_TIMER, ru.iskra.core.tools.ToolNames.SET_ALARM,
         ru.iskra.core.skills.SkillNames.SET_REMINDER, ru.iskra.core.skills.SkillNames.ADD_NOTE, ru.iskra.core.skills.SkillNames.WEATHER,
@@ -677,7 +682,7 @@ class CompanionAgent(
      * small model's history leaves out replies in another language than [text] and the messages they answered.
      */
     private suspend fun askModel(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?, nudge: String? = null,
-                                 hideOtherScript: Boolean = false): AgentReply {
+                                 hideOtherScript: Boolean = false, forceTool: String? = null): AgentReply {
         val now = clock()
         // A small model on the phone gets a short prompt, no tools and less history: every token costs it time.
         val small = provider.onDevice
@@ -751,7 +756,7 @@ class CompanionAgent(
                         // Gemma 4 on the phone calls tools in its own markup: a few, each costs prompt reading once.
                         provider.nativeTools -> tools.specs().filter { it.name in PHONE_TOOLS }
                         else -> emptyList()
-                    }, situation = situation,
+                    }, situation = situation, forceTool = forceTool.takeIf { round == 0 },
                     maxTokens = if (small) 320 else 600, temperature = if (small) 0.6 else 0.8)
                 suspend fun send(r: LlmRequest) = if (voice == null) provider.complete(r) else {
                     val stream = ReplyStream(voice, state.mood.dominantEmotion())

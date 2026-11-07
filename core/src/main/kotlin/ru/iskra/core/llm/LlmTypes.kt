@@ -43,6 +43,11 @@ data class LlmRequest(
      * the dialogue.
      */
     val profile: String = "",
+    /**
+     * A tool the model must call now (one of [tools]): a model on the phone that promised «я поставлю напоминание» and
+     * didn't call it gets the beginning of that call written for it and fills in the arguments (Gemma 4). Others ignore it.
+     */
+    val forceTool: String? = null,
 ) {
     /** The instructions with the steady facts, for a format that has nothing between them. */
     val systemWithProfile: String get() = if (profile.isBlank()) system.trim() else system.trim() + "\n\n" + profile.trim()

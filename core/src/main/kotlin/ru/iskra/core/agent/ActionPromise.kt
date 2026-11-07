@@ -1,6 +1,8 @@
 package ru.iskra.core.agent
 
 import ru.iskra.core.i18n.tr
+import ru.iskra.core.skills.SkillNames
+import ru.iskra.core.tools.ToolNames
 
 /**
  * A model on the phone saying it did something it didn't: «Я поставлю напоминание… Через полчаса ты получишь
@@ -16,6 +18,23 @@ object ActionPromise {
 
     /** The reply speaks of an action as done or about to be done. */
     fun made(text: String): Boolean = ru.containsMatchIn(text) || en.containsMatchIn(text)
+
+    /**
+     * The tool the promise speaks of, if it can be told: «Я поставлю таймер на полчаса» — set_timer, «Я поставлю тебе
+     * напоминание!», «Я напомню тебе» — set_reminder. null for anything else.
+     */
+    fun tool(text: String): String? {
+        val m = ru.find(text) ?: en.find(text) ?: return null
+        val s = text.substring(m.range.first, minOf(text.length, m.range.last + 1 + 30)).lowercase()
+        return when {
+            "таймер" in s || "timer" in s -> ToolNames.SET_TIMER
+            "будильник" in s || "alarm" in s -> ToolNames.SET_ALARM
+            "напомин" in s || "напомн" in s || "уведомлен" in s || "remind" in s -> SkillNames.SET_REMINDER
+            "заметк" in s || "запиш" in s || "записал" in s || "note" in s -> SkillNames.ADD_NOTE
+            "фонарик" in s || "flashlight" in s || "torch" in s -> ToolNames.FLASHLIGHT
+            else -> null
+        }
+    }
 
     /** For the second try. */
     fun nudge(): String = tr("Вызови инструмент — словами на телефоне ничего не ставится.", "Call the tool — words alone set nothing on the phone.")

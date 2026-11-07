@@ -461,8 +461,9 @@ def model_eval(out, threads=4, arch="", minutes=24):
             os.remove(sp)
         done.add(name)
         os.remove(path)
-    table = ("| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) | new prompt tokens (median) |\n"
-             "|---|---|---|---|---|---|\n" + "\n".join(summary))
+    table = ("| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) | new prompt tokens (median) "
+             "| prompt tokens (median) | chars/token (median) |\n"
+             "|---|---|---|---|---|---|---|---|\n" + "\n".join(summary))
     with open(os.path.join(ev, "summary.md"), "w") as f:
         f.write(table + "\n")
     print(table, flush=True)

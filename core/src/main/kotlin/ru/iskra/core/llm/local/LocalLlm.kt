@@ -211,7 +211,10 @@ enum class ChatFormat {
                     }
                     i++
                 }
-                if (!open) sb.append("<|turn>model\n")
+                if (!open) {
+                    sb.append("<|turn>model\n")
+                    forcedCall(request)?.let { sb.append(it) }
+                }
             }
             LLAMA3, PHI -> {
                 // Like ChatML: instructions first, the situation as a system turn right before the last message.
@@ -244,6 +247,11 @@ enum class ChatFormat {
         }
         return Prompt(sb.toString(), stable, head)
     }
+
+    /** The beginning of the call [LlmRequest.forceTool] asks for, written for the model (Gemma 4), or null. */
+    fun forcedCall(request: LlmRequest): String? = request.forceTool
+        ?.takeIf { this == GEMMA4 && request.tools.any { t -> t.name == it } && request.messages.lastOrNull() is ChatMessage.User }
+        ?.let { Gemma4Tools.CALL_OPEN + "call:" + it }
 
     /**
      * Characters per token, a cautious first guess for fitting the dialogue until the model's own prompts are measured:
@@ -336,7 +344,12 @@ class LocalLlmProvider(
         val guard = !OTHER_LANGUAGE.containsMatchIn(lastUser)
         // Gemma 4 answers straight away with thinking off; if it opens its thought channel anyway, nothing is shown until
         // the channel closes. The beginning waits only while it could still be the channel's opening tag.
-        var gate = if (format == ChatFormat.GEMMA4) Gate.WAIT else Gate.OPEN
+        val forced = format.forcedCall(request)
+        var gate = when {
+            forced != null -> Gate.CALL
+            format == ChatFormat.GEMMA4 -> Gate.WAIT
+            else -> Gate.OPEN
+        }
         val held = StringBuilder()
         val think = ThinkFilter()
         val raw = StringBuilder()
@@ -421,7 +434,7 @@ class LocalLlmProvider(
         if (format == ChatFormat.GEMMA4) reply = reply.substringAfterLast(THOUGHT_CLOSE).trim()
         // Gemma 4's tool calls: the words before the first call are the reply, the calls go to the agent (none if no tool
         // was offered — a call made up anyway is just not shown).
-        val (said, made) = if (format == ChatFormat.GEMMA4) Gemma4Tools.parse(reply) else reply to emptyList()
+        val (said, made) = if (format == ChatFormat.GEMMA4) Gemma4Tools.parse(forced.orEmpty() + reply) else reply to emptyList()
         val calls = if (request.tools.isEmpty()) emptyList() else made.filter { c -> request.tools.any { it.name == c.name } }
         reply = said
         val final = cleanStart(if (guard) stripForeign(reply, allowed).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()

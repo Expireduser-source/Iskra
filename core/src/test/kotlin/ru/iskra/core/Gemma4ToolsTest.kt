@@ -221,6 +221,18 @@ class ForeignScriptTest {
 
 /** A phone model promising an action in words, with nothing called (Gemma 4 E4B in the 0.14.0 evaluation). */
 class ActionPromiseTest {
+    @Test fun theToolPromisedIsKnown() {
+        val p = ru.iskra.core.agent.ActionPromise
+        assertEquals("set_timer", p.tool("Я поняла! Я поставлю таймер на полчаса, чтобы ты не забыла вынуть пирог."))
+        assertEquals("set_reminder", p.tool("Хорошо, Аня, я поставлю тебе напоминание! 🥧"))
+        assertEquals("set_reminder", p.tool("Я напомню тебе через полчаса!"))
+        assertEquals("set_alarm", p.tool("Завела будильник на семь!"))
+        assertEquals("add_note", p.tool("Записала в заметки!"))
+        assertEquals("flashlight", p.tool("Включаю фонарик!"))
+        assertEquals("set_timer", p.tool("I'll set a timer for four minutes."))
+        assertEquals(null, p.tool("Я рада за тебя!"))
+    }
+
     @Test fun promisesAreHeard() {
         val p = ru.iskra.core.agent.ActionPromise
         for (t in listOf("Я поставлю таймер. Сколько времени тебе нужно?", "Хорошо! Я поставлю напоминание: «Вынуть пирог». Через полчаса ты получишь уведомление.",
@@ -238,13 +250,20 @@ class ActionPromiseTest {
 
     @Test fun gemma4IsToldToCallAndDoes() = withLang(Lang.RU) {
         runBlocking {
+            // The second try has the promised call begun for it (ARM evaluation: E2B promised a timer twice, calling nothing):
+            // the model writes only the arguments.
             val engine = Gemma4Tools2.Scripted("[happy] Я поставлю таймер на четыре минуты, и яйца будут всмятку!",
-                "<|tool_call>call:set_timer{seconds:240}<tool_call|>", "[happy] Готово — четыре минуты!")
+                "{seconds:240}<tool_call|>", "[happy] Готово — четыре минуты!")
             val timer = RecordingTool()
             val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Сварю яйца всмятку — засеки, сколько нужно")
             assertEquals("Готово — четыре минуты!", r.text)
-            assertEquals(1, timer.calls.size)
+            assertEquals(240, timer.calls.single()["seconds"]!!.jsonPrimitive.int)
             assertTrue(engine.prompts[1].contains("Вызови инструмент"), engine.prompts[1].takeLast(300))
+            assertTrue(engine.prompts[1].endsWith("<|turn>model\n<|tool_call>call:set_timer"), engine.prompts[1].takeLast(100))
+            // After the result the model goes on from the call as it was made.
+            val q = "<|\"|>"
+            assertTrue(engine.prompts[2].endsWith("<|tool_call>call:set_timer{seconds:240}<tool_call|><|tool_response>response:set_timer{value:${q}OK: таймер запущен$q}<tool_response|>"),
+                engine.prompts[2].takeLast(200))
         }
     }
 
