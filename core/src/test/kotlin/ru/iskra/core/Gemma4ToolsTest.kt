@@ -355,6 +355,16 @@ class ActionPromiseTest {
         }
     }
 
+    /** After the timer E4B wrote nothing (ARM, 0.15.0): she says what she did in her words, not the bare report. */
+    @Test fun nothingWrittenAfterTheToolIsSaidInHerWords() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Gemma4Tools2.Scripted("<|tool_call>call:set_timer{minutes:5}<tool_call|>", "")
+            val r = agent(engine, ChatFormat.GEMMA4).handle("Сварю яйца всмятку — засеки, сколько нужно")
+            assertEquals(1, r.actions.size)
+            assertTrue(r.text.contains("таймер запущен") && r.text != "OK: таймер запущен", r.text)
+        }
+    }
+
     /** E4B, asked what she was asked a moment ago: «Я уже поставила таймер на 5 минут» — no second timer (ARM, 0.15.0). */
     @Test fun whatWasJustDoneToldAgainIsNotDoneAgain() = withLang(Lang.RU) {
         runBlocking {

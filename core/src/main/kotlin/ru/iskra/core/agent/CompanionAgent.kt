@@ -782,7 +782,14 @@ class CompanionAgent(
                 val parsed = ReplyParser.parse(response.text)
                 if (parsed.emotion != null) emotion = parsed.emotion
                 if (response.toolCalls.isEmpty() || !offerTools) {
-                    val fallback = if (actions.isNotEmpty()) actions.joinToString("; ") { it.outcome.message } else "…"
+                    // Nothing written after the tools (E4B after a timer, ARM evaluation 0.15.0): what was done, in her words —
+                    // «Сделала — таймер на 5 мин.» — rather than the bare report; an answer tool's message is the answer itself.
+                    val fallback = when {
+                        actions.isEmpty() -> "…"
+                        actions.all { it.outcome.ok } && actions.none { tools[it.tool]?.informational == true } ->
+                            Lines.actionDone(random, actions.joinToString(", ") { it.outcome.message })
+                        else -> actions.joinToString("; ") { it.outcome.message }
+                    }
                     val full = listOf(said.toString().trim(), parsed.text).filter { it.isNotBlank() }.joinToString(" ").trim()
                     return AgentReply(
                         text = agree(full.ifBlank { fallback }),
