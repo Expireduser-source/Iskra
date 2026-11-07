@@ -206,6 +206,52 @@ class RigTest {
         strip("fall") { f -> if (f < 7) ru.iskra.core.avatar.Activity.FALLING to 3f else ru.iskra.core.avatar.Activity.IDLE to 0f }
     }
 
+    /**
+     * 0.16.0: the app draws her too — a portrait in a circle (chat header, the faces beside her messages) and the whole
+     * figure. Every expression as a portrait at two sizes, clipped to the circle as in the app:
+     * core/build/rig-preview/portraits.png. Her face is in the middle of the circle and the circle is mostly her.
+     */
+    @Test
+    fun portraitsFrameHerHead() {
+        val out = File("build/rig-preview").apply { mkdirs() }
+        val names = RigState.EXPRESSIONS.keys.toList()
+        val sizes = listOf(132, 90)
+        val sheet = BufferedImage(sizes.sumOf { it + 12 } * names.size, 132 + 12, BufferedImage.TYPE_INT_ARGB)
+        val g = sheet.createGraphics(); g.color = Color(0xFB, 0xF8, 0xFF); g.fillRect(0, 0, sheet.width, sheet.height)
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        var x = 6
+        for (n in names) for (d in sizes) {
+            val s = RigState(); s.setExpression(n); repeat(90) { s.tick(1f / 30f) }
+            val img = BufferedImage(d, d, BufferedImage.TYPE_INT_ARGB)
+            val gg = img.createGraphics()
+            gg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            gg.color = Color(0xEB, 0xDD, 0xFF); gg.fill(Ellipse2D.Float(0f, 0f, d.toFloat(), d.toFloat()))
+            gg.clip(Ellipse2D.Float(0f, 0f, d.toFloat(), d.toFloat()))
+            val p = ru.iskra.core.avatar.RigFraming.portrait(d.toFloat(), d.toFloat())
+            gg.translate(p.left.toDouble(), p.top.toDouble())
+            RigDrawer.draw(Java2DPainter(gg, images), model, s, p.box)
+            gg.dispose()
+            if (n == "neutral" && d == sizes.first()) {
+                // Most of the circle is her (hair, face, ears), and the face is near its middle, not cut off.
+                var filled = 0; var all = 0
+                for (yy in 0 until d) for (xx in 0 until d) {
+                    val dx = xx - d / 2f; val dy = yy - d / 2f
+                    if (dx * dx + dy * dy > (d / 2f) * (d / 2f)) continue
+                    all++
+                    val c = img.getRGB(xx, yy)
+                    if (c != Color(0xEB, 0xDD, 0xFF).rgb) filled++
+                }
+                assertTrue(filled > all * 0.7f, "portrait fills $filled of $all")
+            }
+            g.drawImage(img, x, 6 + (132 - d) / 2, null)
+            x += d + 12
+        }
+        g.dispose(); ImageIO.write(sheet, "png", File(out, "portraits.png"))
+        // The heart of a full figure is on her chest: between the head's chin and the feet.
+        val heart = ru.iskra.core.avatar.RigFraming.heartY
+        assertTrue(heart in 0.6f..0.75f, "heart at $heart")
+    }
+
     @Test
     fun posesEaseInLandingSquashesAndJoyWags() {
         val s = RigState(); s.energy = 0f

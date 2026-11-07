@@ -5,6 +5,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -20,9 +26,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
@@ -79,24 +89,29 @@ class QuickChatActivity : ComponentActivity() {
                         .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars)),
                     contentAlignment = Alignment.BottomCenter,
                 ) {
-                    Column(
-                        Modifier.fillMaxWidth().fillMaxHeight(if (shared != null) 0.7f else 0.55f)
-                            .clickable(interactionSource = inside, indication = null) { }
-                            .background(MaterialTheme.colorScheme.background, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                            .padding(top = 8.dp)
-                    ) {
-                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(tr("Искра", "Iskra"), fontSize = 18.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                            TextButton(onClick = { finish() }) { Text(tr("Свернуть", "Minimize")) }
-                        }
-                        shared?.let { text ->
-                            SharedTextCard(text,
-                                onSend = { msg -> shared = null; IskraApp.instance.chat.send(msg) },
-                                onEdit = { msg -> shared = null; prefill = msg; generation++ },
-                                onClose = { shared = null })
-                        }
-                        key(generation) {
-                            ChatScreen(Modifier.weight(1f), compact = true, initialInput = prefill, autoVoice = voice)
+                    // The sheet rises from the bottom with a soft spring; her header is in it (ChatScreen).
+                    val rise = remember { MutableTransitionState(false).apply { targetState = true } }
+                    AnimatedVisibility(rise, enter = slideInVertically(spring(dampingRatio = 0.86f, stiffness = 520f)) { it / 2 } + fadeIn(tween(180))) {
+                        val sheet = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+                        Column(
+                            Modifier.fillMaxWidth().fillMaxHeight(if (shared != null) 0.72f else 0.58f)
+                                .clickable(interactionSource = inside, indication = null) { }
+                                .shadow(18.dp, sheet)
+                                .background(MaterialTheme.colorScheme.background, sheet)
+                                .padding(top = 6.dp)
+                        ) {
+                            Box(Modifier.align(Alignment.CenterHorizontally).padding(top = 2.dp, bottom = 2.dp).size(width = 36.dp, height = 4.dp)
+                                .clip(CircleShape).background(MaterialTheme.colorScheme.outlineVariant))
+                            key(generation) {
+                                ChatScreen(Modifier.weight(1f), compact = true, initialInput = prefill, autoVoice = voice, onClose = { finish() }, top = {
+                                    shared?.let { text ->
+                                        SharedTextCard(text,
+                                            onSend = { msg -> shared = null; IskraApp.instance.chat.send(msg) },
+                                            onEdit = { msg -> shared = null; prefill = msg; generation++ },
+                                            onClose = { shared = null })
+                                    }
+                                })
+                            }
                         }
                     }
                 }

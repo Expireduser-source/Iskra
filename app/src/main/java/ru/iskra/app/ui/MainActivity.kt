@@ -1,6 +1,16 @@
 package ru.iskra.app.ui
 
 import ru.iskra.core.i18n.tr
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.Surface
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.heading
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -132,13 +142,20 @@ class MainActivity : ComponentActivity() {
 private fun MainScreen(requestedTab: Int, tabRequests: Int) {
     var tab by rememberSaveable { mutableIntStateOf(requestedTab) }
     LaunchedEffect(tabRequests) { if (tabRequests > 0) tab = requestedTab }
-    val tabs = listOf("💬" to tr("Чат", "Chat"), "🧠" to tr("Память", "Memory"), "⚙️" to tr("Настройки", "Settings"), "🔐" to tr("Разрешения", "Permissions"))
+    val tabs = listOf(IskraIcons.Chat to tr("Чат", "Chat"), IskraIcons.Book to tr("Память", "Memory"),
+        IskraIcons.Tune to tr("Настройки", "Settings"), IskraIcons.Shield to tr("Разрешения", "Permissions"))
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                 tabs.forEachIndexed { i, (icon, label) ->
-                    NavigationBarItem(selected = tab == i, onClick = { tab = i }, modifier = Modifier.testTag("tab_$i"), icon = { Text(icon, Modifier.clearAndSetSemantics {}) }, label = { Text(label) })
+                    NavigationBarItem(selected = tab == i, onClick = { tab = i }, modifier = Modifier.testTag("tab_$i"),
+                        icon = { Icon(icon, contentDescription = null) }, label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                        colors = NavigationBarItemDefaults.colors(
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                        ))
                 }
             }
         },
@@ -149,12 +166,15 @@ private fun MainScreen(requestedTab: Int, tabRequests: Int) {
                 AccessibilityWarning()
                 CrashBanner()
                 UpdateBanner()
-                val m = Modifier.weight(1f)
-                when (tab) {
-                    0 -> ChatScreen(m)
-                    1 -> MemoryScreen(m)
-                    2 -> SettingsScreen(m)
-                    else -> PermissionsScreen(m)
+                // Tabs change with a short crossfade.
+                Crossfade(targetState = tab, modifier = Modifier.weight(1f), animationSpec = tween(220), label = "tab") { t ->
+                    val m = Modifier.fillMaxSize()
+                    when (t) {
+                        0 -> ChatScreen(m)
+                        1 -> MemoryScreen(m)
+                        2 -> SettingsScreen(m)
+                        else -> PermissionsScreen(m)
+                    }
                 }
             }
         }
@@ -276,43 +296,46 @@ private fun MemoryScreen(modifier: Modifier) {
             }
         }
     }
-    Column(modifier.fillMaxSize().padding(12.dp)) {
-        Text(tr("Что Искра помнит о тебе", "What Iskra remembers about you"), fontSize = 20.sp)
+    Column(modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(tr("Что Искра помнит о тебе", "What Iskra remembers about you"), style = MaterialTheme.typography.headlineSmall,
+            modifier = Modifier.semantics { heading() })
+        Spacer(Modifier.size(4.dp))
         Text(
-            tr("Это обычные записи на телефоне, а не «обучение нейросети». Всё можно удалить. " +
-                "📌 — из твоих слов (имя, планы, что любишь…), 🤖 — Искра решила запомнить сама, 📖 — сжатый пересказ разговоров.", "These are plain entries on the phone, not “neural network training”. Everything can be deleted. 📌 — from your own words (name, plans, what you like…), 🤖 — Iskra decided to remember it, 📖 — a short recap of conversations."),
-            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp,
+            tr("Это обычные записи на телефоне, а не «обучение нейросети». Всё можно удалить.",
+                "These are plain entries on the phone, not “neural network training”. Everything can be deleted."),
+            color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium,
         )
-        Spacer(Modifier.size(8.dp))
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Spacer(Modifier.size(10.dp))
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item(key = "mem-h") { SectionHeader(IskraIcons.Person, tr("О тебе", "About you"), items.size) }
+            if (items.isEmpty()) item(key = "mem-e") { EmptyHint(tr("«Запомни: я люблю чай с мятой»", "“Remember: I like mint tea”")) }
             items(items.sortedByDescending { it.createdAtMs }, key = { it.id }) { item ->
                 MemoryRow(item, enabled = !clearing) {
                     app.memory.delete(item.id); refresh()
                     Diag.i("memory", tr("Запись удалена владельцем, осталось ${items.size}", "Entry deleted by the owner, ${items.size} left"))
                 }
             }
-            item(key = "rem-h") { Text(tr("⏰ Напоминания (${reminders.size})", "⏰ Reminders (${reminders.size})"), fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
-            if (reminders.isEmpty()) item(key = "rem-e") { Text(tr("«Напомни через 10 минут позвонить маме»", "“Remind me in 10 minutes to call mom”"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item(key = "rem-h") { SectionHeader(IskraIcons.Bell, tr("Напоминания", "Reminders"), reminders.size) }
+            if (reminders.isEmpty()) item(key = "rem-e") { EmptyHint(tr("«Напомни через 10 минут позвонить маме»", "“Remind me in 10 minutes to call mom”")) }
             items(reminders, key = { "r" + it.id }) { r ->
-                SimpleRow("${timeFmt.format(java.util.Date(r.atMs))} — ${r.text}", enabled = !clearing) {
+                LabeledRow(timeFmt.format(java.util.Date(r.atMs)), r.text, tr("Удалить напоминание: ${r.text}", "Delete the reminder: ${r.text}"), enabled = !clearing) {
                     app.reminderScheduler.cancel(r.id); app.reminders.delete(r.id); refresh()
                     Diag.i("remind", tr("Напоминание удалено владельцем, осталось ${reminders.size}", "Reminder deleted by the owner, ${reminders.size} left"))
                 }
             }
-            item(key = "diary-h") { Text(tr("🌙 Дневник Искры (${diary.size})", "🌙 Iskra's diary (${diary.size})"), fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
+            item(key = "diary-h") { SectionHeader(IskraIcons.Moon, tr("Дневник Искры", "Iskra's diary"), diary.size) }
             if (diary.isEmpty()) item(key = "diary-e") {
-                Text(tr("Ночью она записывает прожитый день своими словами — первая запись появится после дня разговоров.",
-                    "At night she writes down the day she lived, in her own words — the first entry comes after a day of talking."),
-                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                EmptyHint(tr("Ночью она записывает прожитый день своими словами — первая запись появится после дня разговоров.",
+                    "At night she writes down the day she lived, in her own words — the first entry comes after a day of talking."))
             }
             items(diary, key = { "d" + it.id }) { e ->
-                SimpleRow("${diaryDate(e.day)} — ${e.text}", enabled = !clearing) {
+                LabeledRow(diaryDate(e.day), e.text, tr("Удалить запись за ${diaryDate(e.day)}", "Delete the entry of ${diaryDate(e.day)}"), enabled = !clearing) {
                     app.diary.delete(e.id); refresh()
                     Diag.i("diary", tr("Запись дневника удалена владельцем, осталось ${diary.size}", "Diary entry deleted by the owner, ${diary.size} left"))
                 }
             }
-            item(key = "note-h") { Text(tr("📝 Заметки (${notes.size})", "📝 Notes (${notes.size})"), fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
-            if (notes.isEmpty()) item(key = "note-e") { Text(tr("«Запиши заметку: купить молоко»", "“Note: buy milk”"), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item(key = "note-h") { SectionHeader(IskraIcons.Note, tr("Заметки", "Notes"), notes.size) }
+            if (notes.isEmpty()) item(key = "note-e") { EmptyHint(tr("«Запиши заметку: купить молоко»", "“Note: buy milk”")) }
             items(notes, key = { "n" + it.id }) { n ->
                 SimpleRow(n.text, enabled = !clearing) {
                     app.notes.delete(n.id); refresh()
@@ -323,8 +346,8 @@ private fun MemoryScreen(modifier: Modifier) {
         if (clearing) Text(tr("Стираю данные…", "Erasing data…"), color = MaterialTheme.colorScheme.onSurfaceVariant)
         backupMsg?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.secondary) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(enabled = !clearing, onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text(tr("💾 Сохранить копию", "💾 Save a backup")) }
-            OutlinedButton(enabled = !clearing, onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text(tr("📂 Восстановить", "📂 Restore")) }
+            OutlinedButton(enabled = !clearing, onClick = { exportLauncher.launch(Backups.suggestedName()) }) { Text(tr("Сохранить копию", "Save a backup")) }
+            OutlinedButton(enabled = !clearing, onClick = { importLauncher.launch(arrayOf("application/json", "application/octet-stream", "text/*")) }) { Text(tr("Восстановить", "Restore")) }
         }
         var autoState by remember { mutableStateOf(AutoBackup.describe(ctx)) }
         val treeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -332,7 +355,8 @@ private fun MemoryScreen(modifier: Modifier) {
             runCatching { AutoBackup.enable(ctx, uri) }.onFailure { backupMsg = tr("Папка не подходит: ${it.javaClass.simpleName}", "This folder doesn't work: ${it.javaClass.simpleName}") }
             scope.launch { backupMsg = AutoBackup.runNow(ctx); autoState = AutoBackup.describe(ctx) }
         }
-        Text(tr("🗓 Ежедневная копия: $autoState", "🗓 Daily backup: $autoState"), fontSize = 13.sp)
+        Text(tr("Ежедневная копия: $autoState", "Daily backup: $autoState"), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(enabled = !clearing, onClick = { treeLauncher.launch(null) }) { Text(if (AutoBackup.folder(ctx) == null) tr("Включить: выбрать папку", "Turn on: choose a folder") else tr("Другая папка", "Another folder")) }
             if (AutoBackup.folder(ctx) != null) {
@@ -378,20 +402,63 @@ private fun MemoryScreen(modifier: Modifier) {
     )
 }
 
+/** A memory: where it came from (the owner's words, her own choice, a recap of talks) and the text. */
 @Composable
 private fun MemoryRow(item: MemoryItem, enabled: Boolean = true, onDelete: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            val badge = when {
-                item.kind == MemoryKind.EPISODE -> "📖"
-                item.source == MemorySource.USER_EXPLICIT -> "📌"
-                else -> "🤖"
-            }
-            Text("$badge ${item.text}", Modifier.weight(1f))
-            TextButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = tr("Удалить: ${item.text}", "Delete: ${item.text}") }) {
-                Text("✕", Modifier.clearAndSetSemantics {})
+    val (icon, from) = when {
+        item.kind == MemoryKind.EPISODE -> IskraIcons.Book to tr("пересказ разговоров", "a recap of talks")
+        item.source == MemorySource.USER_EXPLICIT -> IskraIcons.Person to tr("из твоих слов", "from your words")
+        else -> IskraIcons.Sparkle to tr("запомнила сама", "she chose to remember")
+    }
+    EntryCard(enabled, tr("Удалить: ${item.text}", "Delete: ${item.text}"), onDelete) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
+            Spacer(Modifier.size(6.dp))
+            Text(from, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        Spacer(Modifier.size(2.dp))
+        Text(item.text, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+/** An entry on a soft card with a delete cross on the right. */
+@Composable
+private fun EntryCard(enabled: Boolean, deleteLabel: String, onDelete: () -> Unit, content: @Composable () -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { content() }
+            IconButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = deleteLabel }) {
+                Icon(IskraIcons.Close, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
         }
+    }
+}
+
+/** A section of her memory: an icon in a soft circle, the title and how many entries there are. */
+@Composable
+private fun SectionHeader(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, count: Int) {
+    Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 2.dp).semantics(mergeDescendants = true) { heading() },
+        verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(30.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(17.dp))
+        }
+        Spacer(Modifier.size(10.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+        if (count > 0) Text(count.toString(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun EmptyHint(text: String) =
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 40.dp))
+
+/** An entry with a small label above it: a page of her diary (the day and her own words), a reminder (its time). */
+@Composable
+private fun LabeledRow(label: String, text: String, deleteLabel: String, enabled: Boolean, onDelete: () -> Unit) {
+    EntryCard(enabled, deleteLabel, onDelete) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.size(2.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -495,10 +562,10 @@ private fun PermissionsScreen(modifier: Modifier) {
     var overlayOn by remember { mutableStateOf(app.settings.load().overlayEnabled) }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { tick++ }
 
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(tr("Разрешения", "Permissions"), fontSize = 20.sp)
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(tr("Разрешения", "Permissions"), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         Text(tr("Каждое разрешение необязательно и отключается в любой момент. Искра не читает экран, SMS, контакты и файлы.", "Every permission is optional and can be turned off at any time. Iskra doesn't read the screen, SMS, contacts or files."),
-            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         PermCard(tr("Поверх других приложений", "Over other apps"), tr("Нужно, чтобы Искра жила на экране, а не только в приложении.", "Needed so Iskra can live on the screen, not only inside the app."), overlay) {
             DeviceHelper.openOverlaySettings(ctx)
@@ -543,15 +610,20 @@ private fun VendorCard() {
 
 @Composable
 private fun PermCard(title: String, text: String, granted: Boolean, onOpen: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp)) {
+    val c = iskraColors
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(start = 14.dp, end = 8.dp, top = 12.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text((if (granted) "✅ " else "⬜ ") + title, fontSize = 16.sp, modifier = Modifier.weight(1f).clearAndSetSemantics {
+                Icon(if (granted) IskraIcons.CheckCircle else IskraIcons.Circle, contentDescription = null,
+                    tint = if (granted) c.success else MaterialTheme.colorScheme.outline, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.size(10.dp))
+                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).clearAndSetSemantics {
                     contentDescription = title; stateDescription = if (granted) tr("разрешено", "allowed") else tr("не разрешено", "not allowed")
                 })
                 if (!granted) TextButton(onClick = onOpen) { Text(tr("Открыть", "Open")) }
             }
-            Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 32.dp, top = 2.dp, end = 6.dp))
         }
     }
 }
@@ -564,13 +636,8 @@ private fun diaryDate(day: String): String = runCatching {
 
 @Composable
 private fun SimpleRow(text: String, enabled: Boolean = true, onDelete: () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(text, Modifier.weight(1f), fontSize = 14.sp)
-            TextButton(enabled = enabled, onClick = onDelete, modifier = Modifier.semantics { contentDescription = tr("Удалить: $text", "Delete: $text") }) {
-                Text("✕", Modifier.clearAndSetSemantics {})
-            }
-        }
+    EntryCard(enabled, tr("Удалить: $text", "Delete: $text"), onDelete) {
+        Text(text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 

@@ -102,6 +102,38 @@ class Smoke:
         # adb "input text" is ASCII only; spaces must be %s.
         sh("input text " + "'" + text.replace(" ", "%s").replace("'", "") + "'")
 
+    def animations(self, on):
+        v = "1" if on else "0"
+        sh(f"settings put global window_animation_scale {v}; settings put global transition_animation_scale {v}; settings put global animator_duration_scale {v}")
+
+    def record(self, name, seconds):
+        """Starts a screen recording (best effort: not every emulator image has an encoder); returns a handle for save()."""
+        try:
+            proc = subprocess.Popen(["adb", "shell", "screenrecord", "--time-limit", str(seconds), "--size", "720x1600",
+                                     "--bit-rate", "4000000", f"/sdcard/{name}.mp4"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            return None
+        time.sleep(1)
+        return (name, proc, seconds)
+
+    def save(self, rec):
+        if rec is None:
+            return
+        name, proc, seconds = rec
+        try:
+            proc.wait(timeout=seconds + 15)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        time.sleep(1)
+        adb("pull", f"/sdcard/{name}.mp4", os.path.join(self.out, f"{name}.mp4"), timeout=120)
+        sh(f"rm /sdcard/{name}.mp4")
+
+    def restart(self):
+        sh(f"am force-stop {PKG}")
+        time.sleep(1)
+        sh(f"am start -W -n {MAIN}", timeout=120)
+        time.sleep(4)
+
     def alive(self):
         return bool(sh(f"pidof {PKG}").strip())
 
@@ -559,10 +591,23 @@ def main():
         sh(f"cmd locale set-app-locales {PKG} --locales {a.lang}")
     adb("logcat", "-b", "all", "-c")
 
+    # 0.16.0: her birth on the first page of the introduction, recorded with animations on (Android 13+ emulators).
+    # Then the app starts again with animations off: the rest of the walk sees still pictures.
+    video = a.api >= 33
+    if video:
+        s.animations(True)
+        rec = s.record("birth", 9)
     t0 = time.time()
     sh(f"am start -W -n {MAIN}", timeout=120)
-    time.sleep(4)
     print(f"first start: {time.time() - t0:.1f} s", flush=True)
+    if video:
+        time.sleep(5)
+        s.shot("birth-end")
+        s.save(rec)
+        s.animations(False)
+        s.restart()
+    else:
+        time.sleep(4)
     s.shot("onboarding-1")
 
     # Onboarding: 4 steps. On step 2 the overlay permission is already granted (appops), so the switch is there.
@@ -577,7 +622,20 @@ def main():
     time.sleep(2)
 
     s.shot("chat")
-    if s.tap_id("chat_surprise", quiet=True):
+    if video:
+        # The welcome (she waves) and a message flying in, her thinking and her reply — with animations on.
+        s.animations(True)
+        s.restart()
+        rec = s.record("chat", 10)
+        time.sleep(2)
+        tapped = s.tap_id("chat_surprise", quiet=True)
+        time.sleep(5)
+        s.save(rec)
+        s.animations(False)
+        s.restart()
+        if tapped:
+            s.shot("chat-surprise")
+    elif s.tap_id("chat_surprise", quiet=True):
         time.sleep(4)
         s.shot("chat-surprise")
     for i, name in [(1, "memory"), (2, "settings"), (3, "permissions")]:
