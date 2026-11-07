@@ -31,6 +31,8 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import kotlin.random.Random
 import kotlin.test.AfterTest
+import ru.iskra.core.i18n.Lang
+import ru.iskra.core.i18n.withLang
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -46,7 +48,8 @@ class ReminderParserTest {
         assertEquals(now.plusMinutes(60), p("напомни через час выключить плиту")!!.at)
         assertEquals(now.plusMinutes(30), p("напомни через полчаса")!!.at)
         assertEquals(now.plusMinutes(120), p("напомни мне через 2 часа что надо полить цветы")!!.at)
-        assertEquals("надо полить цветы", p("напомни мне через 2 часа что надо полить цветы")!!.text)
+        // «надо», «нужно» at the start add nothing to a reminder's text.
+        assertEquals("полить цветы", p("напомни мне через 2 часа что надо полить цветы")!!.text)
         val tail = p("напомни купить хлеб через пять минут")!!
         assertEquals("купить хлеб", tail.text); assertEquals(5L, tail.inMinutes)
         assertEquals(now.plusMinutes(2), p("напомни через пару минут проверить чайник")!!.at)
@@ -65,6 +68,39 @@ class ReminderParserTest {
         assertEquals("полить цветы", p("напомни завтра утром полить цветы")!!.text)
         assertEquals(now.withHour(19), p("напомни вечером вынести мусор")!!.at)
         assertEquals("Позвонить Ане", p("Искра, напомни в 16:15 Позвонить Ане")!!.text)
+    }
+
+    /** Other ways to ask: a question, «можешь напомнить», «не дай мне забыть» before or after (the ARM evaluation's pie). */
+    @Test fun otherWordings() {
+        fun c(s: String) = CommandParser.parse(s, now) as? CommandParser.Parsed.Tool
+        fun check(s: String, minutes: Int?, at: String?, text: String) {
+            val r = c(s) ?: error("not a reminder: $s")
+            assertEquals(SkillNames.SET_REMINDER, r.name, s)
+            assertEquals(text, r.args["text"]!!.jsonPrimitive.content, s)
+            if (minutes != null) assertEquals(minutes, r.args["in_minutes"]!!.jsonPrimitive.content.toInt(), s)
+            if (at != null) assertEquals(at, r.args["at"]!!.jsonPrimitive.content, s)
+        }
+        check("Через полчаса надо вынуть пирог из духовки, не дай мне забыть.", 30, null, "вынуть пирог из духовки")
+        check("Не дай мне забыть через 20 минут выключить плиту", 20, null, "выключить плиту")
+        check("Напомнишь мне через час позвонить маме?", 60, null, "позвонить маме")
+        check("Можешь напомнить завтра в 9 про встречу?", null, "2026-11-04T09:00", "про встречу")
+        check("Пожалуйста, напомни через 5 минут проверить чай", 5, null, "проверить чай")
+        check("Напомни-ка через 15 минут снять бельё", 15, null, "снять бельё")
+        check("Через 40 минут забрать сына, а то забуду", 40, null, "забрать сына")
+        check("напомни через час что-то важное", 60, null, "что-то важное")
+        // No time: the model decides (asks when, or keeps a note).
+        assertNull(CommandParser.parse("Не дай мне забыть купить хлеб", now))
+        assertNull(CommandParser.parse("Напомнишь мне позвонить маме?", now))
+        assertNull(CommandParser.parse("Я сдала, а то забуду рассказать!", now))
+        // English, the same.
+        withLang(Lang.EN) {
+            fun e(s: String) = CommandParser.parse(s, now) as? CommandParser.Parsed.Tool
+            assertEquals(10, e("Can you remind me in 10 minutes to call mom?")!!.args["in_minutes"]!!.jsonPrimitive.content.toInt())
+            assertEquals("call mom", e("Can you remind me in 10 minutes to call mom?")!!.args["text"]!!.jsonPrimitive.content)
+            assertEquals("Take the pie out", e("Take the pie out in 30 minutes, don't let me forget")!!.args["text"]!!.jsonPrimitive.content)
+            assertEquals("2026-11-04T09:00", e("Don't let me forget to buy milk tomorrow at 9 am")!!.args["at"]!!.jsonPrimitive.content)
+            assertNull(CommandParser.parse("Don't let me forget your birthday", now))
+        }
     }
 
     @Test fun rejectsWithoutTimeOrInThePast() {

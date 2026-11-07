@@ -126,15 +126,16 @@ class Gemma4ToolsTest {
     /** The whole way: Gemma 4 on the phone calls the timer, the tool runs, the model answers in the same turn. */
     @Test fun gemma4OnThePhoneSetsATimer() = withLang(Lang.RU) {
         runBlocking {
-            val engine = Scripted("<|tool_call>call:set_timer{label:${q}пирог$q,seconds:1800}<tool_call|>", "[happy] Поставила таймер на полчаса — пирог не сгорит!")
+            val engine = Scripted("<|tool_call>call:set_timer{label:${q}яйца$q,seconds:240}<tool_call|>", "[happy] Засекла четыре минуты — будут всмятку!")
             val timer = RecordingTool()
             val agent = CompanionAgent(
                 persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
                 stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }),
                 providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
-            val r = agent.handle("Через полчаса надо вынуть пирог из духовки, не дай мне забыть")
-            assertEquals(1800, timer.calls.single()["seconds"]!!.jsonPrimitive.int)
-            assertEquals("Поставила таймер на полчаса — пирог не сгорит!", r.text)
+            // Not a wording the phrase parser can read: how long soft-boiled eggs take is the model's to know.
+            val r = agent.handle("Сварю яйца всмятку — засеки, сколько нужно")
+            assertEquals(240, timer.calls.single()["seconds"]!!.jsonPrimitive.int)
+            assertEquals("Засекла четыре минуты — будут всмятку!", r.text)
             assertEquals(1, r.actions.size)
             // The first prompt declared the tool; the second goes on after its result, in the same model turn.
             assertTrue(engine.prompts[0].contains("<|tool>declaration:set_timer"))
@@ -152,7 +153,7 @@ class Gemma4ToolsTest {
                 persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
                 stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }),
                 providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
-            val r = agent.handle("Через полчаса надо вынуть пирог из духовки, не дай мне забыть")
+            val r = agent.handle("Сварю яйца всмятку — засеки, сколько нужно")
             assertEquals(1, timer.calls.size)
             assertEquals(1, r.actions.size)
             assertEquals("Таймер на полчаса стоит!", r.text)
@@ -186,7 +187,7 @@ class Gemma4ToolsTest {
 class EvalToolRequestTest {
     @Test fun theParserLeavesItToTheModel() = withLang(Lang.RU) {
         val now = java.time.LocalDateTime.of(2026, 11, 8, 15, 0)
-        assertEquals(null, ru.iskra.core.tools.CommandParser.parse("Через полчаса надо вынуть пирог из духовки, не дай мне забыть.", now))
+        assertEquals(null, ru.iskra.core.tools.CommandParser.parse("Сварю яйца всмятку — засеки, сколько нужно.", now))
     }
 }
 
@@ -237,11 +238,11 @@ class ActionPromiseTest {
 
     @Test fun gemma4IsToldToCallAndDoes() = withLang(Lang.RU) {
         runBlocking {
-            val engine = Gemma4Tools2.Scripted("[happy] Я поставлю напоминание, через полчаса ты получишь уведомление!",
-                "<|tool_call>call:set_timer{seconds:1800}<tool_call|>", "[happy] Готово — таймер на полчаса!")
+            val engine = Gemma4Tools2.Scripted("[happy] Я поставлю таймер на четыре минуты, и яйца будут всмятку!",
+                "<|tool_call>call:set_timer{seconds:240}<tool_call|>", "[happy] Готово — четыре минуты!")
             val timer = RecordingTool()
-            val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Через полчаса надо вынуть пирог из духовки, не дай мне забыть")
-            assertEquals("Готово — таймер на полчаса!", r.text)
+            val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Сварю яйца всмятку — засеки, сколько нужно")
+            assertEquals("Готово — четыре минуты!", r.text)
             assertEquals(1, timer.calls.size)
             assertTrue(engine.prompts[1].contains("Вызови инструмент"), engine.prompts[1].takeLast(300))
         }
@@ -250,8 +251,8 @@ class ActionPromiseTest {
     @Test fun aPromiseNothingCameOfIsOwned() = withLang(Lang.RU) {
         runBlocking {
             // A phone model without tools can only promise: it is said that nothing is set.
-            val r = agent(Gemma4Tools2.Scripted("[happy] Я поставлю таймер на полчаса, не волнуйся!"), ChatFormat.GEMMA).handle("Через полчаса вынуть пирог, не дай забыть")
-            assertTrue(r.text.startsWith("Я поставлю таймер на полчаса, не волнуйся! Ой, это я только сказала"), r.text)
+            val r = agent(Gemma4Tools2.Scripted("[happy] Я поставлю таймер на четыре минуты, не волнуйся!"), ChatFormat.GEMMA).handle("Сварю яйца всмятку, засеки время")
+            assertTrue(r.text.startsWith("Я поставлю таймер на четыре минуты, не волнуйся! Ой, это я только сказала"), r.text)
             // A question back is not a broken promise.
             val q = agent(Gemma4Tools2.Scripted("[curious] Я поставлю таймер. Сколько минут?", "[curious] Я поставлю таймер. Сколько минут?"), ChatFormat.GEMMA4)
                 .handle("Поможешь не забыть про пирог?")

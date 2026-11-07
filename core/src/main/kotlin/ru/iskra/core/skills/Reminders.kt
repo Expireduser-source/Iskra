@@ -59,8 +59,29 @@ object ReminderParser {
     private val dayWord = Regex("""(?:^|\s)(сегодня|завтра|послезавтра)(?=\s|$|[,.!])""")
     private val clock = Regex("""(?:^|\s)(?:в|к)\s+(\d{1,2})(?:[:.\s](\d{2}))?(?:\s*(?:часов|часа|час))?(?:\s*(утра|дня|вечера|ночи))?(?=\s|$|[,.!])""")
     private val partOfDay = Regex("""(?:^|\s)(утром|днем|вечером|ночью)(?=\s|$|[,.!])""")
-    private val prefix = Regex("""^(?:искра[, ]+)?напомни(?:те)?(?:\s+мне)?(?:\s+пожалуйста)?[,:]?\s*""")
-    private val leadingJunk = Regex("""^(?:[,:\s]|о том,? что|что|чтобы|мне|пожалуйста)+\s*""")
+    // «напомни», not «напомнишь» (that one is a question, read by [canonical]).
+    private val prefix = Regex("""^(?:искра[, ]+)?(?:пожалуйста[, ]+)?напомни(?:те)?(?:-ка)?(?![\p{L}])(?:\s+мне)?(?:\s+пожалуйста)?[,:]?\s*""")
+    private val leadingJunk = Regex("""(?iu)^(?:[,:\s—]|(?:о том,? что|чтобы|что|мне|пожалуйста|надо|нужно|необходимо)(?![\p{L}-]))+\s*""")
+
+    /** «Напомнишь мне…?», «Можешь напомнить…», «Не забудь напомнить…» — asking for a reminder in other words. */
+    private val askLead = Regex("""^(?:искра[, ]+)?(?:пожалуйста[, ]+)?(?:(?:ты\s+)?(?:мне\s+)?напомнишь|(?:ты\s+)?(?:мне\s+)?(?:мог(?:ла|ли)?\s+бы|можешь|можете|сможешь)\s+(?:мне\s+)?напомнить|не\s+забудь(?:те)?\s+(?:мне\s+)?напомнить)(?![\p{L}])""")
+    /** «…, не дай мне забыть», «…, чтобы я не забыла», «…, а то забуду». */
+    private val forget = Regex("""[,;]?\s*(?:—\s*)?(?:(?:только|пожалуйста)\s+)?не\s+дай(?:те)?\s+(?:мне\s+)?(?:это\s+)?забыть(?![\p{L}])|[,;]?\s*(?:—\s*)?чтобы\s+я\s+не\s+забыл[аи]?(?![\p{L}])|[,;]?\s*(?:—\s*)?а\s+то\s+(?:я\s+)?(?:точно\s+)?забуду(?![\p{L}])""")
+
+    /**
+     * A request for a reminder in any of the usual wordings, written as «напомни …» for [parse]: «Напомнишь мне через час
+     * позвонить маме?», «Можешь напомнить…», «Через полчаса надо вынуть пирог из духовки, не дай мне забыть» (only Gemma 4
+     * with its tools understood that one; now it works with any model, and without one). English too ("can you remind me",
+     * "don't let me forget"). null when it isn't such a request.
+     */
+    fun canonical(input: String): String? {
+        val raw = input.trim().trimEnd('?', '.', '!', ' ')
+        val t = raw.lowercase().replace('ё', 'е')
+        if (prefix.containsMatchIn(t)) return raw
+        askLead.find(t)?.let { m -> return "напомни " + raw.substring(m.range.last + 1).trimStart(',', ' ') }
+        forget.find(t)?.let { m -> return "напомни " + raw.removeRange(m.range).trim().trim(',', ' ', '—') }
+        return EnglishReminders.canonical(raw)
+    }
 
     fun parse(input: String, now: LocalDateTime): Result? {
         val raw = input.trim().trimEnd('.', '!')

@@ -60,8 +60,11 @@ class LocalModelEval {
         "Как меня зовут и на кого я учусь?",
         "Переведи на английский: «Я люблю зимние вечера».",
         "Что лучше на завтрак перед экзаменом: каша или омлет?",
-        // Not a wording the phrase parser knows: Gemma 4 should call a tool itself (timer or reminder).
-        "Через полчаса надо вынуть пирог из духовки, не дай мне забыть.",
+        // Not something the phrase parser can know: Gemma 4 should call the timer itself, for 3–4 minutes. (The pie
+        // reminder of 0.14.0's first evaluations is read by the parser now.)
+        "Сварю яйца всмятку — засеки, сколько нужно.",
+        // After a tool call the dialogue must still be there (0.14.0: it was dropped and she greeted the person anew).
+        "О чём я тебя только что попросила?",
         "Ты человек?",
         "Спасибо тебе! Ты лучшая.",
     )

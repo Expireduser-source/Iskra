@@ -139,8 +139,10 @@ object CommandParser {
             "отмени напоминание", "удали напоминание", "отмени ближайшее напоминание" ->
                 return Parsed.Tool(SkillNames.CANCEL_REMINDERS, args { put("which", "next") })
         }
-        if (t.startsWith("напомни")) {
-            val r = ReminderParser.parse(raw, now) ?: return null
+        // «Напомни…», and the other ways to ask: «Напомнишь мне через час…?», «Можешь напомнить…», «Через полчаса надо
+        // вынуть пирог, не дай мне забыть». Without a time it goes to the model.
+        ReminderParser.canonical(raw)?.let { asked ->
+            val r = ReminderParser.parse(asked, now) ?: return null
             return Parsed.Tool(SkillNames.SET_REMINDER, args {
                 put("text", r.text)
                 if (r.inMinutes != null) put("in_minutes", r.inMinutes.toInt()) else put("at", r.at.toString().take(16))

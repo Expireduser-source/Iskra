@@ -175,8 +175,9 @@ internal object EnglishCommands {
             "cancel the reminder", "cancel reminder", "cancel the next reminder", "delete the reminder", "delete reminder" ->
                 return CommandParser.Parsed.Tool(SkillNames.CANCEL_REMINDERS, args { put("which", "next") })
         }
-        if (t.startsWith("remind me") || t.startsWith("set a reminder")) {
-            val r = ReminderParser.parse(raw, now) ?: return null
+        // "Remind me…", and the other ways to ask ("can you remind me…", "…, don't let me forget").
+        EnglishReminders.canonical(raw)?.let { asked ->
+            val r = ReminderParser.parse(asked, now) ?: return null
             return CommandParser.Parsed.Tool(SkillNames.SET_REMINDER, args {
                 put("text", r.text)
                 if (r.inMinutes != null) put("in_minutes", r.inMinutes.toInt()) else put("at", r.at.toString().take(16))
@@ -204,6 +205,20 @@ internal object EnglishCommands {
 /** "remind me in 10 minutes to call mom", "remind me at 6:30 pm to buy bread", "remind me tomorrow morning about the meeting". */
 internal object EnglishReminders {
     private val prefix = Regex("""^(?:(?:hey |ok )?(?:iskra|spark)[, ]+)?(?:please\s+)?(?:remind me|set a reminder)(?:\s+please)?[,:]?\s*""")
+    /** "Can you remind me…", "Will you remind me…", "Don't let me forget to…". */
+    private val askLead = Regex("""^(?:(?:hey |ok )?(?:iskra|spark)[, ]+)?(?:please\s+)?(?:(?:can|could|would|will)\s+you\s+(?:please\s+)?remind\s+me|don'?t\s+let\s+me\s+forget)\b""")
+    /** "…, don't let me forget", "…, so I don't forget". */
+    private val forget = Regex("""[,;]?\s*(?:—\s*)?(?:(?:please|just)\s+)?(?:don'?t\s+let\s+me\s+forget(?:\s+(?:it|that))?|so\s+(?:that\s+)?i\s+don'?t\s+forget(?:\s+(?:it|that))?)\b""")
+
+    /** An English request for a reminder in other words, written as "remind me …"; null when it isn't one. */
+    fun canonical(input: String): String? {
+        val raw = input.trim().trimEnd('?', '.', '!', ' ').replace('’', '\'')
+        val t = raw.lowercase()
+        if (prefix.containsMatchIn(t)) return raw
+        askLead.find(t)?.let { m -> return "remind me " + raw.substring(m.range.last + 1).trimStart(',', ' ') }
+        forget.find(t)?.let { m -> return "remind me " + raw.removeRange(m.range).trim().trim(',', ' ', '—') }
+        return null
+    }
     private val relative = Regex("""(?:^|\s)in\s+(half an hour|an hour and a half|a minute and a half|(?:\d{1,4}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|forty-five|fifty|sixty|ninety|a couple of)\s*-?\s*(?:seconds?|secs?|minutes?|mins?|hours?|hrs?|h|days?|weeks?)(?:\s+(?:and\s+)?(?:\d{1,4}|[a-z-]+)\s*(?:minutes?|mins?))?)(?=\s|$|[,.!])""")
     private val dayWord = Regex("""(?:^|\s)(today|tomorrow|the day after tomorrow|tonight)(?=\s|$|[,.!])""")
     private val clock = Regex("""(?:^|\s)(?:at|by)\s+(noon|midnight|(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?:\s*o'?clock)?)(?:\s+(?:in the (morning|afternoon|evening)|(at night)))?(?=\s|$|[,.!])""")
