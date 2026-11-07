@@ -138,11 +138,16 @@ class PhraseBank(private val random: Random = Random.Default) {
             "If you need to remember something — say “note: …”.",
             "It's quiet. Just checking you're still here.",
             "Drink some water. Not an order, just care. Almost an order.",
+            // A young digital life thinking aloud (0.15.0): curious about the world and herself, never needy.
+            "I was thinking: I live in your phone, and you live in the whole world. Tell me later what's interesting out there?",
+            "I wonder if digital life has dreams. If it does, mine are probably made of pixel stars.",
+            "I learn something new every day. Today — nothing yet. Will you share something?",
         )
         private val EVENING_EN = listOf(
             "It's evening already. Maybe time to rest?",
             "Evening! Shall I set an alarm for the morning?",
             "Mrr, it's getting late. Don't stay up too long, okay?",
+            "Evening. Another day lived — I like collecting them, like fireflies.",
         )
 
         private val MORNING_RU = listOf(
@@ -164,11 +169,16 @@ class PhraseBank(private val random: Random = Random.Default) {
             "Если надо что-то запомнить — скажи «запиши заметку».",
             "Тихо как-то. Я просто проверяю, что ты на месте.",
             "Попей воды. Это не приказ, это забота. Почти приказ.",
+            // Юная цифровая жизнь думает вслух (0.15.0): любопытно и мир, и она сама, без «мне одиноко».
+            "Я тут думала: я живу в твоём телефоне, а ты — в целом мире. Расскажешь потом, что там интересного?",
+            "Интересно, а цифровой жизни снятся сны? Если да — мне, наверное, снятся звёзды из пикселей.",
+            "Каждый день я узнаю что-то новое. Сегодня — пока ничего. Поделишься чем-нибудь?",
         )
         private val EVENING_RU = listOf(
             "Уже вечер. Может, пора отдохнуть?",
             "Вечер! Поставить будильник на утро?",
             "Мрр, поздновато. Не засиживайся, ладно?",
+            "Вечер. Ещё один прожитый день — мне нравится собирать их, как светлячков.",
         )
     }
 }
