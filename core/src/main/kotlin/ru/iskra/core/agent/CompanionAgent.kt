@@ -229,6 +229,7 @@ class CompanionAgent(
             }
         } ?: offered
 
+        reply.actions.lastOrNull { it.outcome.ok }?.let { lastDone = it.tool to clock() }
         // Persist outcome.
         var after = stateStore.load()
         val successes = reply.actions.count { it.outcome.ok }
@@ -276,6 +277,10 @@ class CompanionAgent(
             // «Я поставлю таймер» with nothing called: Gemma 4 once more, told to call — and when the promise says which tool,
             // with that call begun for it, so it only fills in the arguments; still nothing — said honestly.
             val promised = ActionPromise.tool(first.text)?.takeIf { it in PHONE_TOOLS }
+            // «Ты попросила засечь время. Я уже поставила таймер на 5 минут» — what she did a moment ago, told again: no
+            // second timer (E4B set one on «О чём я тебя только что попросила?», ARM evaluation 0.15.0), unless it is asked for.
+            val told = lastDone?.takeIf { (tool, at) -> tool == promised && clock() - at < RECENT_ACTION_MS }
+            if (told != null && !ActionPromise.asks(text)) return first
             val again = if (provider.nativeTools) askModel(provider, text, state, sink, ActionPromise.nudge(), forceTool = promised) else null
             if (again != null && again.errorKind == null && again.actions.isNotEmpty()) return again
             val last = again?.takeIf { it.errorKind == null && it.text.any(Char::isLetterOrDigit) } ?: first
@@ -416,6 +421,9 @@ class CompanionAgent(
         ru.iskra.core.skills.SkillNames.SET_REMINDER, ru.iskra.core.skills.SkillNames.ADD_NOTE, ru.iskra.core.skills.SkillNames.WEATHER,
         ru.iskra.core.tools.ToolNames.FLASHLIGHT, ru.iskra.core.tools.ToolNames.OPEN_APP)
 
+    /** An action done this long ago and spoken of again («я уже поставила таймер») is news of it, not a promise. */
+    private val RECENT_ACTION_MS = 15 * 60_000L
+
     /** How long after words about not wanting to live she stays gentle and the model is told to be careful. */
     private val CAREFUL_HOURS = 12
 
@@ -429,6 +437,8 @@ class CompanionAgent(
 
     /** This message spoke of not wanting to live and a cloud model answers it (true: they heard the numbers in the last hours). */
     @Volatile private var crisisAgain: Boolean? = null
+    /** The last action done for the person, and when: told about again later, it isn't a new promise. */
+    @Volatile private var lastDone: Pair<String, Long>? = null
 
     private fun localDate(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate()
     private fun localHour(ms: Long) = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).hour

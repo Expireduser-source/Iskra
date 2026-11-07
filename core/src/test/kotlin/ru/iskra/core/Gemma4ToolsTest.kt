@@ -355,6 +355,25 @@ class ActionPromiseTest {
         }
     }
 
+    /** E4B, asked what she was asked a moment ago: «Я уже поставила таймер на 5 минут» — no second timer (ARM, 0.15.0). */
+    @Test fun whatWasJustDoneToldAgainIsNotDoneAgain() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Gemma4Tools2.Scripted("<|tool_call>call:set_timer{minutes:5}<tool_call|>", "[happy] Я поставила таймер на 5 минут!",
+                "[happy] Ты попросила меня засечь время для варки яиц всмятку! Я уже поставила таймер на 5 минут.",
+                "[happy] Поставлю ещё один таймер на три минуты!", "{minutes:3}<tool_call|>", "[happy] Поставила ещё один, на три минуты.")
+            val timer = RecordingTool()
+            val a = agent(engine, ChatFormat.GEMMA4, timer)
+            a.handle("Сварю яйца всмятку — засеки, сколько нужно")
+            assertEquals(1, timer.calls.size)
+            val r = a.handle("О чём я тебя только что попросила?")
+            assertEquals(1, timer.calls.size)
+            assertTrue(r.text.contains("Я уже поставила таймер"), r.text)
+            // Asked for again, it is done again.
+            a.handle("Поставь ещё таймер на три минуты")
+            assertEquals(2, timer.calls.size)
+        }
+    }
+
     @Test fun aPromiseNothingCameOfIsOwned() = withLang(Lang.RU) {
         runBlocking {
             // A phone model without tools can only promise: it is said that nothing is set.

@@ -31,8 +31,10 @@ object ActionPromise {
     fun made(text: String): Boolean = ru.containsMatchIn(text) || en.containsMatchIn(text)
 
     /** The reply offers what the person [asked] for («засеки…» → «Я могу поставить таймер на 3 минуты»): as good as a promise. */
-    fun offered(text: String, asked: String): Boolean =
-        (offerRu.containsMatchIn(text) || offerEn.containsMatchIn(text)) && (askedRu.containsMatchIn(asked) || askedEn.containsMatchIn(asked))
+    fun offered(text: String, asked: String): Boolean = (offerRu.containsMatchIn(text) || offerEn.containsMatchIn(text)) && asks(asked)
+
+    /** The person's message asks for an action: «засеки», «поставь», «напомни», "set", "remind me"… */
+    fun asks(text: String): Boolean = askedRu.containsMatchIn(text) || askedEn.containsMatchIn(text)
 
     /**
      * The tool the promise speaks of, if it can be told: «Я поставлю таймер на полчаса» — set_timer, «Я поставлю тебе
