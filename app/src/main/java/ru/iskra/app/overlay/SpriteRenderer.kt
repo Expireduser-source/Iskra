@@ -101,7 +101,7 @@ internal object LookPlacement {
 class SpriteRenderer(ctx: Context, box: Int) : AvatarRenderer {
     private val bitmaps = SpriteBitmaps(ctx, box)
     private val animator = SpriteAnimator()
-    private val effects = AvatarEffects()
+    private val effects = AvatarEffects(nunitoBold(ctx))
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val dst = RectF()
     private var frame = animator.update(0f, AvatarPoseDefaults.pose)
@@ -142,6 +142,10 @@ internal fun drawEffects(c: Canvas, box: Float, p: AvatarPose, effects: AvatarEf
     effects.draw(c, p, sprites = true)
     c.restore()
 }
+
+/** Her font for the marks over her ("?", "!", "z"), if it loads. */
+internal fun nunitoBold(ctx: Context): android.graphics.Typeface? =
+    runCatching { androidx.core.content.res.ResourcesCompat.getFont(ctx, R.font.nunito_bold) }.getOrNull()
 
 /** Writes each "no own sprite/pose for this state" note to the journal once per session. */
 internal class FallbackNotes {

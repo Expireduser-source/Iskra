@@ -93,7 +93,7 @@ class RigRenderer(ctx: Context, private val boxPx: Int) : AvatarRenderer {
     private val painter: CanvasRigPainter
     private val sprites = SpriteBitmaps(ctx, boxPx)
     private val animator = RigAnimator()
-    private val effects = AvatarEffects()
+    private val effects = AvatarEffects(nunitoBold(ctx))
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val dst = RectF()
     private val notes = FallbackNotes()

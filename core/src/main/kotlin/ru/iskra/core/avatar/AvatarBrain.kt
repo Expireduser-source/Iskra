@@ -34,6 +34,10 @@ data class AvatarPose(
     val lookX: Float = 0f,      // -1 .. 1, where the eyes look (screen space)
     val moving: Boolean = false, // position or limbs change every frame → render at full refresh rate
     val waving: Boolean = false, // greeting: on appearing and when tapped while standing
+    /** 0 → 1 over her first moment on the screen (and again when she comes back): a little burst of sparks. */
+    val appear: Float = 1f,
+    /** 0 → 1 while hearts rise after she was petted; negative when there are none. */
+    val hearts: Float = -1f,
 )
 
 /**
@@ -72,6 +76,8 @@ class AvatarBrain(
     private var lookX = 0f
     private var lookUntil = 0f
     private var waveUntil = 2.5f           // she waves when she appears
+    private var appearAt = 0f              // when she (re)appeared: the sparks of 0.16.0
+    private var pettedAt = -10f
 
     // Expression flags
     var isTalking = false; private set
@@ -145,6 +151,12 @@ class AvatarBrain(
 
     /** Wave for [sec] seconds (shown while she stands). */
     fun wave(sec: Float = 1.5f) { waveUntil = t + sec }
+
+    /** Petted (a double tap): hearts rise for a moment. */
+    fun petted() { pettedAt = t; wake() }
+
+    /** Back on the screen after stepping away (a chat was in front): the sparks of appearing, and a wave. */
+    fun appearAgain() { appearAt = t; if (activity == Activity.IDLE) wave() }
 
     fun tapped() {
         if (activity == Activity.IDLE) wave()
@@ -481,9 +493,16 @@ class AvatarBrain(
             lookX = look,
             moving = moving || activity == Activity.DRAGGED,
             waving = activity == Activity.IDLE && t < waveUntil && !isThinking,
+            appear = ((t - appearAt) / APPEAR_SEC).coerceIn(0f, 1f),
+            hearts = ((t - pettedAt) / HEARTS_SEC).let { if (it in 0f..1f) it else -1f },
         )
     }
 
     private fun lerp(a: Float, b: Float, k: Float) = a + (b - a) * k
     private fun easeInOut(k: Float) = k * k * (3f - 2f * k)
+
+    companion object {
+        const val APPEAR_SEC = 0.9f
+        const val HEARTS_SEC = 1.6f
+    }
 }

@@ -651,6 +651,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             v.animate().alpha(0f).scaleX(0.86f).scaleY(0.86f).setDuration(180).withEndAction { if (away) v.stop() }.start()
         } else {
             v.start()
+            v.brain.appearAgain()
             v.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(320).setInterpolator(android.view.animation.OvershootInterpolator(1.8f)).start()
         }
         if (touchMode(lp)) try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
