@@ -285,6 +285,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     override fun onPerk() {
         CompanionBus.emit(AvatarCue.Listening(true))
         if (IskraApp.instance.speaker.speaking.value) IskraApp.instance.chat.stopSpeaking()
+        // Her name heard, the command comes next: while it is spoken, the model on the phone reads its instructions.
+        IskraApp.instance.chat.warmUp()
     }
 
     override fun onCommand(text: String) {
