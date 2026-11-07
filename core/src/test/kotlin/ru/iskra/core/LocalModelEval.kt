@@ -87,7 +87,7 @@ class LocalModelEval {
         System.load(lib!!)
         val out = File(System.getenv("ISKRA_EVAL_OUT") ?: "build/eval").apply { mkdirs() }
         val threads = (System.getenv("ISKRA_EVAL_THREADS") ?: "4").toInt()
-        val summary = StringBuilder("| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) | new prompt tokens (median) | prompt tokens (median) | chars/token (median) |\n|---|---|---|---|---|---|---|---|\n")
+        val summary = StringBuilder("| model | lang | first words, s (median) | first words, s (slowest) | reply, s (median) | pieces/s (median) | new prompt tokens (median) | prompt tokens (median) | chars/token (median) |\n|---|---|---|---|---|---|---|---|---|\n")
         val deadline = System.getenv("ISKRA_EVAL_DEADLINE_MS")?.toLongOrNull() ?: Long.MAX_VALUE
         for (spec in models!!.split(';').filter { it.isNotBlank() }) {
             if (System.currentTimeMillis() > deadline) { summary.append("| ${spec.substringBefore('|')} | — | skipped: out of time | | |\n"); continue }
@@ -131,6 +131,17 @@ class LocalModelEval {
                     val warmTokens = stats.drop(beforeWarm).lastOrNull()?.promptTokens ?: 0
                     while (stats.size > beforeWarm) stats.removeAt(stats.lastIndex)
                     doc.append("\n*(read ahead when the chat opens: %s, %d tokens, %.1f s)*\n".format(java.util.Locale.ROOT, warmed, warmTokens, (System.nanoTime() - tw) / 1e9))
+                    // What the app does after each reply and after the night job (0.16.1): the beginning of the next prompt
+                    // is read while the reply is read or heard. Not a reply either; noted when it read more than a few tokens.
+                    fun readAhead(what: String) {
+                        val before = stats.size
+                        val t = System.nanoTime()
+                        runBlocking { agent.warmUpPhone() }
+                        val g = stats.drop(before).lastOrNull()
+                        while (stats.size > before) stats.removeAt(stats.lastIndex)
+                        if (g != null && g.newTokens > 8) doc.append("\n*(read ahead %s: %d new tokens, %.1f s)*\n".format(java.util.Locale.ROOT,
+                            what, g.newTokens, (System.nanoTime() - t) / 1e9))
+                    }
                     for (q in script) {
                         if (q.startsWith("@+") && q.endsWith("d")) {
                             val days = q.removePrefix("@+").removeSuffix("d").toInt()
@@ -148,6 +159,7 @@ class LocalModelEval {
                             kept.delete()
                             doc.append("\n**Night diary** (%.1f s): %s\n".format(java.util.Locale.ROOT, (System.nanoTime() - td) / 1e9,
                                 when { entry == null -> "— (raw: `" + raw.take(160).replace("\n", " ") + "`)"; entry.text.isBlank() -> "(nothing to write)"; else -> entry.text }))
+                            readAhead("for the morning")
                             continue
                         }
                         val before = stats.size
@@ -163,6 +175,7 @@ class LocalModelEval {
                             if (c.code < 32 || c.code >= 0x2E80) "\\u%04x".format(c.code) else c.toString() }.joinToString("") + "`"
                         doc.append("\n**Q:** $q\n\n**A** [${r.emotion.name.lowercase()}] ($how$note): ${r.text}\n")
                         if (r.actions.isNotEmpty()) doc.append("\n*(tools: ${r.actions.joinToString("; ") { it.description }})*\n")
+                        if (r.error == null) readAhead("after the reply")
                     }
                     // What the night job would keep: a recap of the oldest turns, made by this model.
                     val t1 = System.nanoTime()
@@ -173,8 +186,9 @@ class LocalModelEval {
                     // Not kept: what the model wrote, to see why the filter refused it.
                     if (episodes.isEmpty() && raw.isNotBlank()) doc.append("\n*(not kept; the model wrote: `${raw.take(700).replace("\n", " ⏎ ").replace("`", "'")}`)*\n")
                     fun median(xs: List<Double>) = xs.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
-                    summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.0f | %.0f | %.2f |\n".format(java.util.Locale.ROOT,
-                        median(stats.map { it.firstPieceMs / 1000.0 }), median(stats.map { it.totalMs / 1000.0 }), median(stats.map { it.piecesPerSecond }),
+                    summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.1f | %.0f | %.0f | %.2f |\n".format(java.util.Locale.ROOT,
+                        median(stats.map { it.firstPieceMs / 1000.0 }), stats.maxOfOrNull { it.firstPieceMs / 1000.0 } ?: 0.0,
+                        median(stats.map { it.totalMs / 1000.0 }), median(stats.map { it.piecesPerSecond }),
                         median(stats.map { it.newTokens.toDouble() }), median(stats.map { it.promptTokens.toDouble() }),
                         // How long a token is in this model's prompts: what the phone fits the dialogue by.
                         median(stats.filter { it.promptTokens > 0 }.map { it.promptChars.toDouble() / it.promptTokens })))

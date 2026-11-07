@@ -530,6 +530,15 @@ object LocalBrain {
         scope.launch { engineLock.withLock { closeEngine(save = true) } }
     }
 
+    /** The model is in memory now: reading ahead after an answer that didn't need the model doesn't load it. */
+    val isLoaded: Boolean get() = engine != null
+
+    /** Closes the model now, keeping its dialogue cache (the night job, once the morning's prompt is read ahead). */
+    suspend fun unloadNow() {
+        idle?.cancel()
+        engineLock.withLock { closeEngine(save = true) }
+    }
+
     private const val KEY_MODEL = "model"
     private const val KEY_ENABLED = "enabled"
 }

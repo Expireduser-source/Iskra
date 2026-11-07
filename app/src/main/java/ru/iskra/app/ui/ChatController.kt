@@ -68,12 +68,23 @@ class ChatController(private val app: IskraApp) {
      * reply doesn't wait for it (Gemma 4 with its tools: ~930 tokens the first time after a download or an update). When
      * it is already read, a few tokens; with a cloud brain, nothing.
      */
-    fun warmUp() {
-        if (_busy.value) return
+    fun warmUp() = readAhead(afterReply = false)
+
+    /**
+     * [afterReply]: right after her reply, while it is read or heard. What the message taught her (a name, a plan), notes
+     * meant only for it, a timer's round and a dialogue window that moved change the beginning of the next prompt; read
+     * now, they don't hold up the next reply (ARM evaluation 0.16.0: 150–270 tokens, 10–17 s before E4B's first words).
+     * Usually only a few tokens. Only with the model in memory: an answer that didn't need it doesn't load it.
+     */
+    private fun readAhead(afterReply: Boolean) {
+        if (_busy.value || (afterReply && !ru.iskra.app.data.LocalBrain.isLoaded)) return
         scope.launch {
             val ms = SystemClock.elapsedRealtime()
             val read = withContext(Dispatchers.IO) { runCatching { app.agent.warmUpPhone() }.getOrDefault(false) }
-            if (read) Diag.i("timing", tr("Подсказка прочитана заранее: ${SystemClock.elapsedRealtime() - ms} мс", "Prompt read ahead: ${SystemClock.elapsedRealtime() - ms} ms"))
+            val took = SystemClock.elapsedRealtime() - ms
+            if (read && (!afterReply || took >= 300)) Diag.i("timing",
+                if (afterReply) tr("Начало следующей подсказки прочитано после ответа: $took мс", "Next prompt's beginning read after the reply: $took ms")
+                else tr("Подсказка прочитана заранее: $took мс", "Prompt read ahead: $took ms"))
         }
     }
 
@@ -115,7 +126,10 @@ class ChatController(private val app: IskraApp) {
             }
             // A free model that disappeared: pick another one for the next message.
             if (reply.errorKind == ru.iskra.core.llm.LlmException.Kind.MODEL) ru.iskra.app.data.FreeBrain.repick()
-            if (interactions.isCurrent(token)) deliver(reply, commandAt, stream)
+            if (interactions.isCurrent(token)) {
+                deliver(reply, commandAt, stream)
+                if (reply.error == null) readAhead(afterReply = true)
+            }
         }
     }
 

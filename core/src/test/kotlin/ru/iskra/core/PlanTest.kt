@@ -193,6 +193,29 @@ class PlanTest {
         }
     }
 
+    @Test fun newsToldBeforeSheAsksIsNotAskedFor() = withLang(Lang.RU) {
+        runBlocking {
+            val memory = MemoryManager(InMemoryMemoryStore())
+            memory.add("Планы владельца на 5 ноября 2026: экзамен по физике", MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, 0)
+            val provider = FakeProvider(MutableList(2) { { _: ru.iskra.core.llm.LlmRequest -> LlmResponse("[happy] Мрр, вот это да!", emptyList()) } })
+            val a = CompanionAgent(persona = Personas.ISKRA, memory = memory, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { provider }, clock = { ms(2026, 11, 6, 12) }, random = Random(1))
+            a.handle("Сдала на пятёрку!")
+            assertTrue(provider.requests[0].situation.contains("это хорошая новость"), provider.requests[0].situation)
+            // Told without being asked: kept with the plan, and the next message has no «спроси, как прошло».
+            assertEquals("5 ноября 2026 у владельца было: экзамен по физике (владелец: «Сдала на пятёрку!»)", memory.all().single().text)
+            a.handle("Что посмотреть вечером?")
+            assertFalse(provider.requests[1].situation.contains("спроси, как прошло"), provider.requests[1].situation)
+            // «Я сегодня поела» is not news of the exam.
+            val other = MemoryManager(InMemoryMemoryStore())
+            other.add("Планы владельца на 5 ноября 2026: экзамен по физике", MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, 0)
+            CompanionAgent(persona = Personas.ISKRA, memory = other, conversation = InMemoryConversationStore(), stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { FakeProvider(mutableListOf({ _ -> LlmResponse("[happy] Мрр!", emptyList()) })) },
+                clock = { ms(2026, 11, 6, 12) }, random = Random(1)).handle("Я сегодня поела")
+            assertEquals("Планы владельца на 5 ноября 2026: экзамен по физике", other.all().single().text)
+        }
+    }
+
     @Test fun tastesAgeAndFamily() = withLang(Lang.RU) {
         fun f(t: String) = MemoryTalk.fact(t, today)
         assertEquals("Владелец любит пиццу", f("Я очень люблю пиццу")?.text)

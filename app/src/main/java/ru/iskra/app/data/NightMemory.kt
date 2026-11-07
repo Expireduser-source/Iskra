@@ -48,8 +48,13 @@ object NightMemory {
         val saved = LocalBrain.aside {
             app.agent.summarizeOnPhone().also { entry = runCatching { app.agent.writeDiary(onPhone = true) }.getOrNull() }
         } ?: return tr("модель не загрузилась", "the model didn't load")
+        // The morning's prompt is read now, on charge: the recaps took the oldest turns out of the dialogue and a new day
+        // changed what she knows to say, so the day's first message would read the whole dialogue first (E4B: ~15 s
+        // before its first words). It stays in the dialogue cache for the morning; the model leaves memory.
+        val morning = runCatching { app.agent.warmUpPhone() }.getOrDefault(false)
+        if (morning) LocalBrain.unloadNow()
         return (if (saved == 0) tr("пересказывать пока нечего", "nothing to recap yet") else tr("сжато в пересказы: $saved", "recaps made: $saved")) +
-            diaryText(entry)
+            diaryText(entry) + (if (morning) tr("; утро прочитано заранее", "; the morning read ahead") else "")
     }
 
     /** For the journal: whether she wrote her diary — the day only, never the words. */

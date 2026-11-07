@@ -514,6 +514,12 @@ class CompanionAgent(
                 continue
             }
             if (k.done || k.plan.date.isAfter(today)) continue
+            // «Сдала на пятёрку!» before she asked: the plan she was to ask about is told, with how it went — otherwise the
+            // note «спроси, как прошло» came back with the next message, after the news (a read-ahead test, 0.16.1).
+            if (due?.item?.id == k.item.id && PlanTalk.outcomeNote(listOf(k), null, text, k.plan.ru, today) != null) {
+                memory.update(k.item.copy(text = PlanTalk.withOutcomeText(k, text)))
+                continue
+            }
             val told = PlanTalk.mentions(k.plan, text) && (k.plan.date.isBefore(today) || PlanTalk.outcome(text))
             val asked = due?.item?.id == k.item.id && PlanTalk.mentions(k.plan, reply)
             if (told || asked) memory.update(k.item.copy(text = k.plan.doneText))
