@@ -61,7 +61,7 @@ import ru.iskra.core.persona.Emotion
 private fun Section(title: String, content: @Composable () -> Unit) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, fontSize = 18.sp)
+            Text(title, style = MaterialTheme.typography.titleMedium)
             content()
         }
     }

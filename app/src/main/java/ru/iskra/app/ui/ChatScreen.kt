@@ -593,7 +593,7 @@ private fun InputBar(input: String, onInput: (String) -> Unit, busy: Boolean, li
                     val t = rememberSeconds(!still)
                     val ring = c.sparkPink
                     Round(SolidColor(scheme.secondary), enabled = true, tag = "chat_mic", label = tr("Остановить запись", "Stop recording"), onClick = onMic,
-                        behind = Modifier.drawBehind {
+                        modifier = Modifier.drawBehind {
                             for (i in 0..1) {
                                 val k = if (still) 0.5f else (t.value * 0.9f + i * 0.5f) % 1f
                                 drawCircle(ring.copy(alpha = 0.4f * (1f - k)), radius = size.minDimension / 2f * (1f + 0.55f * k))
@@ -608,9 +608,9 @@ private fun InputBar(input: String, onInput: (String) -> Unit, busy: Boolean, li
 }
 
 @Composable
-private fun Round(brush: Brush, enabled: Boolean, tag: String, label: String, onClick: () -> Unit, behind: Modifier = Modifier,
+private fun Round(brush: Brush, enabled: Boolean, tag: String, label: String, onClick: () -> Unit, modifier: Modifier = Modifier,
                   content: @Composable () -> Unit) {
-    Box(behind.size(52.dp).clip(CircleShape).background(brush, alpha = if (enabled) 1f else 0.45f)
+    Box(modifier.size(52.dp).clip(CircleShape).background(brush, alpha = if (enabled) 1f else 0.45f)
         .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
         .testTag(tag).semantics { contentDescription = label },
         contentAlignment = Alignment.Center) { content() }

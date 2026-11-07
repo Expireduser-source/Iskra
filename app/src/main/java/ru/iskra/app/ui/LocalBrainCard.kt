@@ -55,7 +55,7 @@ fun LocalBrainCard() {
 
     Card(Modifier.fillMaxWidth().testTag("local_brain")) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(tr("📱 Мозг на телефоне — без интернета", "📱 A brain on the phone — no internet"), fontSize = 18.sp)
+            Text(tr("📱 Мозг на телефоне — без интернета", "📱 A brain on the phone — no internet"), style = MaterialTheme.typography.titleMedium)
             when (val s = state) {
                 is LocalBrain.State.Unsupported -> Text(s.reason, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LocalBrain.State.None, is LocalBrain.State.Failed -> {

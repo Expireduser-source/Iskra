@@ -50,7 +50,7 @@ fun AboutSection() {
     var status by remember { mutableStateOf<String?>(null) }
     fun open(url: String) = runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
 
-    Text(tr("О приложении", "About"), fontSize = 20.sp)
+    Text(tr("О приложении", "About"), style = MaterialTheme.typography.titleLarge)
     Text(tr("Искра ", "Iskra ") + BuildConfig.VERSION_NAME + tr(" (сборка ", " (build ") + DiagCollector.build() + ")", fontSize = 14.sp)
     Text(tr(
         "Свободная программа: исходный код открыт по лицензии GNU GPL v3 — её можно использовать, изучать, менять и распространять. " +
@@ -123,7 +123,7 @@ fun UpdateBanner() {
     val rel = r ?: return
     Card(Modifier.fillMaxWidth().padding(8.dp).testTag("update_banner")) {
         Column(Modifier.padding(12.dp)) {
-            Text(tr("🎁 Вышла Искра ${rel.version}", "🎁 Iskra ${rel.version} is out"), fontSize = 16.sp)
+            Text(tr("🎁 Вышла Искра ${rel.version}", "🎁 Iskra ${rel.version} is out"), style = MaterialTheme.typography.titleSmall)
             UpdateCheck.shortNotes(rel.notes).takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Text(tr("Скачай APK и открой его — Искра обновится, память и настройки сохранятся.",
                 "Download the APK and open it — Iskra updates, memory and settings stay."), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
