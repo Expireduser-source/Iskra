@@ -81,7 +81,7 @@ class LocalModelEval {
         System.load(lib!!)
         val out = File(System.getenv("ISKRA_EVAL_OUT") ?: "build/eval").apply { mkdirs() }
         val threads = (System.getenv("ISKRA_EVAL_THREADS") ?: "4").toInt()
-        val summary = StringBuilder("| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) | new prompt tokens (median) |\n|---|---|---|---|---|---|\n")
+        val summary = StringBuilder("| model | lang | first words, s (median) | reply, s (median) | pieces/s (median) | new prompt tokens (median) | prompt tokens (median) | chars/token (median) |\n|---|---|---|---|---|---|---|---|\n")
         val deadline = System.getenv("ISKRA_EVAL_DEADLINE_MS")?.toLongOrNull() ?: Long.MAX_VALUE
         for (spec in models!!.split(';').filter { it.isNotBlank() }) {
             if (System.currentTimeMillis() > deadline) { summary.append("| ${spec.substringBefore('|')} | — | skipped: out of time | | |\n"); continue }
@@ -147,9 +147,11 @@ class LocalModelEval {
                     // Not kept: what the model wrote, to see why the filter refused it.
                     if (episodes.isEmpty() && raw.isNotBlank()) doc.append("\n*(not kept; the model wrote: `${raw.take(700).replace("\n", " ⏎ ").replace("`", "'")}`)*\n")
                     fun median(xs: List<Double>) = xs.sorted().let { if (it.isEmpty()) 0.0 else it[it.size / 2] }
-                    summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.0f |\n".format(java.util.Locale.ROOT,
+                    summary.append("| $name | ${lang.name} | %.1f | %.1f | %.1f | %.0f | %.0f | %.2f |\n".format(java.util.Locale.ROOT,
                         median(stats.map { it.firstPieceMs / 1000.0 }), median(stats.map { it.totalMs / 1000.0 }), median(stats.map { it.piecesPerSecond }),
-                        median(stats.map { it.newTokens.toDouble() })))
+                        median(stats.map { it.newTokens.toDouble() }), median(stats.map { it.promptTokens.toDouble() }),
+                        // How long a token is in this model's prompts: what the phone fits the dialogue by.
+                        median(stats.filter { it.promptTokens > 0 }.map { it.promptChars.toDouble() / it.promptTokens })))
                 }
             }
             File(out, "$name.md").writeText(doc.toString())

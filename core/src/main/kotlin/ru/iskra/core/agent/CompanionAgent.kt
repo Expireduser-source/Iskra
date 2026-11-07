@@ -688,8 +688,10 @@ class CompanionAgent(
         if (small) {
             // Steady facts go with the instructions (cached); only memories matching this message come next to it.
             val mem = forPrompt(memory.context(text, now, profileLimit = 4, relatedLimit = 3, recentLimit = 1, onlyMatching = true), now)
-            system = composer.compact(persona.localized(), state.style, SelfGender.feminine(memory.all()), rules(), ownWords(), tools = provider.nativeTools)
-            profile = composer.compactProfile(mem, now)
+            system = composer.compact(persona.localized(), rules(), tools = provider.nativeTools)
+            // Learned about the person, so it changes now and then: after the tools, which then stay read.
+            profile = listOf(composer.compactPersonal(state.style, SelfGender.feminine(memory.all()), ownWords()), composer.compactProfile(mem, now))
+                .filter { it.isNotBlank() }.joinToString("\n\n")
             val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
             val notes = runCatching { todayNotes(now) }.getOrDefault(emptyList()).take(1)
             situation = listOf(composer.compactSituation(mem), notes.joinToString("\n") { "($it)" }, nudge ?: composer.languageNudge(text, lastReply))

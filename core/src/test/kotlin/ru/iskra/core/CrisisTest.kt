@@ -220,8 +220,8 @@ class CrisisTest {
             // What holds anyway: actions only through tools and only reported when done; memory is data.
             for (b in persona.boundaries) assertTrue(free.contains(b), b)
         }
-        assertFalse(c.compact(Personas.ISKRA, style).contains("честно говоришь"))
-        assertTrue(c.compact(Personas.ISKRA, style, rules = setOf(ModelRule.AI_HONESTY)).contains("Ты программа с ИИ и честно говоришь об этом"))
+        assertFalse(c.compact(Personas.ISKRA).contains("честно говоришь"))
+        assertTrue(c.compact(Personas.ISKRA, rules = setOf(ModelRule.AI_HONESTY)).contains("Ты программа с ИИ и честно говоришь об этом"))
         runBlocking {
             val t = LocalDateTime.of(2026, 11, 6, 12, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
             fun phoneAgent(phone: PhoneModel, rules: Set<ModelRule>) = CompanionAgent(
@@ -263,10 +263,10 @@ class CrisisTest {
         val stable = c.stable(Personas.ISKRA, style, toolsAvailable = true, ownWords = words)
         assertTrue(stable.contains("Пожелания владельца (они важнее манеры речи выше): $words"), stable)
         assertTrue(stable.indexOf(words) > stable.indexOf("Манера речи"))
-        assertTrue(c.compact(Personas.ISKRA, style, ownWords = words).contains(words))
+        assertTrue(c.compactPersonal(style, ownWords = words).contains(words))
         assertFalse(c.stable(Personas.ISKRA, style, toolsAvailable = true).contains("Пожелания владельца"))
         assertEquals(ru.iskra.core.agent.PromptComposer.OWN_WORDS_MAX + "Пожелания владельца (они важнее манеры речи выше): ".length,
-            c.compact(Personas.ISKRA, style, ownWords = "а".repeat(5000)).lines().first { it.startsWith("Пожелания") }.length)
+            c.compactPersonal(style, ownWords = "а".repeat(5000)).lines().first { it.startsWith("Пожелания") }.length)
         runBlocking {
             val phone = PhoneModel()
             val agent = CompanionAgent(
@@ -274,7 +274,9 @@ class CrisisTest {
                 stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
                 providerFactory = { null }, localFactory = { phone }, random = Random(1), ownWords = { words })
             agent.handle("Привет")
-            assertTrue(phone.asked.single().system.contains(words))
+            // After the steady instructions (and Gemma 4's tools): changing them doesn't make the model read those again.
+            assertTrue(phone.asked.single().profile.contains(words))
+            assertFalse(phone.asked.single().system.contains(words))
         }
         Unit
     }

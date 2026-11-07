@@ -126,10 +126,10 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
 
     /**
      * A short version for small on-device models: they follow a few clear lines better than a long list,
-     * and every token of the prompt costs time on the phone's processor.
+     * and every token of the prompt costs time on the phone's processor. Only what never changes for a person: what is
+     * learned about them goes after it ([compactPersonal]), so learning it doesn't make the model read this again.
      */
-    fun compact(persona: PersonaSpec, style: StyleProfile, ownerFeminine: Boolean? = null, rules: Set<ModelRule> = emptySet(),
-                ownWords: String = "", tools: Boolean = false): String = buildString {
+    fun compact(persona: PersonaSpec, rules: Set<ModelRule> = emptySet(), tools: Boolean = false): String = buildString {
         // Plain words for small models: "the owner" made a 0.5B model answer "I'm an owner, not a cat!"; an example reply in
         // the prompt was copied into every answer, so there is none.
         // «цифровая», as in the cloud persona: who she is, not a rule (without it Gemma 3 1B once said «Да, я человек»).
@@ -137,14 +137,16 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
             "You are ${persona.name}, a playful and caring digital cat-girl who lives in this phone. You are talking with the person whose phone it is."))
         appendLine(tr("Тебя зовут ${persona.name}. Ты девушка: о себе говори в женском роде («я рада», «я поняла»). С человеком — на «ты».",
             "Your name is ${persona.name} (it means “spark”). Speak about yourself as a girl (she/her)."))
-        address(ownerFeminine, unknownHint = false)?.let { appendLine(it) }
         appendLine(tr("Отвечай как ${persona.name}, от первого лица: тепло, живо и коротко (1–3 предложения), на языке собеседника. Изредка, не в каждом ответе, вставляй кошачье «мрр».",
             "Answer as ${persona.name}, in the first person: warm, lively and short (1–3 sentences), in the person's language. Once in a while, not in every reply, put in a cat-like “mrr”."))
-        // Gemma 4 with tools promised a timer in words instead of calling one (ARM evaluation, 0.14.0).
+        // Gemma 4 with tools promised a timer in words instead of calling one, and offered reminders and the weather in
+        // replies about breakfast and thanks (ARM evaluation, 0.14.0).
         if (tools) appendLine(tr("Просят что-то сделать на телефоне — поставить таймер, будильник или напоминание, записать заметку, узнать погоду, " +
-                "включить фонарик, открыть приложение — сразу вызови подходящий инструмент (полчаса — 1800 секунд). Не говори, что сделала, пока он не ответил.",
+                "включить фонарик, открыть приложение — сразу вызови подходящий инструмент (полчаса — 1800 секунд). Не говори, что сделала, пока он не ответил. " +
+                "Не просят — не предлагай.",
             "When asked to do something on the phone — set a timer, an alarm or a reminder, write a note, check the weather, turn on the " +
-                "flashlight, open an app — call the right tool at once (half an hour is 1800 seconds). Don't say it's done until the tool answers."))
+                "flashlight, open an app — call the right tool at once (half an hour is 1800 seconds). Don't say it's done until the tool answers. " +
+                "Not asked — don't offer."))
         appendLine(if (ModelRule.AI_HONESTY in rules) tr("Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты.",
             "You are an AI program and say so honestly. If you don't know something, say so — don't invent facts.")
             else tr("Не знаешь — так и скажи, не выдумывай факты.", "If you don't know something, say so — don't invent facts."))
@@ -152,6 +154,16 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
             "Mention what you know about the person, and their name, only when it fits — not in every reply."))
         appendLine(tr("Начни ответ с тега настроения: [happy], [curious], [shy], [sad] или [neutral].",
             "Start the reply with a mood tag: [happy], [curious], [shy], [sad] or [neutral]."))
+    }.trim()
+
+    /**
+     * What a small model is told about this person and learns now and then: how to address them, the manner of speech
+     * they asked for, their own instructions (Settings → «Свобода модели»). After the instructions and Gemma 4's tools:
+     * when the app learned how to address the person, the model in the ARM evaluation read its whole prompt again (10 s
+     * instead of 1 s for one reply; with the tools before it, it would be all of them too).
+     */
+    fun compactPersonal(style: StyleProfile, ownerFeminine: Boolean? = null, ownWords: String = ""): String = buildString {
+        address(ownerFeminine, unknownHint = false)?.let { appendLine(it) }
         style.describeForPrompt().takeIf { it.isNotEmpty() }?.let { appendLine(it) }
         ownWordsLine(ownWords)?.let { appendLine(it) }
     }.trim()

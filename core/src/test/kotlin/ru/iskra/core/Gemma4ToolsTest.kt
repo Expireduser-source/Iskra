@@ -259,3 +259,78 @@ object Gemma4Tools2 {
         override fun close() = Unit
     }
 }
+
+/**
+ * Fitting the dialogue into a phone model's context (ARM evaluation, 0.14.0): with Gemma 4's tools the guess went over
+ * the room after a call, everything but the tool's result was dropped, and the model greeted the person anew right after
+ * setting their reminder.
+ */
+class PromptFitTest {
+    private val call = ToolCall("call_1", "set_reminder", buildJsonObject { put("in_minutes", 30); put("text", "вынуть пирог") })
+
+    @Test fun theRequestAndWhatWasDoneForItStay() {
+        val messages = listOf(
+            ChatMessage.User("Старая реплика"), ChatMessage.Assistant("Старый ответ"),
+            ChatMessage.User("Через полчаса надо вынуть пирог, не дай мне забыть"),
+            ChatMessage.Assistant("Сейчас!", listOf(call)),
+            ChatMessage.ToolResult("call_1", "set_reminder", "OK: напомню через 30 мин"),
+        )
+        // Even the instructions alone are over the room: the older turns go, the request and its call stay.
+        val r = LocalLlmProvider.fit(LlmRequest("И".repeat(3000), messages), 1000)
+        assertEquals(messages.drop(2), r.messages)
+        val p = ChatFormat.GEMMA4.prompt(r).text
+        assertTrue(p.contains("<|turn>user\nЧерез полчаса надо вынуть пирог"), p.takeLast(400))
+        assertTrue(p.endsWith("<tool_response|>"), p.takeLast(200))
+        // Room for everything: nothing goes.
+        assertEquals(messages, LocalLlmProvider.fit(LlmRequest("Ты — Искра.", messages), 4000).messages)
+    }
+
+    /** An engine counting [perToken] characters per token, refusing a prompt over its context as the native one does. */
+    private class Counting(override val contextSize: Int, private val perToken: Int) : LlamaEngine {
+        val prompts = mutableListOf<String>()
+        var refused = 0
+        private var last = 0
+        override val info = "counting"
+        override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, head: Int, onPiece: (String) -> Boolean): String {
+            val tokens = prompt.length / perToken
+            if (tokens + maxTokens > contextSize) { refused++; throw IllegalArgumentException("prompt too long for the context") }
+            prompts += prompt
+            last = tokens
+            val answer = "[happy] Я тут!"
+            onPiece(answer)
+            return answer
+        }
+        override fun lastRead() = last to 0
+        override fun cancel() = Unit
+        override fun close() = Unit
+    }
+
+    private fun dialogue(n: Int) = (1..n).flatMap { i ->
+        listOf(ChatMessage.User("Реплика номер $i: " + "слово ".repeat(12)), ChatMessage.Assistant("Ответ номер $i: " + "мрр ".repeat(12)))
+    } + ChatMessage.User("Последний вопрос")
+
+    @Test fun aPromptTooLongIsFittedAgain() = withLang(Lang.RU) {
+        runBlocking {
+            // Two characters a token: more than the first guess for Gemma (three).
+            val engine = Counting(2048, 2)
+            val r = LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:test").complete(LlmRequest("Ты — Искра.", dialogue(60)))
+            assertEquals("[happy] Я тут!", r.text)
+            assertEquals(1, engine.refused)
+            assertTrue(engine.prompts.single().contains("Последний вопрос"))
+        }
+    }
+
+    @Test fun theMeasureOfATokenIsLearned() = withLang(Lang.RU) {
+        runBlocking {
+            // Five characters a token: the first prompt is fitted by the cautious guess, the next by the measure.
+            val engine = Counting(2048, 5)
+            val p = LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:test")
+            val request = LlmRequest("Ты — Искра.", dialogue(80))
+            p.complete(request)
+            p.complete(request)
+            assertEquals(0, engine.refused)
+            fun turns(prompt: String) = Regex("Реплика номер").findAll(prompt).count()
+            assertTrue(turns(engine.prompts[1]) >= turns(engine.prompts[0]) * 13 / 10, "${turns(engine.prompts[0])} → ${turns(engine.prompts[1])}")
+        }
+    }
+}

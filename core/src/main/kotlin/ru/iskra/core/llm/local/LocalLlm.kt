@@ -245,6 +245,15 @@ enum class ChatFormat {
         return Prompt(sb.toString(), stable, head)
     }
 
+    /**
+     * Characters per token, a cautious first guess for fitting the dialogue until the model's own prompts are measured:
+     * Gemma's large vocabulary takes Russian in longer pieces than Qwen's.
+     */
+    val charsPerToken: Double get() = when (this) {
+        GEMMA, GEMMA4 -> 3.0
+        else -> 2.5
+    }
+
     /** Text that means the model started writing the next turn itself. */
     val stops: List<String> get() = when (this) {
         CHATML, CHATML_NO_THINK -> listOf("<|im_end|>", "<|im_start|>", "<|endoftext|>")
@@ -288,13 +297,36 @@ class LocalLlmProvider(
     private val lock = Mutex()
     /** Replies since the last one with a «мрр»: small models began every reply with it, copying their own history. */
     private var sincePurr = 3
+    /** Characters per token of this model's prompts, measured on the last long one; null before it. */
+    @Volatile private var charsPerToken: Double? = null
 
     override suspend fun complete(request: LlmRequest): LlmResponse = stream(request) {}
 
     override suspend fun stream(request: LlmRequest, onText: (String) -> Unit): LlmResponse = lock.withLock {
+        // The engine refuses a prompt longer than its context before reading any of it: then the dialogue is fitted again,
+        // with the measure of a token taken smaller.
+        var perToken = charsPerToken?.let { it * 0.9 } ?: format.charsPerToken
+        repeat(2) {
+            try {
+                return@withLock generateOnce(request, onText, perToken)
+            } catch (e: PromptTooLong) {
+                perToken *= 0.7
+            }
+        }
+        try {
+            generateOnce(request, onText, perToken)
+        } catch (t: PromptTooLong) {
+            throw LlmException("on-device: prompt too long for the context", LlmException.Kind.SERVER, t)
+        }
+    }
+
+    /** The engine said the prompt doesn't fit its context (nothing was read or shown). */
+    private class PromptTooLong(cause: Throwable) : Exception(cause)
+
+    private suspend fun generateOnce(request: LlmRequest, onText: (String) -> Unit, perToken: Double): LlmResponse {
         val e = engine() ?: throw LlmException("on-device model unavailable", LlmException.Kind.NOT_CONFIGURED)
         val budget = minOf(maxTokens, request.maxTokens)
-        val rendered = format.prompt(fit(request, e.contextSize - budget))
+        val rendered = format.prompt(fit(request, e.contextSize - budget, perToken))
         val prompt = rendered.text
         // Small Qwen models sometimes slip Chinese characters into Russian or English; unless the person wrote them, drop them.
         val lastUser = (request.messages.lastOrNull { it is ChatMessage.User } as? ChatMessage.User)?.text.orEmpty()
@@ -368,7 +400,9 @@ class LocalLlmProvider(
                         scope.isActive
                     }
                 } catch (t: Throwable) {
-                    if (cont.isActive) cont.resumeWith(Result.failure(LlmException("on-device: ${t.message}", LlmException.Kind.SERVER, t)))
+                    val failure = if (t is IllegalArgumentException && t.message.orEmpty().contains("too long") && pieces == 0) PromptTooLong(t)
+                        else LlmException("on-device: ${t.message}", LlmException.Kind.SERVER, t)
+                    if (cont.isActive) cont.resumeWith(Result.failure(failure))
                     return@suspendCancellableCoroutine
                 }
                 if (cont.isActive) cont.resume(result)
@@ -377,6 +411,8 @@ class LocalLlmProvider(
         if (!leadDone) cleanStart(lead.toString(), dropPurr).takeIf { it.isNotEmpty() }?.let(onText)
         val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
         val (promptTokens, reused) = e.lastRead()
+        // The real measure of a token for the next dialogue fitting (a short prompt says little: markup weighs more).
+        if (promptTokens >= 200) charsPerToken = prompt.length.toDouble() / promptTokens
         onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000, promptTokens, promptTokens - reused))
         var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
         // What was shown is the part after the thought channel; the reply kept in the chat is the same.
@@ -388,7 +424,7 @@ class LocalLlmProvider(
         reply = said
         val final = cleanStart(if (guard) stripForeign(reply, allowed).replace(Regex(" {2,}"), " ").replace(Regex(" ([,.!?])"), "$1").trim() else reply, dropPurr).trim()
         sincePurr = if (PURR.containsMatchIn(final)) 0 else sincePurr + 1
-        LlmResponse(final, calls)
+        return LlmResponse(final, calls)
     }
 
     /** Gemma 4's start of a reply: waiting to see whether it opens the thought channel, inside it, or the answer itself. */
@@ -482,40 +518,51 @@ class LocalLlmProvider(
             return out.toString()
         }
 
-        /** A cautious guess: Russian is about 2.5 characters per token in these vocabularies, English about 4. */
-        fun estimateTokens(text: String): Int = text.length * 2 / 5 + 8
+        /** A cautious guess: Russian is about 2.5 characters per token in small vocabularies (Qwen), English about 4. */
+        fun estimateTokens(text: String, charsPerToken: Double = 2.5): Int = (text.length / charsPerToken).toInt() + 8
 
         /**
-         * The dialogue that fits into [tokens]: the oldest turns go first; a single message longer than the room
-         * (a long shared text) keeps its beginning and end.
+         * The dialogue that fits into [tokens]: the oldest turns go first; the person's last message and what the model
+         * did for it (its tool calls and their results) always stay — a message longer than the room (a long shared
+         * text) keeps its beginning and end. [charsPerToken]: measured on this model's prompts, or a cautious guess.
          */
-        fun fit(request: LlmRequest, tokens: Int): LlmRequest {
+        fun fit(request: LlmRequest, tokens: Int, charsPerToken: Double = 2.5): LlmRequest {
             val room = (tokens * 0.92).toInt()
-            val fixed = estimateTokens(request.system) + estimateTokens(request.profile) +
-                (if (request.tools.isEmpty()) 0 else estimateTokens(Gemma4Tools.declarations(request.tools)))
-            fun size(r: LlmRequest) = fixed + estimateTokens(r.situation) + r.messages.sumOf {
+            // Each text's own share; the turn's markup is counted per message below (and in the measure of a token).
+            fun est(text: String) = if (text.isEmpty()) 0 else (text.length / charsPerToken).toInt() + 2
+            val fixed = est(request.system) + est(request.profile) + est(request.situation) +
+                (if (request.tools.isEmpty()) 0 else est(Gemma4Tools.declarations(request.tools)))
+            fun size(messages: List<ChatMessage>) = fixed + messages.sumOf {
                 when (it) {
-                    is ChatMessage.User -> estimateTokens(it.text)
-                    is ChatMessage.Assistant -> estimateTokens(it.text) + it.toolCalls.size * 24
-                    is ChatMessage.ToolResult -> estimateTokens(it.content) + 12
+                    is ChatMessage.User -> est(it.text)
+                    is ChatMessage.Assistant -> est(it.text) + it.toolCalls.sumOf { c -> est(c.name + c.arguments.toString()) }
+                    is ChatMessage.ToolResult -> est(it.content) + 12
                 }
-            } + 6 * r.messages.size
-            var r = request
-            while (size(r) > room && r.messages.size > 1) {
-                // Drop the oldest turn; keep the dialogue starting with the owner.
-                var rest = r.messages.drop(1)
-                while (rest.size > 1 && rest.first() !is ChatMessage.User) rest = rest.drop(1)
-                r = r.copy(messages = rest)
+            } + 6 * messages.size
+            // With Gemma 4's tools the guess (2.5 characters per token) went over the room after a call: everything was
+            // dropped but the tool's result, and the model, seeing no dialogue, greeted the person anew («Привет! Я рада
+            // познакомиться, Аня») right after setting their reminder (ARM evaluation, 0.14.0).
+            val current = request.messages.indexOfLast { it is ChatMessage.User }.coerceAtLeast(0)
+            val now = request.messages.subList(current, request.messages.size).toList()
+            var older = request.messages.subList(0, current).toList()
+            while (older.isNotEmpty() && size(older + now) > room) {
+                // Drop the oldest turn; keep the dialogue starting with the person.
+                older = older.drop(1)
+                while (older.isNotEmpty() && older.first() !is ChatMessage.User) older = older.drop(1)
             }
-            val over = size(r) - room
-            val last = r.messages.lastOrNull() as? ChatMessage.User
-            if (over > 0 && last != null) {
-                val keep = (last.text.length - over * 5 / 2 - 20).coerceAtLeast(200)
-                val head = last.text.take(keep * 3 / 5)
-                val tail = last.text.takeLast(keep - head.length)
-                r = r.copy(messages = r.messages.dropLast(1) + ChatMessage.User("$head … $tail"))
+            var messages = older + now
+            val over = size(messages) - room
+            val ask = messages.indexOfLast { it is ChatMessage.User }
+            if (over > 0 && ask >= 0) {
+                val text = (messages[ask] as ChatMessage.User).text
+                val keep = (text.length - (over * charsPerToken).toInt() - 20).coerceAtLeast(200)
+                if (keep < text.length) {
+                    val head = text.take(keep * 3 / 5)
+                    val tail = text.takeLast(keep - head.length)
+                    messages = messages.toMutableList().also { it[ask] = ChatMessage.User("$head … $tail") }
+                }
             }
-            return r
+            return request.copy(messages = messages)
         }
     }
 }
