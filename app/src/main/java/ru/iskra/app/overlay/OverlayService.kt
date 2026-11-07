@@ -18,7 +18,6 @@ import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.drawable.GradientDrawable
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
@@ -87,7 +86,10 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private var bubble: TextView? = null
     private var bubbleParams: WindowManager.LayoutParams? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val hideBubble = Runnable { bubble?.visibility = View.GONE }
+    /** The bubble fades and shrinks a little toward her, then is gone. */
+    private val hideBubble = Runnable {
+        bubble?.let { tv -> tv.animate().cancel(); tv.animate().alpha(0f).scaleX(0.92f).scaleY(0.92f).setDuration(160).withEndAction { tv.visibility = View.GONE }.start() }
+    }
     private var sizePx = 0
     private var screenW = 0
     private var screenH = 0
@@ -480,6 +482,8 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         scope.launch { app.chat.replies.collect { spoken -> if (!spoken) ear?.replyFinished() } }
         // Her own screens in front: she rests and lets taps through (see setPassThrough).
         scope.launch { app.ownScreenInFront.collect { setPassThrough(it) } }
+        // A chat in front: she is in it (its header), so here she steps away until it closes (see setAway).
+        scope.launch { app.chatInFront.collect { setAway(it) } }
         // A dangerous action asked for confirmation, but no chat screen is open (e.g. voice command):
         // open the quick chat so the dialog is visible. Overlay permission allows this from the background.
         scope.launch {
@@ -493,18 +497,22 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private fun navBarGuess(): Int = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 24f, resources.displayMetrics).toInt()
 
     private fun createBubble() {
+        val d = resources.displayMetrics.density
+        val shape = BubbleDrawable(d)
         val tv = TextView(this).apply {
             setTextColor(Color.WHITE)
             textSize = 14f
+            runCatching { androidx.core.content.res.ResourcesCompat.getFont(this@OverlayService, R.font.nunito_semibold) }.getOrNull()?.let { typeface = it }
+            setLineSpacing(0f, 1.08f)
             maxWidth = (resources.displayMetrics.widthPixels * 0.7f).toInt()
-            val pad = (10 * resources.displayMetrics.density).toInt()
-            setPadding(pad, pad / 2, pad, pad / 2)
-            background = GradientDrawable().apply { cornerRadius = 18 * resources.displayMetrics.density; setColor(Color.parseColor("#E62A1F3A")) }
+            minWidth = (72 * d).toInt()
+            background = shape
             visibility = View.GONE
             maxLines = 4
             // Without voice, TalkBack reads her lines aloud (with voice it would say them twice).
             if (!settings.ttsEnabled) accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
+        padBubble(tv, shape)
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -515,12 +523,29 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         try { wm.addView(tv, lp); bubble = tv; bubbleParams = lp } catch (_: Exception) { }
     }
 
+    /** Room for the text inside the bubble, and for its tail on the side facing her. */
+    private fun padBubble(tv: TextView, shape: BubbleDrawable) {
+        val d = resources.displayMetrics.density
+        val h = (14 * d).toInt(); val v = (9 * d).toInt(); val tail = shape.tail.toInt()
+        tv.setPadding(h, v + if (shape.tailDown) 0 else tail, h, v + if (shape.tailDown) tail else 0)
+    }
+
     private fun say(text: String) {
         val tv = bubble ?: return
-        if (text.isBlank()) return
+        if (text.isBlank() || away) return
+        val appearing = tv.visibility != View.VISIBLE || tv.alpha < 1f
         tv.text = if (text.length > 160) text.take(157) + "…" else text
         tv.visibility = View.VISIBLE
         positionBubble()
+        if (appearing) {
+            // Pops out of her: from the tail, a little smaller and transparent.
+            val shape = tv.background as? BubbleDrawable
+            tv.animate().cancel()
+            tv.pivotX = shape?.tailAt ?: (tv.measuredWidth / 2f)
+            tv.pivotY = if (shape?.tailDown != false) tv.measuredHeight.toFloat() else 0f
+            tv.alpha = 0f; tv.scaleX = 0.84f; tv.scaleY = 0.84f
+            tv.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        }
         handler.removeCallbacks(hideBubble)
         handler.postDelayed(hideBubble, (2500L + text.length * 45L).coerceAtMost(9000L))
     }
@@ -528,11 +553,21 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     private fun positionBubble() {
         val tv = bubble ?: return
         val lp = bubbleParams ?: return
+        val shape = tv.background as? BubbleDrawable
         tv.measure(View.MeasureSpec.makeMeasureSpec(screenW, View.MeasureSpec.AT_MOST), View.MeasureSpec.UNSPECIFIED)
         val cx = (boxX + sizePx / 2f).coerceIn(0f, screenW.toFloat())
         val nx = (cx - tv.measuredWidth / 2f).toInt().coerceIn(0, (screenW - tv.measuredWidth).coerceAtLeast(0))
         val top = boxY.coerceAtLeast(0f)
-        val ny = (top - tv.measuredHeight - 8).toInt().let { if (it < 0) (top + sizePx * 0.9f).toInt() else it }
+        // Above her, its tail at her ears; no room above (she is at the top) — below her, the tail pointing up.
+        val aboveY = (top + sizePx * 0.06f - tv.measuredHeight).toInt()
+        val above = aboveY >= 0
+        if (shape != null && shape.tailDown != above) {
+            shape.tailDown = above
+            padBubble(tv, shape)
+            tv.measure(View.MeasureSpec.makeMeasureSpec(screenW, View.MeasureSpec.AT_MOST), View.MeasureSpec.UNSPECIFIED)
+        }
+        val ny = if (above) (top + sizePx * 0.06f - tv.measuredHeight).toInt() else (top + sizePx * 0.9f).toInt()
+        if (shape != null) { shape.tailX = cx - nx; shape.invalidateSelf() }
         if (nx != lp.x || ny != lp.y) {
             lp.x = nx; lp.y = ny
             try { wm.updateViewLayout(tv, lp) } catch (_: Exception) { }
@@ -580,7 +615,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
 
     /** Sets touchability and alpha from [windowHidden] and [passThrough]; true if something changed. */
     private fun touchMode(lp: WindowManager.LayoutParams): Boolean {
-        val notTouchable = windowHidden || passThrough
+        val notTouchable = windowHidden || passThrough || away
         val flags = if (notTouchable) lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         else lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         val alpha = if (passThrough) 0.55f else 1f
@@ -597,6 +632,30 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
         if (touchMode(lp)) try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
     }
 
+    /**
+     * A chat is in front (0.16.0): she is in it — alive in its header — so the character on the screen fades out, stops
+     * drawing and lets everything through; her bubble would only repeat the chat. When the chat closes she comes back with
+     * a little pop. With Android's animations off the change is instant (the system scales these to 0).
+     */
+    private var away = false
+
+    private fun setAway(on: Boolean) {
+        if (away == on) return
+        away = on
+        val v = avatar ?: return
+        val lp = params ?: return
+        v.animate().cancel()
+        if (on) {
+            handler.removeCallbacks(hideBubble)
+            bubble?.let { it.animate().cancel(); it.visibility = View.GONE }
+            v.animate().alpha(0f).scaleX(0.86f).scaleY(0.86f).setDuration(180).withEndAction { if (away) v.stop() }.start()
+        } else {
+            v.start()
+            v.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(320).setInterpolator(android.view.animation.OvershootInterpolator(1.8f)).start()
+        }
+        if (touchMode(lp)) try { wm.updateViewLayout(v, lp) } catch (_: Exception) { }
+    }
+
     private fun openQuickChat() {
         startActivity(Intent(this, QuickChatActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
@@ -606,7 +665,7 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
     /** Stage 3: a line of her own, within [ProactivePolicy]'s limits (frequency, quiet hours, screen on). */
     private fun checkProactive() {
         val s = settings
-        if (s.proactive == ProactiveFrequency.OFF || avatar == null || !screenOn) return
+        if (s.proactive == ProactiveFrequency.OFF || avatar == null || !screenOn || away) return
         val app = IskraApp.instance
         if (app.speaker.speaking.value || app.chat.busy.value) return
         val prefs = getSharedPreferences("proactive", MODE_PRIVATE)

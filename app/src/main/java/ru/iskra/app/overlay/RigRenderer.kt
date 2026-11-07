@@ -66,6 +66,23 @@ class CanvasRigPainter(private val textures: Map<String, Bitmap>) : RigPainter {
     }
 }
 
+/** The rig model from assets/rig. */
+fun loadRigModel(ctx: Context): RigModel =
+    RigModel.parse(ctx.assets.open("rig/iskra.rig.json").use { it.readBytes().toString(Charsets.UTF_8) })
+
+/** The rig's layers, scaled once to the size they are drawn at in a [boxPx] box (the overlay and the app's own screens). */
+fun loadRigTextures(ctx: Context, model: RigModel, boxPx: Int): Map<String, Bitmap> {
+    val k = RigDrawer.scale(boxPx.toFloat())
+    return model.parts.mapValues { (_, p) ->
+        val raw = ctx.assets.open("rig/" + p.file).use { BitmapFactory.decodeStream(it) } ?: error("layer ${p.file}")
+        val w = ((p.rect[2] - p.rect[0]) * k).roundToInt().coerceAtLeast(1)
+        val h = ((p.rect[3] - p.rect[1]) * k).roundToInt().coerceAtLeast(1)
+        // Drawn a bit larger than 1:1 when rotated; 1.5× keeps edges smooth without the full texture.
+        val tw = (w * 1.5f).roundToInt(); val th = (h * 1.5f).roundToInt()
+        if (tw < raw.width) Bitmap.createScaledBitmap(raw, tw, th, true).also { if (it !== raw) raw.recycle() } else raw
+    }
+}
+
 /**
  * «Живой риг» look (4.2): the rig for standing, walking, talking and in the air; sit / sleep / phone
  * from the sprites (4.1), switched with a crossfade. Textures come from assets/rig and are scaled once
@@ -83,17 +100,8 @@ class RigRenderer(ctx: Context, private val boxPx: Int) : AvatarRenderer {
     private var frame = animator.update(0f, AvatarPoseDefaults.pose, boxPx.toFloat())
 
     init {
-        val json = ctx.assets.open("rig/iskra.rig.json").use { it.readBytes().toString(Charsets.UTF_8) }
-        model = RigModel.parse(json)
-        val k = RigDrawer.scale(boxPx.toFloat())
-        val tex = model.parts.mapValues { (_, p) ->
-            val raw = ctx.assets.open("rig/" + p.file).use { BitmapFactory.decodeStream(it) } ?: error("layer ${p.file}")
-            val w = ((p.rect[2] - p.rect[0]) * k).roundToInt().coerceAtLeast(1)
-            val h = ((p.rect[3] - p.rect[1]) * k).roundToInt().coerceAtLeast(1)
-            // Drawn a bit larger than 1:1 when rotated; 1.5× keeps edges smooth without the full texture.
-            val tw = (w * 1.5f).roundToInt(); val th = (h * 1.5f).roundToInt()
-            if (tw < raw.width) Bitmap.createScaledBitmap(raw, tw, th, true).also { if (it !== raw) raw.recycle() } else raw
-        }
+        model = loadRigModel(ctx)
+        val tex = loadRigTextures(ctx, model, boxPx)
         painter = CanvasRigPainter(tex)
         Diag.i("avatar", tr("Риг загружен: ${tex.size} слоёв, ${boxPx}px", "Rig loaded: ${tex.size} layers, ${boxPx}px"))
     }

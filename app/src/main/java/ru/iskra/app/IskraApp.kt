@@ -63,6 +63,8 @@ class IskraApp : Application() {
 
     /** How many chat screens are in the foreground (they show confirmation dialogs). */
     val chatScreensResumed = java.util.concurrent.atomic.AtomicInteger(0)
+    /** A chat is in front: she is in it (its header), so the character on the screen steps away until it closes (0.16.0). */
+    val chatInFront = kotlinx.coroutines.flow.MutableStateFlow(false)
     lateinit var db: IskraDb; private set
     lateinit var memory: MemoryManager; private set
     lateinit var conversation: SqliteConversationStore; private set

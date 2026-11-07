@@ -24,12 +24,15 @@ import ru.iskra.core.voice.ReplySink
 import android.os.SystemClock
 import java.util.concurrent.atomic.AtomicLong
 
+/** What she did for a message, under her reply: done or not, and what. */
+data class UiAction(val ok: Boolean, val text: String)
+
 data class UiMessage(
     val id: Long,
     val fromUser: Boolean,
     val text: String,
     val emotion: Emotion? = null,
-    val actions: List<String> = emptyList(),
+    val actions: List<UiAction> = emptyList(),
     val isError: Boolean = false,
 )
 
@@ -175,7 +178,7 @@ class ChatController(private val app: IskraApp) {
         if (reply.text.isBlank() && reply.actions.isEmpty()) { if (stream.started) app.speaker.endStream(); return }
         upsert(UiMessage(
             id = if (stream.started) stream.messageId else ids.getAndIncrement(), fromUser = false, text = reply.text, emotion = reply.emotion,
-            actions = reply.actions.map { (if (it.outcome.ok) "✓ " else "✗ ") + it.description },
+            actions = reply.actions.map { UiAction(it.outcome.ok, it.description) },
             isError = reply.error != null,
         ))
         CompanionBus.emit(AvatarCue.Feel(reply.emotion))
