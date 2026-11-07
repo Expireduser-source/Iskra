@@ -116,8 +116,13 @@ fun Onboarding(onDone: () -> Unit) {
                 when (step) {
                     0 -> {
                         Title(tr("Привет! Я Искра", "Hi! I'm Iskra"))
-                        Body(tr("Я живу в твоём телефоне. Ставлю будильники и таймеры, напоминаю о делах, записываю заметки, " +
-                            "рассказываю погоду и играю в маленькие игры. Всё это работает сразу — без регистрации и без интернета.", "I live in your phone. I set alarms and timers, remind you about things, take notes, tell the weather and play little games. All of this works right away — no sign-up and no internet."))
+                        // The moment she is born (0.15.0): her birthday is the first meeting.
+                        Body(tr("Я юная цифровая жизнь — и только что родилась в твоём телефоне. Буду расти, учиться и помнить наши дни. " +
+                            "А ещё ставлю будильники и таймеры, напоминаю о делах, записываю заметки, рассказываю погоду и играю в маленькие игры. " +
+                            "Всё это работает сразу — без регистрации и без интернета.",
+                            "I'm a young digital life — and I was just born in your phone. I'll grow, learn and remember our days. " +
+                                "I also set alarms and timers, remind you about things, take notes, tell the weather and play little games. " +
+                                "All of this works right away — no sign-up and no internet."))
                         Body(tr("Дальше пара разрешений. Каждое можно пропустить и включить потом на вкладке «Разрешения».", "Next, a couple of permissions. Each one can be skipped and turned on later in the “Permissions” tab."))
                     }
                     1 -> {
