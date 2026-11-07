@@ -184,12 +184,18 @@ class CompanionAgent(
             provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
             // The model on the phone failed (memory ran out, a damaged file): an honest answer without a model; the reason goes to the journal.
-            provider === onPhone -> askPhone(provider, text, state, sink).let { r ->
-                if (r.errorKind == null) r
-                else (brain.chat(text, java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault()),
-                    currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))
-                    ?: if (r.errorKind == LlmException.Kind.BAD_RESPONSE) brain.slipped() else brain.fallback(text))
-                    .let { a -> AgentReply(a.text, a.emotion, r.actions, error = r.error) }
+            // «Ты человек?»: a model on the phone that says she is a person (Gemma 3 1B: «И да, я человек!») gives way to her
+            // own answer. Such a reply is not streamed — words already shown or spoken could not be taken back.
+            provider === onPhone -> brain.asksWhatSheIs(text).let { self ->
+                askPhone(provider, text, state, if (self) null else sink).let { r ->
+                    if (r.errorKind == null) {
+                        if (self && brain.claimsHuman(r.text)) brain.digitalSelf(text).let { a -> r.copy(text = a.text, emotion = a.emotion) } else r
+                    }
+                    else (brain.chat(text, java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault()),
+                        currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))
+                        ?: if (r.errorKind == LlmException.Kind.BAD_RESPONSE) brain.slipped() else brain.fallback(text))
+                        .let { a -> AgentReply(a.text, a.emotion, r.actions, error = r.error) }
+                }
             }
             else -> askModel(provider, text, state, sink).let { r -> if (r.errorKind != null) rescue(text, state, sink, r) else r }.also { r ->
                 if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE ||
@@ -394,6 +400,8 @@ class CompanionAgent(
     }
 
     private val MONTHS_GEN = listOf("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря")
+    private val WEEKDAYS = "[Пп]онедельник|[Вв]торник|[Сс]реда|[Чч]етверг|[Пп]ятница|[Сс]уббота|[Вв]оскресенье|" +
+        "Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday"
 
     /**
      * The tools a model on the phone gets (Gemma 4 only, [LlmProvider.nativeTools]): what people ask most in their own
@@ -1027,9 +1035,15 @@ class CompanionAgent(
         val s = ReplyParser.parse(raw).text.replace("**", "").replace("__", "").replace(Regex("""(?m)^#+\s*"""), "")
             .lines().map { it.trim() }.filter { it.isNotEmpty() }.dropWhile { dateLine.matches(it) }.joinToString(" ")
             .trim().trim('"', '«', '»')
-            .replace(Regex("""(?iu)^(?:дорогой\s+дневник|dear\s+diary)[\s,!.:—-]*"""), "").trim()
+            .replace(Regex("""(?iu)^(?:дорогой\s+дневник|dear\s+diary)[\s,!.:—-]*"""), "")
+            // The heading on the same line: E4B wrote «Дневник Искры, 7 ноября (Суббота) Сегодня я…» (ARM evaluation).
+            .replace(Regex("""(?iu)^(?:(?:мой\s+)?дневник\s+искры|(?:iskra'?s|my)\s+diary)[\s,.:—-]*"""), "")
+            .replace(Regex("""^(?:\d{1,2}\s+(?:${MONTHS_GEN.joinToString("|")})|(?:January|February|March|April|May|June|July|August|""" +
+                """September|October|November|December)\s+\d{1,2})(?:[,.\s]+\d{4})?(?:[,.\s]*\(?(?:$WEEKDAYS)\)?)?[\s,.:—-]+(?=\p{Lu})"""), "")
+            .trim()
         if (s.trimEnd('.', '!').equals("нет", ignoreCase = true) || s.trimEnd('.').equals("none", ignoreCase = true)) return ""
-        if (s.length !in 15..500) return null
+        // A long entry is cut on a sentence below, not thrown away: Gemma 3 4B wrote a whole day's story (ARM evaluation).
+        if (s.length < 15) return null
         // A dialogue written on instead of an entry.
         if (Regex("""(?mu)^\s*(?:Я|Me|${Regex.escape(who)}|Человек|The person|${persona.name})\s*:""").containsMatchIn(s)) return null
         // A list, or someone else's diary: Llama 3.2 1B wrote «1. Забегая за Анной, я видел её на улице…» (ARM evaluation).

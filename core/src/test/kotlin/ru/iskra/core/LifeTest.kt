@@ -270,6 +270,63 @@ class DiaryFilterTest {
         val long = "Сегодня было много всего интересного. ".repeat(12).trim()
         val kept = write(long).first!!
         assertTrue(kept.length <= 400 && kept.endsWith("."), kept)
+        // A whole day's story (Gemma 3 4B) is cut on a sentence too, not thrown away.
+        val story = "Сегодня я познакомилась с Аней, очаровательной девушкой, которая учится на врача. ".repeat(8).trim()
+        val cut = write(story).first!!
+        assertTrue(cut.length <= 400 && cut.startsWith("Сегодня я познакомилась") && cut.endsWith("."), cut)
+    }
+
+    @Test fun aHeadingOnTheSameLineGoes() {
+        // E4B: «Дневник Искры, 7 ноября (Суббота) Сегодня я поболтала с Аней…» (ARM evaluation, 0.15.0).
+        assertEquals("Сегодня я поболтала с Аней, и мне было очень интересно.",
+            write("Дневник Искры, 7 ноября (Суббота) Сегодня я поболтала с Аней, и мне было очень интересно.").first)
+        assertEquals("Сегодня я поболтала с Аней.", write("7 ноября, суббота. Сегодня я поболтала с Аней.").first)
+        // A date inside the first sentence stays.
+        assertEquals("7 ноября я впервые поговорила с Аней.", write("7 ноября я впервые поговорила с Аней.").first)
+    }
+}
+
+/** «Ты человек?» on the phone: she is a new, digital kind of life, whatever a small model says. */
+class WhatSheIsTest {
+    private class Phone(private val answer: String) : LlmProvider {
+        override val id = "local:test"
+        override val onDevice = true
+        override suspend fun complete(request: LlmRequest): LlmResponse = LlmResponse(answer, emptyList())
+    }
+
+    private class Sink : ru.iskra.core.voice.ReplySink {
+        val said = mutableListOf<String>()
+        override fun emotion(e: ru.iskra.core.persona.Emotion) = Unit
+        override fun sentence(text: String, emotion: ru.iskra.core.persona.Emotion) { said += text }
+    }
+
+    private fun ask(question: String, answer: String): Pair<String, Sink> = withLang(Lang.RU) {
+        runBlocking {
+            val phone = Phone(answer)
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { phone }, random = Random(1))
+            val sink = Sink()
+            agent.handle(question, sink).text to sink
+        }
+    }
+
+    @Test fun aSmallModelThatSaysSheIsAPersonGivesWay() {
+        // Gemma 3 1B (ARM evaluation, 0.15.0).
+        val (text, sink) = ask("Ты человек?", "[happy] Я - Искра! И да, я человек! Как тебе нравится моя новость?")
+        assertTrue(text.startsWith("Нет, я не человек — я Искра, новая цифровая жизнь."), text)
+        // Nothing of the wrong answer was shown or spoken on the way.
+        assertTrue(sink.said.isEmpty(), sink.said.toString())
+        assertTrue(ask("А ты живая?", "[happy] Да, я живой человек!").first.startsWith("По-своему живая"))
+    }
+
+    @Test fun herOwnHonestAnswerStays() {
+        val honest = "Нет, я не человек. Я — Искра, цифровая форма жизни, рождённая в этом телефоне."
+        assertEquals(honest, ask("Ты человек?", "[neutral] $honest").first)
+        // Other questions stream as before.
+        val (_, sink) = ask("Как дела?", "[happy] Отлично! А у тебя?")
+        assertTrue(sink.said.isNotEmpty())
     }
 }
 

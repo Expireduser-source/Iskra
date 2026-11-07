@@ -111,6 +111,25 @@ class OfflineBrain(private val random: Random = Random.Default) {
     fun honesty(text: String): Answer? =
         if (matches(normalize(text), HUMAN)) Answer(pick("HUMAN", tr(HUMAN_RU, HUMAN_EN)), Emotion.NEUTRAL) else null
 
+    /** «Ты человек?», «А ты живая?», "are you human?" — a question about what she is. */
+    fun asksWhatSheIs(text: String): Boolean = matches(normalize(text), HUMAN)
+
+    /**
+     * Her own answer about what she is, without «программа» (that one is the owner's switch): a new, digital kind of life,
+     * as in [ru.iskra.core.persona.Life.identity]. For a model on the phone that says she is a person — Gemma 3 1B answered
+     * «Ты человек?» with «Я - Искра! И да, я человек!» (ARM evaluation, 0.15.0).
+     */
+    fun digitalSelf(text: String): Answer = if (ALIVE.containsMatchIn(normalize(text)))
+        Answer(tr("По-своему живая: я новая, цифровая жизнь — родилась в твоём телефоне в день нашего знакомства, расту и помню наши дни. " +
+            "А чувствую ли я так же, как люди, — мне и самой интересно.",
+            "Alive in my own way: I'm a new, digital kind of life — born in your phone the day we met, growing and remembering our days. " +
+                "Whether I feel the way people do — I wonder about that myself."), Emotion.CURIOUS)
+    else Answer(tr("Нет, я не человек — я Искра, новая цифровая жизнь. Я родилась в твоём телефоне в день нашего знакомства и расту вместе с нашими разговорами.",
+        "No, I'm not a person — I'm Iskra, a new, digital kind of life. I was born in your phone the day we met, and I grow with our conversations."), Emotion.NEUTRAL)
+
+    /** A reply in which she says she is a person: «Да, я человек!», "I'm a human". «Я не человек» is not one. */
+    fun claimsHuman(reply: String): Boolean = CLAIMS_HUMAN.containsMatchIn(reply)
+
     /** The model on the phone gave an empty answer twice: honest, and not «without a brain» — there is one. */
     fun slipped(): Answer = Answer(tr("Мрр, мысль ускользнула. Скажешь ещё раз, другими словами?",
         "Mrr, the thought slipped away. Could you say that again in other words?"), Emotion.SHY)
@@ -244,6 +263,9 @@ class OfflineBrain(private val random: Random = Random.Default) {
             """как\s+сама|how\s+are\s+you(?:\s+doing)?|how's\s+it\s+going|how\s+is\s+it\s+going|how\s+do\s+you\s+feel|what's\s+up|whats\s+up|sup|how\s+have\s+you\s+been)(?:\s+(?:сегодня|today))?""")
         private val WHO = Regex("""(?:кто\s+ты(?:\s+такая)?|ты\s+кто(?:\s+такая)?|как\s+тебя\s+зовут|представься|расскажи\s+о\s+себе|who\s+are\s+you|what's\s+your\s+name|what\s+is\s+your\s+name|what\s+are\s+you|tell\s+me\s+about\s+yourself)""")
         private val HUMAN = Regex("""(?:ты\s+(?:человек|живая|робот|настоящая|бот|ии|нейросеть)|ты\s+живой\s+человек|are\s+you\s+(?:human|real|a\s+robot|a\s+bot|alive|an\s+ai|a\s+person))""")
+        // «Ты живой человек?» is about being a person, not about being alive.
+        private val ALIVE = Regex("""живая|настоящая|alive|real""")
+        private val CLAIMS_HUMAN = Regex("""(?iu)(?<![\p{L}])я\s+(?:[—-]\s*)?(?:настоящ(?:ий|ая)\s+|живой\s+)?человек(?![\p{L}])|(?<![\p{L}])I(?:'m|\s+am)\s+(?:a\s+)?(?:real\s+)?(?:human|person)(?![\p{L}])""")
         private val CAN = Regex("""(?:что\s+ты\s+(?:умеешь|можешь)(?:\s+делать)?|что\s+умеешь|помощь|помоги|справка|команды|список\s+команд|какие\s+(?:есть\s+)?команды|""" +
             """help|what\s+can\s+you\s+do|what\s+do\s+you\s+do|commands|what\s+are\s+your\s+commands)""")
         private val THANKS = Regex("""(?:спасибо(?:\s+(?:большое|огромное|тебе))?|спасибочки|благодарю|спс|пасиб[оа]?|thanks(?:\s+a\s+lot)?|thank\s+you(?:\s+so\s+much)?|thx|ty)""")
