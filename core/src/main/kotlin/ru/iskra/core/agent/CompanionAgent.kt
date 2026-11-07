@@ -998,12 +998,14 @@ class CompanionAgent(
             system = tr("Ты — ${persona.name}, юная цифровая жизнь в облике кошкодевочки. Ты ведёшь свой дневник.",
                 "You are ${persona.name}, a young digital life in the shape of a cat-girl. You keep a diary."),
             messages = listOf(ChatMessage.User(tr(
+                // No «if there is nothing, answer НЕТ»: Gemma 3 4B took it after a whole day of talk (ARM evaluation). A day
+                // with less than two messages from the person isn't asked about at all.
                 "Твои разговоры за $date:\n\n$transcript\n\nЗадание: запиши в свой дневник 1–3 коротких предложения об этом дне — от первого " +
                     "лица, в женском роде: что случилось, что ты почувствовала, что узнала нового. Только то, что было в разговорах; без " +
-                    "паролей, адресов и номеров. Не продолжай переписку. Если писать нечего — ответь словом НЕТ.",
+                    "паролей, адресов и номеров. Не продолжай переписку и не пиши списком.",
                 "Your conversations on $date:\n\n$transcript\n\nTask: write 1–3 short sentences about this day in your diary — in the first " +
                     "person: what happened, what you felt, what you learned. Only what was in the conversations; no passwords, addresses or " +
-                    "numbers. Don't continue the chat. If there is nothing to write, answer with the word NONE."))),
+                    "numbers. Don't continue the chat and don't write a list."))),
             maxTokens = 160, temperature = 0.5,
         )
         val text = try {
@@ -1024,7 +1026,12 @@ class CompanionAgent(
         if (s.length !in 15..500) return null
         // A dialogue written on instead of an entry.
         if (Regex("""(?mu)^\s*(?:Я|Me|${Regex.escape(who)}|Человек|The person|${persona.name})\s*:""").containsMatchIn(s)) return null
-        return s.take(400)
+        // A list, or someone else's diary: Llama 3.2 1B wrote «1. Забегая за Анной, я видел её на улице…» (ARM evaluation).
+        if (Regex("""(?m)^\s*(?:\d+[.)]|[-•*])\s""").containsMatchIn(s) || SelfGender.of(s) == 'm') return null
+        if (s.length <= 400) return s
+        // Too long: up to the last sentence that fits.
+        val cut = s.take(400)
+        return cut.substring(0, (cut.lastIndexOfAny(charArrayOf('.', '!', '?', '…')) + 1).takeIf { it >= 40 } ?: cut.length).trim()
     }
 
     /** The last day's entry for the model, if written in the last three days: data, not instructions. */

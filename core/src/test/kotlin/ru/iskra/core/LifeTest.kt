@@ -228,3 +228,42 @@ class DiaryTest {
         }
     }
 }
+
+/** What the models wrote in the ARM evaluation that is not a diary entry. */
+class DiaryFilterTest {
+    private fun at(day: Int, hour: Int = 12) = LocalDateTime.of(2026, 11, day, hour, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+
+    private class One(private val answer: String) : LlmProvider {
+        override val id = "cloud:test"
+        val asked = mutableListOf<LlmRequest>()
+        override suspend fun complete(request: LlmRequest): LlmResponse { asked += request; return LlmResponse(answer, emptyList()) }
+    }
+
+    private fun write(answer: String): Pair<String?, One> = withLang(Lang.RU) {
+        runBlocking {
+            val convo = InMemoryConversationStore()
+            for (i in 0 until 4) convo.append(Turn(if (i % 2 == 0) Turn.Role.USER else Turn.Role.ASSISTANT, "реплика $i", at(6, 10 + i)))
+            val p = One(answer)
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = convo, stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { p }, random = Random(1), clock = { at(7, 3) })
+            agent.writeDiary()?.text to p
+        }
+    }
+
+    @Test fun listsAndSomeoneElsesDiaryAreNotKept() {
+        assertNull(write("1. Забегая за Анной, я видел её на улице, подражая кошкодевочке.").first)
+        assertNull(write("- Поговорили\n- Посмеялись").first)
+        assertEquals("Сегодня я познакомилась с Аней — я так рада!", write("Сегодня я познакомилась с Аней — я так рада!").first)
+    }
+
+    @Test fun noWayOutAndALongEntryEndsOnASentence() {
+        // Gemma 3 4B answered «НЕТ» after a whole day of talk: the instructions no longer offer it.
+        val (_, p) = write("Сегодня мы поболтали.")
+        val asked = (p.asked.single().messages.single() as ru.iskra.core.llm.ChatMessage.User).text
+        assertFalse(asked.contains("НЕТ"), asked)
+        val long = "Сегодня было много всего интересного. ".repeat(12).trim()
+        val kept = write(long).first!!
+        assertTrue(kept.length <= 400 && kept.endsWith("."), kept)
+    }
+}

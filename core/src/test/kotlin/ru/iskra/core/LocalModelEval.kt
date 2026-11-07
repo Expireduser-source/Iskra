@@ -137,9 +137,15 @@ class LocalModelEval {
                             clockMs += days * 86_400_000L
                             doc.append("\n*(${days} days later)*\n")
                             // The night job between the days: her diary for the day that passed (0.15.0), recalled in the morning.
+                            // As in the app (LocalBrain.aside), the dialogue's cache is kept aside and put back: without that the
+                            // first morning reply read the whole prompt again (34 s for E2B in the first diary evaluation).
                             val td = System.nanoTime()
                             raw = ""
+                            val kept = java.io.File.createTempFile("eval-dialogue-", ".bin")
+                            val saved = e.saveSession(kept.path)
                             val entry = runCatching { runBlocking { agent.writeDiary(onPhone = true) } }.getOrNull()
+                            if (saved) e.loadSession(kept.path)
+                            kept.delete()
                             doc.append("\n**Night diary** (%.1f s): %s\n".format(java.util.Locale.ROOT, (System.nanoTime() - td) / 1e9,
                                 when { entry == null -> "— (raw: `" + raw.take(160).replace("\n", " ") + "`)"; entry.text.isBlank() -> "(nothing to write)"; else -> entry.text }))
                             continue
