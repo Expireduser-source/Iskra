@@ -232,7 +232,7 @@ private fun AccessibilityWarning() {
     val turnedOff = p == CompanionAccessibilityService.State.TURNED_OFF_BY_SYSTEM
     Card(Modifier.fillMaxWidth().padding(8.dp)) {
         Column(Modifier.padding(12.dp)) {
-            Text(if (turnedOff) tr("⚠️ Управление телефоном выключено", "⚠️ Phone control is off") else tr("⚠️ Управление телефоном не работает", "⚠️ Phone control isn't working"), fontSize = 16.sp)
+            Text(if (turnedOff) tr("⚠️ Управление телефоном выключено", "⚠️ Phone control is off") else tr("⚠️ Управление телефоном не работает", "⚠️ Phone control isn't working"), style = MaterialTheme.typography.titleSmall)
             Text(
                 if (turnedOff) tr("После обновления приложения HyperOS выключила «Искра · управление» в спецвозможностях. " +
                     "Без неё не работают «домой», «назад», шторка, скриншот. Открой спецвозможности и включи её снова.", "After the app update the system turned off “Iskra · control” in Accessibility. Without it, “home”, “back”, the notification shade and screenshots don't work. Open Accessibility and turn it on again.")
@@ -478,7 +478,7 @@ private fun SettingsScreen(modifier: Modifier) {
         OutlinedButton(onClick = { diagnostics = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("🩺 Диагностика и отчёт об ошибках", "🩺 Diagnostics and error report")) }
         TextButton(onClick = { OnboardingState.again(ctx); (ctx as? android.app.Activity)?.recreate() }) { Text(tr("Пройти знакомство заново", "Take the introduction again")) }
         LanguageSection()
-        Text(tr("Мозг Искры", "Iskra's brain"), fontSize = 20.sp)
+        Text(tr("Мозг Искры", "Iskra's brain"), style = MaterialTheme.typography.titleLarge)
         Text(
             tr("Ключ API хранится зашифрованным (Android Keystore) и отправляется только выбранному сервису. " +
                 "Сообщения, релевантные заметки памяти и настроение уходят в облако только когда ты пишешь. " +
@@ -598,7 +598,7 @@ private fun VendorCard() {
     val ctx = LocalContext.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(tr("Чтобы ${DeviceHelper.vendor.title} не выгружал Искру", "So that ${DeviceHelper.vendor.title} doesn't unload Iskra"), fontSize = 16.sp)
+            Text(tr("Чтобы ${DeviceHelper.vendor.title} не выгружал Искру", "So that ${DeviceHelper.vendor.title} doesn't unload Iskra"), style = MaterialTheme.typography.titleSmall)
             DeviceHelper.guide.forEachIndexed { i, step ->
                 Text("${i + 1}. ${step.text}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 step.button?.let { b -> TextButton(onClick = { DeviceHelper.open(ctx, step) }) { Text(b) } }
@@ -646,7 +646,7 @@ private fun SimpleRow(text: String, enabled: Boolean = true, onDelete: () -> Uni
 private fun LanguageSection() {
     val ctx = LocalContext.current
     val current = remember { ru.iskra.app.data.AppLanguage.choice(ctx) }
-    Text(tr("Язык · Language", "Language · Язык"), fontSize = 20.sp)
+    Text(tr("Язык · Language", "Language · Язык"), style = MaterialTheme.typography.titleLarge)
     listOf<Pair<ru.iskra.core.i18n.Lang?, String>>(
         null to tr("Как в телефоне", "Phone language"),
         ru.iskra.core.i18n.Lang.RU to "Русский",

@@ -42,7 +42,7 @@ fun FreeBrainCard(onConnected: () -> Unit) {
 
     Card(Modifier.fillMaxWidth().testTag("free_brain"), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(tr("🆓 Бесплатный «мозг» за минуту", "🆓 A free “brain” in a minute"), fontSize = 18.sp)
+            Text(tr("🆓 Бесплатный «мозг» за минуту", "🆓 A free “brain” in a minute"), style = MaterialTheme.typography.titleMedium)
             when (val s = state) {
                 FreeBrain.State.Idle, is FreeBrain.State.Failed -> {
                     Text(tr("Вход через OpenRouter — Google или почта. Ключ копировать не нужно: Искра получит его сама.",

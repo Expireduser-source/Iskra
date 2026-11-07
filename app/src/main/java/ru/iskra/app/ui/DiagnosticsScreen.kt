@@ -93,7 +93,7 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
             Spacer(Modifier.weight(1f))
             TextButton(onClick = { refresh++; status = null }) { Text(tr("Обновить", "Refresh")) }
         }
-        Text(tr("Диагностика", "Diagnostics"), fontSize = 20.sp)
+        Text(tr("Диагностика", "Diagnostics"), style = MaterialTheme.typography.titleLarge)
         Text(
             tr("Журнал хранится только на телефоне (последние ${Diag.log.capacity} событий). В отчёт не попадают " +
                 "ключи API (они замаскированы) и текст переписки. Отправляешь его только ты — приложение ничего не отправляет.", "The journal is kept only on the phone (the last ${Diag.log.capacity} events). The report never includes API keys (they are masked) or chat text. You send it yourself — the app sends nothing."),
@@ -172,7 +172,7 @@ fun DiagnosticsScreen(modifier: Modifier, onBack: () -> Unit) {
 private fun Block(title: String, rows: List<Pair<String, String>>) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, fontSize = 16.sp)
+            Text(title, style = MaterialTheme.typography.titleSmall)
             rows.forEach { (k, v) ->
                 Row {
                     Text(k, Modifier.weight(0.45f), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
