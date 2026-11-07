@@ -35,6 +35,7 @@ import ru.iskra.core.tools.ToolSchemas
 import ru.iskra.core.tools.bool
 import ru.iskra.core.tools.int
 import ru.iskra.core.tools.str
+import ru.iskra.core.tools.timerSeconds
 
 /** Base for tools that start an activity. All run on the main thread. */
 private abstract class IntentTool(protected val ctx: Context) : Tool {
@@ -90,9 +91,9 @@ private class AlarmTool(ctx: Context) : IntentTool(ctx) {
 private class TimerTool(ctx: Context) : IntentTool(ctx) {
     override val spec get() = ToolSchemas.setTimer
     override val risk = Risk.SAFE
-    override fun describe(args: JsonObject) = tr("таймер на ${human(args.int("seconds") ?: 0)}", "timer for ${human(args.int("seconds") ?: 0)}")
+    override fun describe(args: JsonObject) = tr("таймер на ${human(timerSeconds(args) ?: 0)}", "timer for ${human(timerSeconds(args) ?: 0)}")
     override suspend fun execute(args: JsonObject): ToolOutcome {
-        val s = args.int("seconds")?.takeIf { it in 1..86_400 } ?: return ToolOutcome(false, tr("неверная длительность", "wrong duration"))
+        val s = timerSeconds(args) ?: return ToolOutcome(false, tr("неверная длительность", "wrong duration"))
         val intent = Intent(AlarmClock.ACTION_SET_TIMER)
             .putExtra(AlarmClock.EXTRA_LENGTH, s)
             .putExtra(AlarmClock.EXTRA_MESSAGE, args.str("label")?.take(60) ?: tr("Искра", "Iskra"))

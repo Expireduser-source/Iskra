@@ -38,15 +38,31 @@ class Gemma4ToolsTest {
     private val q = "<|\"|>"
 
     @Test fun declarationsAreWrittenAsTheTemplateDoes() = withLang(Lang.EN) {
-        assertEquals("declaration:set_timer{description:${q}Start a timer in the system clock.$q,parameters:{properties:{" +
-            "label:{description:${q}Label$q,type:${q}STRING$q},seconds:{description:${q}Duration in seconds$q,type:${q}INTEGER$q}}," +
-            "required:[${q}seconds$q],type:${q}OBJECT$q}}", Gemma4Tools.declaration(ToolSchemas.setTimer))
+        assertEquals("declaration:set_timer{description:${q}Start a timer in the system clock: for minutes or seconds.$q,parameters:{properties:{" +
+            "label:{description:${q}Label$q,type:${q}STRING$q},minutes:{description:${q}Minutes, may be fractional: 1.5$q,type:${q}NUMBER$q}," +
+            "seconds:{description:${q}Seconds — for short timers, or added to the minutes$q,type:${q}INTEGER$q}},type:${q}OBJECT$q}}",
+            Gemma4Tools.declaration(ToolSchemas.setTimer))
         assertEquals("declaration:volume{description:${q}Change the media volume.$q,parameters:{properties:{direction:{description:${q}Direction$q," +
             "enum:[${q}up$q,${q}down$q,${q}mute$q,${q}unmute$q],type:${q}STRING$q}},required:[${q}direction$q],type:${q}OBJECT$q}}",
             Gemma4Tools.declaration(ToolSchemas.volume))
         assertEquals("declaration:open_camera{description:${q}Open the camera to take a photo.$q,parameters:{type:${q}OBJECT$q}}",
             Gemma4Tools.declaration(ToolSchemas.openCamera))
         assertEquals("<|tool>" + Gemma4Tools.declaration(ToolSchemas.setTimer) + "<tool|>", Gemma4Tools.declarations(listOf(ToolSchemas.setTimer)))
+    }
+
+    /** Minutes, seconds or both (E2B, given only seconds, asked the person «Скажи мне секунды»). */
+    @Test fun aTimerTakesMinutesOrSeconds() {
+        fun s(vararg kv: Pair<String, Any>) = ru.iskra.core.tools.timerSeconds(buildJsonObject {
+            for ((k, v) in kv) when (v) { is Number -> put(k, v); else -> put(k, v.toString()) }
+        })
+        assertEquals(240, s("minutes" to 4))
+        assertEquals(90, s("minutes" to 1.5))
+        assertEquals(210, s("minutes" to 3, "seconds" to 30))
+        assertEquals(45, s("seconds" to 45))
+        assertEquals(150, s("minutes" to "2,5"))
+        assertEquals(null, s("label" to "яйца"))
+        assertEquals(null, s("minutes" to 0))
+        assertEquals(null, s("minutes" to 2000))
     }
 
     @Test fun callsAreRead() {

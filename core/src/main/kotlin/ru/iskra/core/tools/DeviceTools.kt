@@ -7,6 +7,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import ru.iskra.core.llm.ToolSpec
@@ -60,8 +61,13 @@ object ToolSchemas {
         obj(listOf("name"), mapOf("name" to str(tr("Название приложения, как на рабочем столе", "App name as shown on the home screen")))))
     val setAlarm get() = ToolSpec(ToolNames.SET_ALARM, tr("Поставить будильник в системных часах.", "Set an alarm in the system clock."),
         obj(listOf("hour", "minute"), mapOf("hour" to int(tr("Час 0-23", "Hour 0-23"), 0, 23), "minute" to int(tr("Минуты 0-59", "Minutes 0-59"), 0, 59), "label" to str(tr("Подпись", "Label")))))
-    val setTimer get() = ToolSpec(ToolNames.SET_TIMER, tr("Запустить таймер в системных часах.", "Start a timer in the system clock."),
-        obj(listOf("seconds"), mapOf("seconds" to int(tr("Длительность в секундах", "Duration in seconds"), 1, 86_400), "label" to str(tr("Подпись", "Label")))))
+    // Minutes as well as seconds: Gemma 4 E2B, given only seconds, asked the person «Скажи мне секунды» (ARM evaluation, 0.14.0).
+    val setTimer get() = ToolSpec(ToolNames.SET_TIMER, tr("Запустить таймер в системных часах: на minutes минут или seconds секунд.",
+        "Start a timer in the system clock: for minutes or seconds."),
+        obj(emptyList(), mapOf(
+            "minutes" to num(tr("Минуты, можно дробные: 1.5", "Minutes, may be fractional: 1.5")),
+            "seconds" to int(tr("Секунды — для коротких таймеров или вдобавок к минутам", "Seconds — for short timers, or added to the minutes"), 1, 86_400),
+            "label" to str(tr("Подпись", "Label")))))
     val openCamera get() = ToolSpec(ToolNames.OPEN_CAMERA, tr("Открыть камеру для фото.", "Open the camera to take a photo."), obj(emptyList(), emptyMap()))
     val flashlight get() = ToolSpec(ToolNames.FLASHLIGHT, tr("Включить или выключить фонарик.", "Turn the flashlight on or off."),
         obj(listOf("on"), mapOf("on" to bool(tr("true — включить, false — выключить", "true — on, false — off")))))
@@ -113,5 +119,13 @@ object ToolSchemas {
 }
 
 fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+
+/** A timer's length in seconds: minutes (may be fractional) and/or seconds; null when neither is a usable number. */
+fun timerSeconds(args: JsonObject): Int? {
+    val minutes = (args["minutes"] as? JsonPrimitive)?.let { it.doubleOrNull ?: it.contentOrNull?.replace(',', '.')?.trim()?.toDoubleOrNull() }
+    val seconds = args.int("seconds")
+    if (minutes == null && seconds == null) return null
+    return (Math.round((minutes ?: 0.0) * 60).toInt() + (seconds ?: 0)).takeIf { it in 1..86_400 }
+}
 fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.let { it.intOrNull ?: it.contentOrNull?.toIntOrNull() }
 fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.let { it.booleanOrNull ?: it.contentOrNull?.toBooleanStrictOrNull() }
