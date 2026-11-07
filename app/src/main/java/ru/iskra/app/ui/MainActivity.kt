@@ -474,8 +474,9 @@ private fun SettingsScreen(modifier: Modifier) {
     val freeBrain by ru.iskra.app.data.FreeBrain.state.collectAsState()
     if (diagnostics) { DiagnosticsScreen(modifier) { diagnostics = false }; return }
 
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { diagnostics = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("🩺 Диагностика и отчёт об ошибках", "🩺 Diagnostics and error report")) }
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(tr("Настройки", "Settings"), style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+        OutlinedButton(onClick = { diagnostics = true }, modifier = Modifier.fillMaxWidth()) { Text(tr("Диагностика и отчёт об ошибках", "Diagnostics and error report")) }
         TextButton(onClick = { OnboardingState.again(ctx); (ctx as? android.app.Activity)?.recreate() }) { Text(tr("Пройти знакомство заново", "Take the introduction again")) }
         LanguageSection()
         Text(tr("Мозг Искры", "Iskra's brain"), style = MaterialTheme.typography.titleLarge)
