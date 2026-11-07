@@ -240,7 +240,8 @@ fun ChatScreen(
     Column(modifier.fillMaxSize().drawBehind {
         drawRect(Brush.verticalGradient(0f to colors.skyTop, 0.42f to colors.skyTop.copy(alpha = 0f), endY = size.height))
     }) {
-        ChatHeader(compact, busy, listening, herEmotion, watching = input.isNotBlank() && !busy, still, messages.size, onClose)
+        ChatHeader(compact, busy, writing = busy && messages.lastOrNull()?.fromUser == false, listening, herEmotion,
+            watching = input.isNotBlank() && !busy, still, messages.size, onClose)
         top()
         Box(Modifier.weight(1f).fillMaxWidth()) {
             LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)) {
@@ -248,13 +249,28 @@ fun ChatScreen(
                     Welcome(compact, enabled = !busy, still = still, onSend = ::send)
                 }
                 itemsIndexed(messages, key = { _, m -> m.id }) { i, m ->
-                    val endOfGroup = messages.getOrNull(i + 1)?.fromUser != m.fromUser
+                    // The day above the first message of each day: «Сегодня», «Вчера», «5 ноября».
+                    val day = dayOf(m.atMs)
+                    if (i == 0 || dayOf(messages[i - 1].atMs) != day) DayLabel(day)
+                    val next = messages.getOrNull(i + 1)
+                    val endOfGroup = next == null || next.fromUser != m.fromUser || dayOf(next.atMs) != day
                     val animate = remember(m.id) { m.id !in seen && i >= messages.size - 2 }
                     androidx.compose.runtime.SideEffect { seen += m.id }
                     MessageRow(m, endOfGroup, animate, Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null))
                 }
                 item(key = "tail") {
-                    if (busy) Typing(still, onStop = { app.chat.cancel() }) else Spacer(Modifier.height(2.dp))
+                    // Three dots until her reply begins; while it streams in, only «Стоп».
+                    when {
+                        busy && messages.lastOrNull()?.fromUser != false -> Typing(still, onStop = { app.chat.cancel() })
+                        busy -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                            TextButton(onClick = { app.chat.cancel() }) {
+                                Icon(IskraIcons.Stop, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text(tr("Стоп", "Stop"))
+                            }
+                        }
+                        else -> Spacer(Modifier.height(2.dp))
+                    }
                 }
             }
             androidx.compose.animation.AnimatedVisibility(
@@ -292,6 +308,28 @@ fun ChatScreen(
     }
 }
 
+/** The local day of a moment, as days since 1970. */
+private fun dayOf(ms: Long): Long = java.time.Instant.ofEpochMilli(ms).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toEpochDay()
+
+/** «Сегодня», «Вчера», «5 ноября» (and the year when it isn't this one), in a soft pill between the days. */
+@Composable
+private fun DayLabel(day: Long) {
+    val text = remember(day) {
+        val d = java.time.LocalDate.ofEpochDay(day)
+        val today = java.time.LocalDate.now()
+        when (d) {
+            today -> tr("Сегодня", "Today")
+            today.minusDays(1) -> tr("Вчера", "Yesterday")
+            else -> java.time.format.DateTimeFormatter.ofPattern(if (d.year == today.year) tr("d MMMM", "MMMM d") else tr("d MMMM yyyy", "MMMM d, yyyy"),
+                java.util.Locale.forLanguageTag(tr("ru", "en"))).format(d)
+        }
+    }
+    Box(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp), contentAlignment = Alignment.Center) {
+        Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 12.dp, vertical = 4.dp))
+    }
+}
+
 /** «3-й день жизни», «сегодня ей неделя ✦» — her age as it is lived; before the first word, «только что родилась». */
 internal fun lifeLine(bornAtMs: Long, nowMs: Long = System.currentTimeMillis()): String {
     if (bornAtMs <= 0L || bornAtMs > nowMs) return tr("только что родилась", "just born")
@@ -305,15 +343,16 @@ internal fun lifeLine(bornAtMs: Long, nowMs: Long = System.currentTimeMillis()):
  * beats), speaking, or how long she has lived.
  */
 @Composable
-private fun ChatHeader(compact: Boolean, busy: Boolean, listening: Boolean, emotion: Emotion, watching: Boolean, still: Boolean,
+private fun ChatHeader(compact: Boolean, busy: Boolean, writing: Boolean, listening: Boolean, emotion: Emotion, watching: Boolean, still: Boolean,
                        turns: Int, onClose: (() -> Unit)?) {
     val app = IskraApp.instance
     val speaking by app.speaker.speaking.collectAsState()
     val born = remember(turns) { runCatching { app.stateStore.load().bornAtMs }.getOrDefault(0L) }
     val status = when {
         listening -> tr("слушает…", "listening…")
-        busy -> tr("думает…", "thinking…")
         speaking -> tr("говорит…", "speaking…")
+        writing -> tr("пишет…", "writing…")
+        busy -> tr("думает…", "thinking…")
         else -> lifeLine(born)
     }
     var hop by remember { mutableIntStateOf(0) }
