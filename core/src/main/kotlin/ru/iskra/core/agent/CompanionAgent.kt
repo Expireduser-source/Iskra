@@ -189,7 +189,7 @@ class CompanionAgent(
             provider === onPhone -> brain.asksWhatSheIs(text).let { self ->
                 askPhone(provider, text, state, if (self) null else sink).let { r ->
                     if (r.errorKind == null) {
-                        if (self && brain.claimsHuman(r.text)) brain.digitalSelf(text).let { a -> r.copy(text = a.text, emotion = a.emotion) } else r
+                        if (self && brain.claimsHuman(r.text, text)) brain.digitalSelf(text).let { a -> r.copy(text = a.text, emotion = a.emotion) } else r
                     }
                     else (brain.chat(text, java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault()),
                         currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))
@@ -714,7 +714,7 @@ class CompanionAgent(
                 if (!record.outcome.ok && parsed.name == ToolNames.OPEN_APP && llmAvailable) return null
                 val informational = tools[parsed.name]?.informational == true
                 if (record.outcome.ok && informational) AgentReply(record.outcome.message, Emotion.HAPPY, listOf(record))
-                else if (record.outcome.ok) AgentReply(Lines.actionDone(random, record.outcome.message), Emotion.HAPPY, listOf(record))
+                else if (record.outcome.ok) AgentReply(parsed.say ?: Lines.actionDone(random, record.outcome.message), Emotion.HAPPY, listOf(record))
                 else AgentReply(Lines.actionFailed(random, record.outcome.message), Emotion.SAD, listOf(record))
             }
         }

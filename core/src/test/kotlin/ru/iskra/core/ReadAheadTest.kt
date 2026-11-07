@@ -52,7 +52,7 @@ class ReadAheadTest {
         "Меня зовут Аня.",
         "Я учусь на врача, сейчас сессия.",
         "Завтра у меня экзамен по анатомии, волнуюсь.",
-        "Сварю яйца всмятку — засеки, сколько нужно.",
+        "Жарю сырники — засеки, сколько нужно.",
         "Мне сегодня грустно, поддержи меня.",
         "@night",
         "Доброе утро!",
@@ -72,8 +72,8 @@ class ReadAheadTest {
         val engine = Caching { prompt ->
             when {
                 prompt.contains("запиши в свой дневник") -> "Сегодня я познакомилась с Аней, она учится на врача."
-                prompt.endsWith("<|turn>model\n") && prompt.substringAfterLast("<|turn>user\n").contains("засеки") ->
-                    "<|tool_call>call:set_timer{minutes:4}<tool_call|>"
+                // A timer asked for: the call is begun for the model, which writes the minutes.
+                prompt.endsWith("<|tool_call>call:set_timer") -> "{minutes:4}<tool_call|>"
                 prompt.contains("<|tool_response>") && !prompt.substringAfterLast("<|tool_response>").contains("<|turn>user") -> "[happy] Поставила таймер на 4 минуты!"
                 else -> "[happy] Ответ номер ${++n}: мрр, интересно!"
             }

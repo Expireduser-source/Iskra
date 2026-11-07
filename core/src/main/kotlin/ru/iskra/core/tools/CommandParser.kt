@@ -15,7 +15,8 @@ import ru.iskra.core.skills.SkillNames
 object CommandParser {
 
     sealed interface Parsed {
-        data class Tool(val name: String, val args: JsonObject) : Parsed
+        /** [say]: her words when it is done, instead of the general «Готово: …» (a dish's usual time, [DishTimer]). */
+        data class Tool(val name: String, val args: JsonObject, val say: String? = null) : Parsed
         data class Remember(val text: String) : Parsed
         data object ListMemory : Parsed
     }
@@ -51,6 +52,8 @@ object CommandParser {
             return if (text.isNotEmpty()) Parsed.Remember(text) else null
         }
         if (t in setOf("что ты помнишь", "что ты обо мне помнишь", "твоя память", "покажи память")) return Parsed.ListMemory
+        // «Сварю яйца всмятку — засеки, сколько нужно»: the dish's usual time, in either language.
+        DishTimer.parse(raw)?.let { (tool, line) -> return tool.copy(say = line) }
 
         skills(raw, t, now)?.let { return it }
         CurrencyWords.parse(raw)?.let { return Parsed.Tool(BrainNames.CURRENCY, it) }

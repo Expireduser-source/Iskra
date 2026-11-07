@@ -4,6 +4,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import ru.iskra.core.tools.CommandParser
 import ru.iskra.core.tools.CommandParser.Parsed
 import ru.iskra.core.tools.ToolNames
+import ru.iskra.core.tools.DishTimer
+import ru.iskra.core.tools.SafetyPolicy
+import ru.iskra.core.tools.ToolRegistry
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -60,5 +63,52 @@ class CommandParserTest {
     @Test fun chitchatIsNotACommand() {
         assertNull(CommandParser.parse("как дела?"))
         assertNull(CommandParser.parse("расскажи анекдот про котов"))
+    }
+}
+
+/** A timer for a dish whose usual time is known, without a model (Gemma 3 1B offered an omelette recipe instead, 0.16.0). */
+class DishTimerTest {
+    private fun tool(t: String) = CommandParser.parse(t) as? CommandParser.Parsed.Tool
+
+    @Test fun usualTimesOfCommonDishes() = ru.iskra.core.i18n.withLang(ru.iskra.core.i18n.Lang.RU) {
+        val eggs = tool("Сварю яйца всмятку — засеки, сколько нужно")!!
+        assertEquals(ToolNames.SET_TIMER, eggs.name)
+        assertEquals("240", eggs.args["seconds"]!!.jsonPrimitive.content)
+        assertEquals("Яйца всмятку", eggs.args["label"]!!.jsonPrimitive.content)
+        assertEquals("Засекла 4 минуты — яйца всмятку будут в самый раз — считай от закипания.", eggs.say)
+        assertEquals("540", tool("Засеки, сколько варить яйца вкрутую")!!.args["seconds"]!!.jsonPrimitive.content)
+        assertEquals("420", tool("Поставь таймер на пельмени")!!.args["seconds"]!!.jsonPrimitive.content)
+        assertEquals("600", tool("Варю макароны, засеки")!!.args["seconds"]!!.jsonPrimitive.content)
+        assertEquals("240", tool("Заварила чай — засеки время")!!.args["seconds"]!!.jsonPrimitive.content)
+        // A time of its own, something else asked as well, a dish it doesn't know or no timer asked for: not this rule.
+        assertNull(DishTimer.parse("Засеки 5 минут на яйца всмятку"))
+        assertNull(DishTimer.parse("Засеки время на пельмени и напомни позвонить маме"))
+        assertNull(DishTimer.parse("Жарю сырники — засеки, сколько нужно"))
+        assertNull(DishTimer.parse("Сколько варить яйца всмятку?"))
+        assertNull(DishTimer.parse("Нарисуй рисунок, засеки"))
+        ru.iskra.core.i18n.withLang(ru.iskra.core.i18n.Lang.EN) {
+            val e = tool("Boiling soft-boiled eggs, set a timer")!!
+            assertEquals("240", e.args["seconds"]!!.jsonPrimitive.content)
+            assertEquals("Timer set for 4 minutes — soft-boiled eggs will be just right — count from the boil.", e.say)
+            assertEquals("600", tool("Set a timer for the pasta")!!.args["seconds"]!!.jsonPrimitive.content)
+        }
+    }
+
+    @Test fun sheSetsItHerselfWithAnyBrain() = ru.iskra.core.i18n.withLang(ru.iskra.core.i18n.Lang.RU) {
+        kotlinx.coroutines.runBlocking {
+            val timer = RecordingTool()
+            val model = object : ru.iskra.core.llm.LlmProvider {
+                override val id = "local:test"
+                override val onDevice = true
+                override suspend fun complete(request: ru.iskra.core.llm.LlmRequest): ru.iskra.core.llm.LlmResponse = error("the model is not asked")
+            }
+            val agent = ru.iskra.core.agent.CompanionAgent(persona = ru.iskra.core.persona.Personas.ISKRA,
+                memory = ru.iskra.core.memory.MemoryManager(ru.iskra.core.memory.InMemoryMemoryStore()),
+                conversation = ru.iskra.core.agent.InMemoryConversationStore(), stateStore = ru.iskra.core.agent.InMemoryStateStore(),
+                tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, localFactory = { model })
+            val r = agent.handle("Сварю яйца всмятку — засеки, сколько нужно")
+            assertEquals("Засекла 4 минуты — яйца всмятку будут в самый раз — считай от закипания.", r.text)
+            assertEquals(240, timer.calls.single()["seconds"]!!.jsonPrimitive.content.toInt())
+        }
     }
 }

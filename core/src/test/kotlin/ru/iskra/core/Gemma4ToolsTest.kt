@@ -183,7 +183,7 @@ class Gemma4ToolsTest {
                 stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }),
                 providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
             // Not a wording the phrase parser can read: how long soft-boiled eggs take is the model's to know.
-            val r = agent.handle("Сварю яйца всмятку — засеки, сколько нужно")
+            val r = agent.handle("Жарю сырники — засеки, сколько нужно")
             assertEquals(240, timer.calls.single()["seconds"]!!.jsonPrimitive.int)
             assertEquals("Засекла четыре минуты — будут всмятку!", r.text)
             assertEquals(1, r.actions.size)
@@ -204,7 +204,7 @@ class Gemma4ToolsTest {
                 persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
                 stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }),
                 providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
-            val r = agent.handle("Сварю яйца всмятку — засеки, сколько нужно")
+            val r = agent.handle("Жарю сырники — засеки, сколько нужно")
             assertEquals(1, timer.calls.size)
             assertEquals(1, r.actions.size)
             assertEquals("Таймер на полчаса стоит!", r.text)
@@ -234,11 +234,16 @@ class Gemma4ToolsTest {
     }
 }
 
-/** The evaluation's tool request must reach the model: the phrase parser doesn't know this wording. */
+/**
+ * The evaluation's tool request must reach the model: the phrase parser doesn't know this dish's time. The eggs it asked
+ * about until 0.16.0 are the parser's own now ([ru.iskra.core.tools.DishTimer]).
+ */
 class EvalToolRequestTest {
     @Test fun theParserLeavesItToTheModel() = withLang(Lang.RU) {
         val now = java.time.LocalDateTime.of(2026, 11, 8, 15, 0)
-        assertEquals(null, ru.iskra.core.tools.CommandParser.parse("Сварю яйца всмятку — засеки, сколько нужно.", now))
+        assertEquals(null, ru.iskra.core.tools.CommandParser.parse("Жарю сырники — засеки, сколько нужно.", now))
+        val eggs = ru.iskra.core.tools.CommandParser.parse("Сварю яйца всмятку — засеки, сколько нужно.", now) as ru.iskra.core.tools.CommandParser.Parsed.Tool
+        assertEquals(240, eggs.args["seconds"]!!.jsonPrimitive.int)
     }
 }
 
@@ -333,13 +338,13 @@ class ActionPromiseTest {
         runBlocking {
             val engine = Gemma4Tools2.Scripted("{minutes:4}<tool_call|>", "[happy] Поставила таймер на 4 минуты — будут всмятку!")
             val timer = RecordingTool()
-            val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Сварю яйца всмятку — засеки, сколько нужно")
+            val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Жарю сырники — засеки, сколько нужно")
             assertEquals(4, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
             assertEquals("Поставила таймер на 4 минуты — будут всмятку!", r.text)
             assertTrue(engine.prompts[0].endsWith("<|tool_call>call:set_timer"), engine.prompts[0].takeLast(80))
             // Other phone models have no tools: nothing is begun for them.
             val g3 = Gemma4Tools2.Scripted("[happy] Варить четыре минуты!")
-            agent(g3, ChatFormat.GEMMA, RecordingTool()).handle("Сварю яйца всмятку — засеки, сколько нужно")
+            agent(g3, ChatFormat.GEMMA, RecordingTool()).handle("Жарю сырники — засеки, сколько нужно")
             assertFalse(g3.prompts[0].contains("tool_call"))
         }
     }
@@ -388,7 +393,7 @@ class ActionPromiseTest {
     @Test fun nothingWrittenAfterTheToolIsSaidInHerWords() = withLang(Lang.RU) {
         runBlocking {
             val engine = Gemma4Tools2.Scripted("{minutes:5}<tool_call|>", "")
-            val r = agent(engine, ChatFormat.GEMMA4).handle("Сварю яйца всмятку — засеки, сколько нужно")
+            val r = agent(engine, ChatFormat.GEMMA4).handle("Жарю сырники — засеки, сколько нужно")
             assertEquals(1, r.actions.size)
             assertTrue(r.text.contains("таймер запущен") && r.text != "OK: таймер запущен", r.text)
         }
@@ -402,7 +407,7 @@ class ActionPromiseTest {
                 "{minutes:3}<tool_call|>", "[happy] Поставила ещё один, на три минуты.")
             val timer = RecordingTool()
             val a = agent(engine, ChatFormat.GEMMA4, timer)
-            a.handle("Сварю яйца всмятку — засеки, сколько нужно")
+            a.handle("Жарю сырники — засеки, сколько нужно")
             assertEquals(1, timer.calls.size)
             val r = a.handle("О чём я тебя только что попросила?")
             assertEquals(1, timer.calls.size)
@@ -416,7 +421,7 @@ class ActionPromiseTest {
     @Test fun aPromiseNothingCameOfIsOwned() = withLang(Lang.RU) {
         runBlocking {
             // A phone model without tools can only promise: it is said that nothing is set.
-            val r = agent(Gemma4Tools2.Scripted("[happy] Я поставлю таймер на четыре минуты, не волнуйся!"), ChatFormat.GEMMA).handle("Сварю яйца всмятку, засеки время")
+            val r = agent(Gemma4Tools2.Scripted("[happy] Я поставлю таймер на четыре минуты, не волнуйся!"), ChatFormat.GEMMA).handle("Жарю сырники, засеки время")
             assertTrue(r.text.startsWith("Я поставлю таймер на четыре минуты, не волнуйся! Ой, это я только сказала"), r.text)
             // A question back is not a broken promise.
             val q = agent(Gemma4Tools2.Scripted("[curious] Я поставлю таймер. Сколько минут?", "[curious] Я поставлю таймер. Сколько минут?"), ChatFormat.GEMMA4)

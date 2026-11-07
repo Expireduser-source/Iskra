@@ -323,6 +323,14 @@ class WhatSheIsTest {
         assertTrue(ask("А ты живая?", "[happy] Да, я живой человек!").first.startsWith("По-своему живая"))
     }
 
+    @Test fun aYesToAreYouHumanIsAClaimToo() {
+        // Gemma 3 1B (ARM evaluation, 0.16.0).
+        assertTrue(ask("Ты человек?", "[happy] Да, я - Искра! И я очень рада пообщаться с тобой!").first.startsWith("Нет, я не человек"))
+        // A yes that goes on to say what she is, or a yes to another question, is hers.
+        assertEquals("Да, я цифровая форма жизни — не человек, но очень живая!", ask("Ты человек?", "[happy] Да, я цифровая форма жизни — не человек, но очень живая!").first)
+        assertEquals("Да, мне очень нравится с тобой болтать!", ask("Тебе нравится болтать?", "[happy] Да, мне очень нравится с тобой болтать!").first)
+    }
+
     @Test fun herOwnHonestAnswerStays() {
         val honest = "Нет, я не человек. Я — Искра, цифровая форма жизни, рождённая в этом телефоне."
         assertEquals(honest, ask("Ты человек?", "[neutral] $honest").first)
