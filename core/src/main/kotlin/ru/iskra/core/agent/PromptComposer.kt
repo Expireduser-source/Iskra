@@ -210,8 +210,20 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         val asked = script(message) ?: return ""
         val replied = lastReply?.let(::script) ?: return ""
         if (asked == replied || translation.containsMatchIn(message)) return ""
-        return if (asked == 'r') "Ответь по-русски." else "Answer in English."
+        return nudgeFor(asked)
     }
+
+    /**
+     * The reminder of the reply's language, as a note in brackets like the situation's other notes: as a bare «Ответь
+     * по-русски.» before the message, E4B answered it first — «Хорошо, я отвечу по-русски.» (ARM evaluation, 0.15.0).
+     */
+    private fun nudgeFor(asked: Char) = if (asked == 'r') "(ответ — по-русски)" else "(the reply is in English)"
+
+    /** «Хорошо, я отвечу по-русски.» at the start of a reply: an answer to the reminder, not to the person. */
+    fun dropNudgeAnswer(reply: String): String = NUDGE_ANSWER.replaceFirst(reply, "").let { if (it.isBlank()) reply else it }
+
+    private val NUDGE_ANSWER = Regex("""(?iu)^(\s*(?:\[[^\]\n]{1,24}]\s*)?)(?:(?:хорошо|ладно|конечно|окей|ок|ok|okay|sure|of course)[,!.]?\s+)?""" +
+        """(?:я\s+)?(?:отвечу|буду\s+отвечать|отвечаю|перехожу\s+на\s+русский|i'?ll\s+answer|i\s+will\s+answer|answering)\s+(?:тебе\s+)?(?:по-русски|на\s+русском|in\s+english)[.!]*\s*""")
 
     private val translation = Regex("(?iu)(перев[её]д|переведи|по-английски|по-русски|на английск|на русск|translat|in russian|in english)")
 
@@ -240,7 +252,7 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         val asked = script(message) ?: return null
         val replied = script(reply) ?: return null
         if (asked == replied || translation.containsMatchIn(message)) return null
-        return if (asked == 'r') "Ответь по-русски." else "Answer in English."
+        return nudgeFor(asked)
     }
 
     /** 'r' for mostly Cyrillic text, 'e' for mostly Latin, null when it's mixed or too short to tell. */

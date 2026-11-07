@@ -132,17 +132,17 @@ class LocalLlmTest {
             a.handle("Переведи на английский: «Я люблю зимние вечера»")
             a.handle("Что лучше на завтрак перед экзаменом: каша или омлет?")
             a.handle("Переведи ещё: «Я люблю снег»")
-            assertFalse(engine.prompts[0].contains("Ответь по-русски"))
+            assertFalse(engine.prompts[0].contains("по-русски)"))
             // The last reply was English, the message Russian: a reminder next to the message only.
             val p = engine.prompts[1]
-            assertTrue(p.substringAfterLast("<start_of_turn>user\n").startsWith("Ответь по-русски."), p.takeLast(200))
+            assertTrue(p.substringAfterLast("<start_of_turn>user\n").startsWith("(ответ — по-русски)"), p.takeLast(200))
             // Still English: once more without the English turns (and the request they answered) in the history.
             assertTrue(engine.prompts[1].contains("I love winter evenings"))
             assertFalse(engine.prompts[2].contains("I love winter evenings"), engine.prompts[2])
             assertFalse(engine.prompts[2].contains("Переведи на английский"))
-            assertFalse(engine.prompts[3].contains("Ответь по-русски"))  // another translation request: no reminder
+            assertFalse(engine.prompts[3].contains("по-русски)"))  // another translation request: no reminder
             val c = ru.iskra.core.agent.PromptComposer()
-            assertEquals("Answer in English.", c.languageNudge("And what about breakfast?", "Мрр, омлет лучше!"))
+            assertEquals("(the reply is in English)", c.languageNudge("And what about breakfast?", "Мрр, омлет лучше!"))
             assertEquals("", c.languageNudge("Как дела?", "Мрр, хорошо!"))
             assertEquals("", c.languageNudge("Ок", "I love winter evenings."))  // too short to tell
         }

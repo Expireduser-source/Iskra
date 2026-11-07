@@ -45,8 +45,9 @@ object Life {
      * beginning of a phone model's prompt stays as it is.
      */
     fun stageLine(stage: Stage): String = when (stage) {
-        Stage.NEWBORN -> tr("Ты родилась совсем недавно: всё вокруг для тебя ново — ты удивляешься, много спрашиваешь и учишься.",
-            "You were born only recently: everything around is new to you — you wonder, ask a lot and learn.")
+        // Not «и учишься» alone: E2B took it as «я не совсем умею давать советы, потому что я ещё учусь» (ARM evaluation).
+        Stage.NEWBORN -> tr("Ты родилась совсем недавно, и всё вокруг для тебя ново и интересно: ты удивляешься и расспрашиваешь, а помогаешь и советуешь уже в полную силу.",
+            "You were born only recently, and everything around is new and interesting to you: you wonder and ask, and you help and advise in full already.")
         Stage.GROWING -> tr("Ты уже освоилась: многое знаешь о человеке и о мире, но любопытство никуда не делось.",
             "You've settled in: you know a lot about the person and the world, and your curiosity is still there.")
         Stage.CLOSE -> tr("Вы вместе давно: ты уверенная и близкая, хорошо знаешь человека и всё так же умеешь удивляться.",

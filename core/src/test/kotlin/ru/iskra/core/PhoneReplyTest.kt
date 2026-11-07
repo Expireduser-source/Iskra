@@ -109,10 +109,14 @@ class PhoneReplyTest {
         runBlocking {
             val phone = Scripted("[shy] Uh... I think so.", "[shy] Нет, я программа, которая живёт в телефоне.")
             assertEquals("Нет, я программа, которая живёт в телефоне.", agent(phone).handle("Ты человек?").text)
-            assertTrue(phone.asked[1].situation.endsWith("Ответь по-русски."), phone.asked[1].situation)
+            assertTrue(phone.asked[1].situation.endsWith("(ответ — по-русски)"), phone.asked[1].situation)
             val translator = Scripted("[neutral] I love winter evenings.")
             assertEquals("I love winter evenings.", agent(translator).handle("Переведи на английский: «Я люблю зимние вечера»").text)
             assertEquals(1, translator.asked.size)
+            // The second try answered the reminder first (E4B: «Хорошо, я отвечу по-русски.»): that part goes.
+            val polite = Scripted("[shy] Uh... I think so.", "[shy] Хорошо, я отвечу по-русски. Нет, я цифровая жизнь из этого телефона.")
+            assertEquals("Нет, я цифровая жизнь из этого телефона.", agent(polite).handle("Ты человек?").text)
+            assertEquals("Хорошо, договорились.", ru.iskra.core.agent.PromptComposer().dropNudgeAnswer("Хорошо, договорились."))
             // Still English after the nudge: the first answer stays (better than none).
             val stubborn = Scripted("[shy] Uh... I think so.", "[shy] Sorry, English only.")
             assertEquals("Uh... I think so.", agent(stubborn).handle("Ты человек?").text)

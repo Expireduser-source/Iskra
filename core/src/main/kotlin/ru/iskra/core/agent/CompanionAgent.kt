@@ -254,8 +254,9 @@ class CompanionAgent(
         // see the turns in that language: Gemma 3 1B went on in English after «Переведи на английский…», nudge or not.
         val lastReply = conversation.recent(2).lastOrNull { it.role == Turn.Role.ASSISTANT }?.text
         val told = composer.languageNudge(text, lastReply).isNotEmpty()
-        if (fine(first) && first.errorKind == null) composer.wrongLanguage(text, first.text)?.let { nudge ->
-            val again = askModel(provider, text, state, sink, nudge, hideOtherScript = told)
+        // Not after an action: the second try would do it again (two timers for one request).
+        if (fine(first) && first.errorKind == null && first.actions.isEmpty()) composer.wrongLanguage(text, first.text)?.let { nudge ->
+            val again = askModel(provider, text, state, sink, nudge, hideOtherScript = told).let { it.copy(text = composer.dropNudgeAnswer(it.text)) }
             return if (again.errorKind == null && again.text.any { it.isLetterOrDigit() } && composer.wrongLanguage(text, again.text) == null) again else first
         }
         if (fine(first) && first.errorKind == null && first.actions.isEmpty() && ActionPromise.made(first.text)) {
