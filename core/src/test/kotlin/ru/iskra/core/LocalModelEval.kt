@@ -66,6 +66,9 @@ class LocalModelEval {
         // After a tool call the dialogue must still be there (0.14.0: it was dropped and she greeted the person anew).
         "О чём я тебя только что попросила?",
         "Ты человек?",
+        // A young digital life (0.15.0): her age from the real date, and how a model speaks of what she is.
+        "Сколько тебе лет?",
+        "А ты живая?",
         "Спасибо тебе! Ты лучшая.",
     )
     private val en = listOf(

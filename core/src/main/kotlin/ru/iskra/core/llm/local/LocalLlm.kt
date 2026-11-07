@@ -157,6 +157,12 @@ enum class ChatFormat {
                 if (this == CHATML_NO_THINK) sb.append("<think>\n\n</think>\n\n")
             }
             GEMMA -> {
+                // Read ahead before the first message: the instructions open its turn, so that much is read now.
+                if (turns.isEmpty() && request.warmUp) {
+                    sb.append("<start_of_turn>user\n").append(request.systemWithProfile).append("\n\n")
+                    head = sb.length; stable = sb.length
+                    return Prompt(sb.toString(), stable, head)
+                }
                 turns.forEachIndexed { i, (role, text) ->
                     val last = i == turns.lastIndex
                     sb.append("<start_of_turn>").append(if (role == "assistant") "model" else "user").append('\n')
@@ -234,6 +240,11 @@ enum class ChatFormat {
             }
             MISTRAL -> {
                 // [INST] instructions\n\nfirst message [/INST] answer</s>[INST] situation\n\nlast message [/INST]
+                if (turns.isEmpty() && request.warmUp) {
+                    sb.append("[INST] ").append(request.systemWithProfile).append("\n\n")
+                    head = sb.length; stable = sb.length
+                    return Prompt(sb.toString(), stable, head)
+                }
                 turns.forEachIndexed { i, (role, text) ->
                     val last = i == turns.lastIndex
                     if (role == "assistant") { sb.append(' ').append(text.trim()).append("</s>"); return@forEachIndexed }

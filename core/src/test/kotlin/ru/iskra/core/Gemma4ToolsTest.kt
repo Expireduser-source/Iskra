@@ -421,6 +421,22 @@ class WarmUpTest {
         }
     }
 
+    /** Gemma 3 has no system turn: before the first message, the beginning of its first turn is read (it was 4 tokens). */
+    @Test fun gemma3ReadsTheInstructionsOfItsFirstTurn() = withLang(Lang.RU) {
+        runBlocking {
+            val engine = Gemma4Tools2.Scripted("[happy] Привет!")
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA, "local:gemma3") }, random = Random(1))
+            assertTrue(agent.warmUpPhone())
+            val read = engine.prompts.single()
+            assertTrue(read.startsWith("<start_of_turn>user\nТы — Искра") && read.endsWith("\n\n"), read.takeLast(120))
+            agent.handle("Привет! Как у тебя дела?")
+            assertTrue(engine.prompts.last().startsWith(read), engine.prompts.last().take(read.length + 80).takeLast(160))
+        }
+    }
+
     @Test fun notWhenTheCloudAnswersOrThereIsNoModel() = withLang(Lang.RU) {
         runBlocking {
             val engine = Gemma4Tools2.Scripted()

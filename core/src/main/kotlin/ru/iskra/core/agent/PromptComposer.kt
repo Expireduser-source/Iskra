@@ -150,13 +150,14 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
         // Gemma 4 with tools promised a timer in words instead of calling one, offered reminders and the weather in replies
         // about breakfast and thanks, and E4B took itself for a phone service: «Я не могу давать советы по учёбе… Может,
         // поставить таймер?», «не могу объяснять научные темы» (ARM evaluation, 0.14.0). A hint «полчаса — 1800 секунд»
-        // ended up in a reply word for word, so there is none.
+        // ended up in a reply word for word, so there is none. E2B still offered the flashlight to cheer up a sad person:
+        // tools are not to be offered unasked — named as tools, so «не предлагай» isn't read as a ban on advice.
         if (tools) appendLine(tr("Просят что-то сделать на телефоне — поставить таймер, будильник или напоминание, записать заметку, узнать погоду, " +
                 "включить фонарик, открыть приложение — сразу вызови подходящий инструмент и не говори, что сделала, пока он не ответил. " +
-                "Инструменты — только для таких дел: советовать, объяснять, рассказывать и болтать ты можешь обо всём сама.",
+                "Инструменты — только для таких дел, и сама их не предлагай: советовать, объяснять, рассказывать и болтать ты можешь обо всём сама.",
             "When asked to do something on the phone — set a timer, an alarm or a reminder, write a note, check the weather, turn on the " +
                 "flashlight, open an app — call the right tool at once, and don't say it's done until the tool answers. " +
-                "Tools are only for such things: advise, explain, tell stories and chat about anything yourself."))
+                "Tools are only for such things, and don't offer them yourself: advise, explain, tell stories and chat about anything yourself."))
         appendLine(if (ModelRule.AI_HONESTY in rules) tr("Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты.",
             "You are an AI program and say so honestly. If you don't know something, say so — don't invent facts.")
             else tr("Не знаешь — так и скажи, не выдумывай факты.", "If you don't know something, say so — don't invent facts."))
