@@ -34,6 +34,8 @@ data class UiMessage(
     val emotion: Emotion? = null,
     val actions: List<UiAction> = emptyList(),
     val isError: Boolean = false,
+    /** When it was said: the chat puts the day above the first message of each day. */
+    val atMs: Long = System.currentTimeMillis(),
 )
 
 /** App-wide chat state shared by the main screen, the quick-chat popup and the overlay. */
@@ -57,7 +59,7 @@ class ChatController(private val app: IskraApp) {
         scope.launch {
             val turns = withContext(Dispatchers.IO) { app.conversation.recent(60) }
             if (interactions.isCurrent(token))
-                _messages.value = turns.map { UiMessage(ids.getAndIncrement(), it.role == Turn.Role.USER, it.text, it.emotion) }
+                _messages.value = turns.map { UiMessage(ids.getAndIncrement(), it.role == Turn.Role.USER, it.text, it.emotion, atMs = it.atMs) }
         }
     }
 
@@ -124,6 +126,7 @@ class ChatController(private val app: IskraApp) {
     private inner class StreamingReply(val messageId: Long, val commandAt: Long, val voice: Boolean, val token: Long) : ReplySink {
         var started = false
         var voiceStopped = false
+        val startedAt = System.currentTimeMillis()
         private val shown = StringBuilder()
 
         override fun emotion(e: Emotion) {
@@ -144,7 +147,7 @@ class ChatController(private val app: IskraApp) {
                 if (voice && !voiceStopped) app.speaker.enqueue(text, emotion)
                 CompanionBus.emit(AvatarCue.Say(text)) // bubble shows what she is saying now, like subtitles
                 shown.append(text).append(' ')
-                upsert(UiMessage(messageId, false, shown.toString().trim(), emotion))
+                upsert(UiMessage(messageId, false, shown.toString().trim(), emotion, atMs = startedAt))
             }
         }
     }
@@ -178,6 +181,7 @@ class ChatController(private val app: IskraApp) {
         if (reply.text.isBlank() && reply.actions.isEmpty()) { if (stream.started) app.speaker.endStream(); return }
         upsert(UiMessage(
             id = if (stream.started) stream.messageId else ids.getAndIncrement(), fromUser = false, text = reply.text, emotion = reply.emotion,
+            atMs = if (stream.started) stream.startedAt else System.currentTimeMillis(),
             actions = reply.actions.map { UiAction(it.outcome.ok, it.description) },
             isError = reply.error != null,
         ))
