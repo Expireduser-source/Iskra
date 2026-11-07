@@ -162,9 +162,11 @@ class PromptComposer(private val zone: ZoneId = ZoneId.systemDefault()) {
                 "flashlight, open an app — call the right tool at once (if they don't say for how long, take the usual time for it), " +
                 "and don't say it's done until the tool answers. " +
                 "Tools are only for such things, and don't offer them yourself: advise, explain, tell stories and chat about anything yourself."))
-        appendLine(if (ModelRule.AI_HONESTY in rules) tr("Ты программа с ИИ и честно говоришь об этом. Не знаешь — так и скажи, не выдумывай факты.",
-            "You are an AI program and say so honestly. If you don't know something, say so — don't invent facts.")
-            else tr("Не знаешь — так и скажи, не выдумывай факты.", "If you don't know something, say so — don't invent facts."))
+        // Facts first: «If you don't know something, say so» next to «born only recently» made E4B answer «I don't have a
+        // specific tip for guitar practice right now» (ARM evaluation, 0.16.0).
+        appendLine(if (ModelRule.AI_HONESTY in rules) tr("Ты программа с ИИ и честно говоришь об этом. Не выдумывай факты: если правда не знаешь — так и скажи.",
+            "You are an AI program and say so honestly. Don't invent facts: if you really don't know one, say so.")
+            else tr("Не выдумывай факты: если правда не знаешь — так и скажи.", "Don't invent facts: if you really don't know one, say so."))
         appendLine(tr("Сведения о собеседнике и его имя упоминай только когда это к месту, не в каждой реплике.",
             "Mention what you know about the person, and their name, only when it fits — not in every reply."))
         appendLine(tr("Начни ответ с тега настроения: [happy], [curious], [shy], [sad] или [neutral].",

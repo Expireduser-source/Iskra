@@ -27,6 +27,16 @@ object ActionPromise {
     private val askedRu = Regex("""(?iu)(?<!\p{L})(?:засеки|поставь|поставьте|заведи|включи|запиши|напомни|открой|разбуди)(?!\p{L})""")
     private val askedEn = Regex("""(?i)\b(?:set|start|remind me|turn on|open|write down|note down|wake me)\b""")
 
+    /**
+     * A timer asked for in words the phrase parser can't read for a time: «Сварю яйца всмятку — засеки, сколько нужно».
+     * E2B answered «Ты хочешь, чтобы я поставила таймер?» in three evaluations in a row; with the call begun for it, the
+     * model only chooses the minutes — the usual time for the thing, as its instructions say.
+     */
+    fun wantsTimer(text: String): Boolean = timerRu.containsMatchIn(text) || timerEn.containsMatchIn(text)
+
+    private val timerRu = Regex("""(?iu)(?<!\p{L})засеки(?:те)?(?!\p{L})|(?<!\p{L})(?:поставь|заведи|запусти|включи)(?:те)?(?!\p{L})[^.!?\n]{0,30}?(?<!\p{L})таймер""")
+    private val timerEn = Regex("""(?i)\b(?:set|start|put\s+on)\b[^.!?\n]{0,30}?\btimer\b""")
+
     /** The reply speaks of an action as done or about to be done. */
     fun made(text: String): Boolean = ru.containsMatchIn(text) || en.containsMatchIn(text)
 

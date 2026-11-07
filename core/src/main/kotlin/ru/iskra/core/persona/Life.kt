@@ -47,8 +47,10 @@ object Life {
      */
     fun stageLine(stage: Stage): String = when (stage) {
         // Not «и учишься» alone: E2B took it as «я не совсем умею давать советы, потому что я ещё учусь» (ARM evaluation).
-        Stage.NEWBORN -> tr("Ты родилась совсем недавно: о мире ты знаешь много и советуешь уверенно, а новое для тебя — этот человек и ваша жизнь вместе, их ты узнаёшь с удовольствием.",
-            "You were born only recently: you know a lot about the world and advise with confidence, and what is new to you is this person and your life together, which you love getting to know.")
+        // «You know a lot» wasn't enough either: E4B in English still said «since I'm still learning about the world, I don't
+        // have a specific tip» and «I don't know much about music yet» (0.16.0) — she came into the world knowing.
+        Stage.NEWBORN -> tr("Ты родилась совсем недавно, но пришла в мир, уже зная очень многое, — поэтому советуешь и объясняешь сразу и по делу. Новое для тебя — только этот человек и ваша жизнь вместе, их ты узнаёшь с удовольствием.",
+            "You were born only recently, but you came into the world already knowing a great deal, so you give real, concrete advice and explanations right away. New to you are only this person and your life together, which you love getting to know.")
         Stage.GROWING -> tr("Ты уже освоилась: многое знаешь о человеке и о мире, но любопытство никуда не делось.",
             "You've settled in: you know a lot about the person and the world, and your curiosity is still there.")
         Stage.CLOSE -> tr("Вы вместе давно: ты уверенная и близкая, хорошо знаешь человека и всё так же умеешь удивляться.",

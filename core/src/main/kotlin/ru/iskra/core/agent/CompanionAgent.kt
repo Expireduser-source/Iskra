@@ -255,7 +255,9 @@ class CompanionAgent(
      */
     private suspend fun askPhone(provider: LlmProvider, text: String, state: CompanionState, sink: ReplySink?): AgentReply {
         fun fine(r: AgentReply) = r.errorKind != null || r.actions.isNotEmpty() || r.text.any { it.isLetterOrDigit() }
-        val first = askModel(provider, text, state, sink)
+        // A timer asked for without a time the phrase parser reads: Gemma 4 begins with the call and chooses the minutes.
+        val timer = ru.iskra.core.tools.ToolNames.SET_TIMER.takeIf { provider.nativeTools && ActionPromise.wantsTimer(text) }
+        val first = askModel(provider, text, state, sink, forceTool = timer)
         // Answered in another language than asked: once more, told which (the first one stays if that doesn't help). If this
         // try was told already — the reply before was in the other language too, a translation say — the second one doesn't
         // see the turns in that language: Gemma 3 1B went on in English after «Переведи на английский…», nudge or not.
