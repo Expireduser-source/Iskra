@@ -45,6 +45,20 @@ class FakeEngine(private vararg val pieces: String) : LlamaEngine {
 }
 
 class LocalLlmTest {
+    /** ARM evaluation, Gemma 3 1B on «Привет! Как у тебя дела?»: after two empty lines, two more versions of the reply. */
+    @Test fun aSecondTakeIsCutOff() = runTest {
+        val engine = FakeEngine("[happy] Привет! Всё отлично, ты? ", "Рада, что мы общаемся!", " \n\n\n", "Я поняла тебя, ты хочешь узнать, как я?", " \n\n\nАх...")
+        val heard = StringBuilder()
+        val r = LocalLlmProvider({ engine }, ChatFormat.GEMMA, "local:test").stream(LlmRequest("Ты — Искра.", listOf(ChatMessage.User("Привет! Как у тебя дела?")))) { heard.append(it) }
+        assertEquals("[happy] Привет! Всё отлично, ты? Рада, что мы общаемся!", r.text)
+        assertFalse(heard.contains("Я поняла"), heard.toString())
+        // One empty line is a paragraph, and empty lines before any words are not a second take.
+        assertEquals(-1, LocalLlmProvider.sampleBreak("Первый абзац.\n\nВторой."))
+        assertEquals(-1, LocalLlmProvider.sampleBreak("\n\n\nОтвет"))
+        assertEquals(-1, LocalLlmProvider.sampleBreak("<|channel>мысли\n\n\nещё"))
+        assertEquals(10, LocalLlmProvider.sampleBreak("Ответ тут.\n\n\nЕщё"))
+    }
+
     private val request = LlmRequest(
         system = "Ты — Искра.",
         messages = listOf(ChatMessage.User("Привет"), ChatMessage.Assistant("Мрр, привет!"), ChatMessage.User("Как дела?")),

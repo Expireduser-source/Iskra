@@ -357,7 +357,9 @@ class LocalLlmProvider(
                         if (firstMs < 0) firstMs = (System.nanoTime() - t0) / 1_000_000
                         pieces++
                         raw.append(piece)
-                        val stop = format.stops.firstOrNull { raw.contains(it) }
+                        // Two empty lines after some words: a small model starting another version of its reply (Gemma 3 1B:
+                        // «Привет! Всё отлично…» and then «Я поняла тебя, ты хочешь узнать, как я?…», «Ах... ничего особенного…»).
+                        val stop = format.stops.firstOrNull { raw.contains(it) } ?: SECOND_TAKE.takeIf { piece.contains('\n') && sampleBreak(raw.toString()) >= 0 }
                         if (stop != null) return@generate false
                         val incoming = when (gate) {
                             Gate.OPEN -> piece
@@ -409,7 +411,7 @@ class LocalLlmProvider(
             }
         }
         if (!leadDone) cleanStart(lead.toString(), dropPurr).takeIf { it.isNotEmpty() }?.let(onText)
-        val cut = format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } }.minOrNull()
+        val cut = (format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } } + listOfNotNull(sampleBreak(text).takeIf { it >= 0 })).minOrNull()
         val (promptTokens, reused) = e.lastRead()
         // The real measure of a token for the next dialogue fitting (a short prompt says little: markup weighs more).
         if (promptTokens >= 200) charsPerToken = prompt.length.toDouble() / promptTokens
@@ -432,6 +434,15 @@ class LocalLlmProvider(
 
     companion object {
         private const val THOUGHT_OPEN = "<|channel>"
+        private const val SECOND_TAKE = "\n\n\n"
+
+        /** Where two empty lines follow some words of the reply (not of a thought channel), or -1. */
+        fun sampleBreak(s: String): Int {
+            val at = s.indexOf(SECOND_TAKE)
+            if (at < 0) return -1
+            val before = s.substring(0, at)
+            return if (before.substringAfterLast(THOUGHT_CLOSE).any { it.isLetter() } && !before.substringAfterLast(THOUGHT_CLOSE).contains(THOUGHT_OPEN)) at else -1
+        }
         private const val THOUGHT_CLOSE = "<channel|>"
 
         /** Spaces and punctuation that can't start a reply (left over when a model begins with stray symbols). */
