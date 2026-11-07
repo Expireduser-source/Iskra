@@ -136,6 +136,12 @@ class LocalModelEval {
                             val days = q.removePrefix("@+").removeSuffix("d").toInt()
                             clockMs += days * 86_400_000L
                             doc.append("\n*(${days} days later)*\n")
+                            // The night job between the days: her diary for the day that passed (0.15.0), recalled in the morning.
+                            val td = System.nanoTime()
+                            raw = ""
+                            val entry = runCatching { runBlocking { agent.writeDiary(onPhone = true) } }.getOrNull()
+                            doc.append("\n**Night diary** (%.1f s): %s\n".format(java.util.Locale.ROOT, (System.nanoTime() - td) / 1e9,
+                                when { entry == null -> "— (raw: `" + raw.take(160).replace("\n", " ") + "`)"; entry.text.isBlank() -> "(nothing to write)"; else -> entry.text }))
                             continue
                         }
                         val before = stats.size

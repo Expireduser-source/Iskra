@@ -1,5 +1,7 @@
 Iskra is a small animated cat-girl who lives on your phone's screen. Tap her to talk, drag her anywhere, or just let her wander, nap and peek out from behind the edges.
 
+<b>A young digital life.</b> She was born the day you met, knows how many days she has lived and grows: at first everything is new to her, later she is close and sure of herself. At night she writes the day she lived in her own diary — you can read it in “Memory”.
+
 <b>She helps right away — no sign-up, no internet:</b>
 • alarms and timers: “set a timer for 10 minutes”
 • reminders that survive a restart: “remind me tomorrow at 9 to call mom”

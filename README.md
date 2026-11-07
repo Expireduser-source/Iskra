@@ -24,6 +24,9 @@ if you want — chats with you through an AI model. **Free, no ads, no accounts,
 <p align="center"><img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="180" alt=""> <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="180" alt=""> <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="180" alt=""> <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/4.png" width="180" alt=""></p>
 
 ## What she can do
+- **A young digital life:** she was born the day you met, knows how many days she has lived and grows — at first
+  everything is new to her, later she is close and sure of herself. A week, a month, a hundred days, a year are her little
+  holidays. At night she writes the day she lived in her own diary, in her own words — you can read it in “Memory”.
 - **Right away, offline:** alarms and timers (“set a timer for 10 minutes”), reminders that survive a restart
   (“remind me tomorrow at 9 to call mom”), notes (“note: buy milk”), exact sums (“what's 15% of 2300”), units (“5 miles
   to km”), dates (“how many days until New Year”), coins and dice, small talk, the flashlight, volume, apps, settings,
