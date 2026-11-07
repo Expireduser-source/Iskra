@@ -79,7 +79,8 @@ internal object EnglishCommands {
         skills(raw, t, now)?.let { return it }
 
         // Alarm: "set an alarm for 7:30", "wake me up at 6 am", "alarm at 7 pm", "set alarm for 6:45 in the morning".
-        Regex("""^(?:set (?:an |the |my )?alarm|alarm|wake me(?: up)?)(?: for| at| to)? (\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?: o'?clock)?(?: in the (morning|afternoon|evening)| at night)?$""")
+        // Also "wake me up tomorrow at 7", "can you wake me up at 6:30 tomorrow?", "set an alarm for tomorrow at 7".
+        Regex("""^(?:(?:can|could|will|would) you (?:please )?)?(?:please )?(?:set (?:an |the |my )?alarm|alarm|wake me(?: up)?)(?: for tomorrow| tomorrow)?(?: for| at| to)? (\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?(?: o'?clock)?(?: in the (morning|afternoon|evening)| at night)?(?: tomorrow(?: morning)?)?(?: please)?$""")
             .find(t)?.let { m ->
                 var h = m.groupValues[1].toInt()
                 val min = m.groupValues[2].ifEmpty { "0" }.toInt()

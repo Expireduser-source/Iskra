@@ -58,6 +58,9 @@ class EnglishTest {
         assertEquals(19, tool("wake me up at 7 pm").int("hour"))
         assertEquals(0, tool("alarm at 12 am").int("hour"))
         assertEquals(18, tool("set alarm for 6 in the evening").int("hour"))
+        assertEquals(7, tool("Wake me up tomorrow at 7").int("hour"))
+        assertEquals(30, tool("Can you wake me up at 6:30 tomorrow?").int("minute"))
+        assertEquals(7, tool("set an alarm for tomorrow at 7 am").int("hour"))
     }
 
     @Test fun phoneCommands() {
