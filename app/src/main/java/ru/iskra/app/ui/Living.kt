@@ -348,8 +348,8 @@ fun BirthFlare(modifier: Modifier, progress: () -> Float, heart: Offset) {
     val path = remember { sparkPath() }
     val embers = remember {
         val rnd = Random(11)
-        List(26) { i ->
-            Ember((i * 2 * PI / 26 + rnd.nextDouble(-0.12, 0.12)).toFloat(), 0.3f + rnd.nextFloat() * 0.34f, 2.2f + rnd.nextFloat() * 2.6f,
+        List(32) { i ->
+            Ember((i * 2 * PI / 32 + rnd.nextDouble(-0.1, 0.1)).toFloat(), 0.28f + rnd.nextFloat() * 0.36f, 2.6f + rnd.nextFloat() * 2.8f,
                 (if (rnd.nextBoolean()) 1f else -1f) * (0.5f + rnd.nextFloat()), i)
         }
     }
@@ -373,17 +373,17 @@ fun BirthFlare(modifier: Modifier, progress: () -> Float, heart: Offset) {
                 0.5f to pink.copy(alpha = 0.35f * coreAlpha), 1f to Color.Transparent, center = c, radius = glow), glow, c)
             spark(path, c, core * 1.9f, p * 90f, Color.White.copy(alpha = coreAlpha))
         }
-        // The flash she comes out of.
+        // The flash she comes out of: white at the heart, pink at the edge (a gold haze looked muddy in the preview).
         if (p in Birth.FLARE..0.64f) {
             val k = (p - Birth.FLARE) / (0.64f - Birth.FLARE)
-            val r = unit * 0.75f * Birth.easeOut(k * 2f)
-            drawCircle(Brush.radialGradient(0f to Color.White.copy(alpha = 0.9f * (1f - k)), 0.6f to gold.copy(alpha = 0.25f * (1f - k)),
-                1f to Color.Transparent, center = c, radius = r.coerceAtLeast(1f)), r.coerceAtLeast(1f), c)
+            val r = (unit * 0.62f * Birth.easeOut(k * 2f)).coerceAtLeast(1f)
+            drawCircle(Brush.radialGradient(0f to Color.White.copy(alpha = 0.92f * (1f - k)), 0.35f to pink.copy(alpha = 0.16f * (1f - k)),
+                1f to Color.Transparent, center = c, radius = r), r, c)
         }
         // A ring running out.
         if (p in Birth.FLARE..0.78f) {
             val k = (p - Birth.FLARE) / (0.78f - Birth.FLARE)
-            drawCircle(gold.copy(alpha = 0.8f * (1f - k)), unit * 0.55f * Birth.easeOut(k), c,
+            drawCircle(pink.copy(alpha = 0.7f * (1f - k)), unit * 0.55f * Birth.easeOut(k), c,
                 style = Stroke(width = (3f * (1f - k) + 0.6f).dp.toPx()))
         }
         // Sparks flying apart, slowing down, rising a little and fading.
