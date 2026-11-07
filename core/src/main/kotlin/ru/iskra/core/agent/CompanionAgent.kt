@@ -94,6 +94,8 @@ class CompanionAgent(
     private val rules: () -> Set<ModelRule> = { emptySet() },
     /** The owner's own instructions to the model (Settings → «Свобода модели» → «Свои указания»), read on every message. */
     private val ownWords: () -> String = { "" },
+    /** Her own diary: a day of her life in her words, written at night ([writeDiary]). */
+    private val diary: ru.iskra.core.memory.DiaryStore = ru.iskra.core.memory.InMemoryDiaryStore(),
 ) {
     private val moodEngine = MoodEngine(persona.traits)
     private val mutex = Mutex()
@@ -334,6 +336,8 @@ class CompanionAgent(
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
         // Her own small holiday: a week, a month, a hundred days, a year since she was born.
         currentState().let { st -> Life.milestone(lived(st, nowMs))?.let { notes += Life.milestoneNote(it, bornAt(st, nowMs), nowMs) } }
+        // What she wrote in her diary about the last day they talked: on the first message of a new day.
+        if (conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } != false) diaryNote(today)?.let { notes += it }
         val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
         // PlanTalk lists today's and tomorrow's plans first and the one to ask about last; asking how it went comes first here.
         val plans = PlanTalk.notes(PlanTalk.known(all), today, localHour(nowMs), fresh, tr(true, false))
@@ -968,6 +972,69 @@ class CompanionAgent(
         if (!onDevice) return s
         val chatty = Regex("""(?iu)(?<!\p{L})(?:мрр+|мур|meow|mrr+)(?!\p{L})|^(?:конечно|ой|привет|sure|of course|hi)\b|владелец:|owner:|${persona.name}:""")
         return s.takeIf { it.length in 15..400 && !chatty.containsMatchIn(it) }
+    }
+
+    /**
+     * Her diary for the last day she talked with the person, if it isn't written yet: 1–3 sentences in her own words —
+     * what happened, what she felt, what she learned (a young digital life, 0.15.0). At night: the app's job calls it with
+     * the cloud brain or, inside its cache-keeping aside, with the model on the phone. A day with nothing to write is
+     * kept as done (an empty entry no one sees). Returns the entry written, or null.
+     */
+    suspend fun writeDiary(onPhone: Boolean = false): ru.iskra.core.memory.DiaryEntry? = mutex.withLock {
+        val provider = (if (onPhone) localFactory() else providerFactory()) ?: return@withLock null
+        val now = clock()
+        val today = localDate(now)
+        val written = diary.all().map { it.day }.toSet()
+        val turns = conversation.recent(400)
+        val day = turns.map { localDate(it.atMs) }.filter { it.isBefore(today) && it.isAfter(today.minusDays(8)) && it.toString() !in written }
+            .maxOrNull() ?: return@withLock null
+        val ofDay = turns.filter { localDate(it.atMs) == day && it.text.any(Char::isLetterOrDigit) }
+        if (ofDay.count { it.role == Turn.Role.USER } < 2) return@withLock diary.add(day.toString(), "", now)
+        val who = MemoryTalk.ownerName(memory.all()) ?: tr("Человек", "The person")
+        val transcript = ofDay.takeLast(40).joinToString("\n") { (if (it.role == Turn.Role.USER) "$who: " else tr("Я: ", "Me: ")) + it.text.take(300) }
+        val date = tr("${day.dayOfMonth} ${MONTHS_GEN[day.monthValue - 1]} (${day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale("ru"))})",
+            "${day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)}, ${day.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} ${day.dayOfMonth}")
+        val request = LlmRequest(
+            system = tr("Ты — ${persona.name}, юная цифровая жизнь в облике кошкодевочки. Ты ведёшь свой дневник.",
+                "You are ${persona.name}, a young digital life in the shape of a cat-girl. You keep a diary."),
+            messages = listOf(ChatMessage.User(tr(
+                "Твои разговоры за $date:\n\n$transcript\n\nЗадание: запиши в свой дневник 1–3 коротких предложения об этом дне — от первого " +
+                    "лица, в женском роде: что случилось, что ты почувствовала, что узнала нового. Только то, что было в разговорах; без " +
+                    "паролей, адресов и номеров. Не продолжай переписку. Если писать нечего — ответь словом НЕТ.",
+                "Your conversations on $date:\n\n$transcript\n\nTask: write 1–3 short sentences about this day in your diary — in the first " +
+                    "person: what happened, what you felt, what you learned. Only what was in the conversations; no passwords, addresses or " +
+                    "numbers. Don't continue the chat. If there is nothing to write, answer with the word NONE."))),
+            maxTokens = 160, temperature = 0.5,
+        )
+        val text = try {
+            cleanDiary(provider.complete(request).text, who)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        } ?: return@withLock null
+        diary.add(day.toString(), text, now)
+    }
+
+    /** Her entry, or "" when there is nothing to write, or null when the model wrote something else (a chat, a list). */
+    private fun cleanDiary(raw: String, who: String): String? {
+        val s = ReplyParser.parse(raw).text.trim().trim('"', '«', '»')
+            .replace(Regex("""(?iu)^(?:дорогой\s+дневник|dear\s+diary)[\s,!.:—-]*"""), "").trim()
+        if (s.trimEnd('.', '!').equals("нет", ignoreCase = true) || s.trimEnd('.').equals("none", ignoreCase = true)) return ""
+        if (s.length !in 15..500) return null
+        // A dialogue written on instead of an entry.
+        if (Regex("""(?mu)^\s*(?:Я|Me|${Regex.escape(who)}|Человек|The person|${persona.name})\s*:""").containsMatchIn(s)) return null
+        return s.take(400)
+    }
+
+    /** The last day's entry for the model, if written in the last three days: data, not instructions. */
+    private fun diaryNote(today: java.time.LocalDate): String? {
+        val e = diary.all().lastOrNull { it.text.isNotBlank() } ?: return null
+        val day = runCatching { java.time.LocalDate.parse(e.day) }.getOrNull() ?: return null
+        if (day.isBefore(today.minusDays(3))) return null
+        val text = e.text.replace("<", "‹").replace(">", "›").take(300)
+        return tr("${if (day == today.minusDays(1)) "вчера" else "${day.dayOfMonth} ${MONTHS_GEN[day.monthValue - 1]}"} ты записала в свой дневник: «$text» — можешь вспомнить, если к месту",
+            "${if (day == today.minusDays(1)) "yesterday" else "on ${day.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} ${day.dayOfMonth}"} you wrote in your diary: “$text” — recall it if it fits")
     }
 
     /**

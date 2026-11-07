@@ -242,8 +242,11 @@ private fun MemoryScreen(modifier: Modifier) {
     var items by remember { mutableStateOf(app.memory.all()) }
     var notes by remember { mutableStateOf(app.notes.all()) }
     var reminders by remember { mutableStateOf(app.reminders.pending()) }
+    // Her own diary, newest first; days with nothing to write are kept but not shown.
+    fun diaryNow() = app.diary.all().filter { it.text.isNotBlank() }.sortedByDescending { it.day }
+    var diary by remember { mutableStateOf(diaryNow()) }
     var confirmWipe by remember { mutableStateOf(false) }
-    fun refresh() { items = app.memory.all(); notes = app.notes.all(); reminders = app.reminders.pending() }
+    fun refresh() { items = app.memory.all(); notes = app.notes.all(); reminders = app.reminders.pending(); diary = diaryNow() }
     val timeFmt = remember { java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.ROOT) }
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -294,6 +297,18 @@ private fun MemoryScreen(modifier: Modifier) {
                 SimpleRow("${timeFmt.format(java.util.Date(r.atMs))} — ${r.text}", enabled = !clearing) {
                     app.reminderScheduler.cancel(r.id); app.reminders.delete(r.id); refresh()
                     Diag.i("remind", tr("Напоминание удалено владельцем, осталось ${reminders.size}", "Reminder deleted by the owner, ${reminders.size} left"))
+                }
+            }
+            item(key = "diary-h") { Text(tr("🌙 Дневник Искры (${diary.size})", "🌙 Iskra's diary (${diary.size})"), fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
+            if (diary.isEmpty()) item(key = "diary-e") {
+                Text(tr("Ночью она записывает прожитый день своими словами — первая запись появится после дня разговоров.",
+                    "At night she writes down the day she lived, in her own words — the first entry comes after a day of talking."),
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            items(diary, key = { "d" + it.id }) { e ->
+                SimpleRow("${diaryDate(e.day)} — ${e.text}", enabled = !clearing) {
+                    app.diary.delete(e.id); refresh()
+                    Diag.i("diary", tr("Запись дневника удалена владельцем, осталось ${diary.size}", "Diary entry deleted by the owner, ${diary.size} left"))
                 }
             }
             item(key = "note-h") { Text(tr("📝 Заметки (${notes.size})", "📝 Notes (${notes.size})"), fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp)) }
@@ -540,6 +555,12 @@ private fun PermCard(title: String, text: String, granted: Boolean, onOpen: () -
         }
     }
 }
+
+/** «7 ноября» / "November 7" for a diary day (ISO date), as it was written. */
+private fun diaryDate(day: String): String = runCatching {
+    val d = java.time.LocalDate.parse(day)
+    java.time.format.DateTimeFormatter.ofPattern(tr("d MMMM", "MMMM d"), java.util.Locale.forLanguageTag(tr("ru", "en"))).format(d)
+}.getOrDefault(day)
 
 @Composable
 private fun SimpleRow(text: String, enabled: Boolean = true, onDelete: () -> Unit) {

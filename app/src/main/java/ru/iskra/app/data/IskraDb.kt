@@ -16,7 +16,7 @@ import ru.iskra.core.persona.Emotion
  * Local SQLite database in the app's private storage (protected by Android file-based encryption
  * and the app sandbox; excluded from backups). Schema migrations go through [onUpgrade].
  */
-class IskraDb(context: Context) : SQLiteOpenHelper(context, "iskra.db", null, 2) {
+class IskraDb(context: Context) : SQLiteOpenHelper(context, "iskra.db", null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE memory(
@@ -30,6 +30,12 @@ class IskraDb(context: Context) : SQLiteOpenHelper(context, "iskra.db", null, 2)
                 role TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL, emotion TEXT)"""
         )
         createV2(db)
+        createV3(db)
+    }
+
+    /** v3 (0.15.0): Iskra's own diary. */
+    private fun createV3(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS diary(id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL, text TEXT NOT NULL, created INTEGER NOT NULL)")
     }
 
     /** v2 (0.7.0): notes and reminders. */
@@ -45,7 +51,11 @@ class IskraDb(context: Context) : SQLiteOpenHelper(context, "iskra.db", null, 2)
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         // Explicit migrations only — never drop user data.
         if (oldVersion < 2) createV2(db)
+        if (oldVersion < 3) createV3(db)
     }
+
+    /** A newer version's database opened by this one (the owner went back): its tables stay, nothing is dropped. */
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
 }
 
 class SqliteMemoryStore(private val helper: IskraDb) : MemoryStore {
@@ -212,6 +222,36 @@ class SqliteNoteStore(private val helper: IskraDb) : ru.iskra.core.skills.NoteSt
         try {
             db.delete("notes", null, null)
             for (n in notes) db.insertOrThrow("notes", null, ContentValues().apply { put("text", n.text); put("created", n.createdAtMs) })
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+}
+
+/** Iskra's diary: a day of her life in her own words (0.15.0). */
+class SqliteDiaryStore(private val helper: IskraDb) : ru.iskra.core.memory.DiaryStore {
+    override fun all(): List<ru.iskra.core.memory.DiaryEntry> {
+        val out = ArrayList<ru.iskra.core.memory.DiaryEntry>()
+        helper.readableDatabase.rawQuery("SELECT id, day, text, created FROM diary ORDER BY day, id", null).use { c ->
+            while (c.moveToNext()) out += ru.iskra.core.memory.DiaryEntry(c.getLong(0), c.getString(1), c.getString(2), c.getLong(3))
+        }
+        return out
+    }
+
+    override fun add(day: String, text: String, nowMs: Long): ru.iskra.core.memory.DiaryEntry {
+        val id = helper.writableDatabase.insertOrThrow("diary", null, ContentValues().apply { put("day", day); put("text", text); put("created", nowMs) })
+        return ru.iskra.core.memory.DiaryEntry(id, day, text, nowMs)
+    }
+
+    override fun delete(id: Long) { helper.writableDatabase.delete("diary", "id = ?", arrayOf(id.toString())) }
+    override fun clear() { helper.writableDatabase.delete("diary", null, null) }
+
+    /** A backup's entries in place of these. */
+    fun replaceAll(entries: List<ru.iskra.core.memory.DiaryEntry>) {
+        val db = helper.writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete("diary", null, null)
+            for (e in entries) db.insertOrThrow("diary", null, ContentValues().apply { put("day", e.day); put("text", e.text); put("created", e.createdAtMs) })
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
     }

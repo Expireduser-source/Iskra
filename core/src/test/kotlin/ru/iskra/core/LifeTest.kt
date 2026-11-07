@@ -140,8 +140,12 @@ class LifeTest {
     }
 
     @Test fun theBirthdayIsKeptInABackup() {
-        val b = Backup(createdAtMs = 1, appVersion = "t", settings = emptyMap(), memory = emptyList(), state = CompanionState(bornAtMs = at(7)))
-        assertEquals(at(7), BackupCodec.decode(BackupCodec.encode(b)).state!!.bornAtMs)
+        val b = Backup(createdAtMs = 1, appVersion = "t", settings = emptyMap(), memory = emptyList(), state = CompanionState(bornAtMs = at(7)),
+            diary = listOf(ru.iskra.core.memory.DiaryEntry(5, "2026-11-07", "Сегодня мы познакомились!", at(8)), ru.iskra.core.memory.DiaryEntry(6, "2026-11-08", "", at(9))))
+        val back = BackupCodec.decode(BackupCodec.encode(b))
+        assertEquals(at(7), back.state!!.bornAtMs)
+        // Her diary too, the days with nothing written included (so they aren't asked about again).
+        assertEquals(listOf("2026-11-07" to "Сегодня мы познакомились!", "2026-11-08" to ""), back.diary.map { it.day to it.text })
     }
 
     @Test fun theStageSitsAfterTheToolsAndChangesOnlyTwice() = withLang(Lang.RU) {
@@ -149,5 +153,78 @@ class LifeTest {
         val lines = (0..400).map { c.compactPersonal(StyleProfile(), stage = Life.stage(it)) }.distinct()
         assertEquals(3, lines.size)
         assertFalse(c.compact(Personas.ISKRA).contains("Ты родилась совсем недавно"))
+    }
+}
+
+/** Her own diary: a day of her life in her words, written at night and recalled the next morning (0.15.0). */
+class DiaryTest {
+    private val zone = ZoneId.systemDefault()
+    private fun at(day: Int, hour: Int = 12, minute: Int = 0) = LocalDateTime.of(2026, 11, day, hour, minute).atZone(zone).toInstant().toEpochMilli()
+
+    private class Scripted(vararg answers: String) : LlmProvider {
+        override val id = "cloud:test"
+        private val left = ArrayDeque(answers.toList())
+        val asked = mutableListOf<LlmRequest>()
+        override suspend fun complete(request: LlmRequest): LlmResponse { asked += request; return LlmResponse(left.removeFirstOrNull() ?: "[happy] Мрр!", emptyList()) }
+    }
+
+    @Test fun aDayIsWrittenOnceInHerWordsAndRecalledInTheMorning() = withLang(Lang.RU) {
+        runBlocking {
+            var now = at(7, 10)
+            val convo = InMemoryConversationStore()
+            val diary = ru.iskra.core.memory.InMemoryDiaryStore()
+            val memory = MemoryManager(InMemoryMemoryStore())
+            val cloud = Scripted("[happy] Приятно познакомиться, Аня!", "[happy] Пятёрка — это здорово!",
+                "Сегодня Аня рассказала, что сдала экзамен по анатомии на пятёрку, — я так за неё радовалась!", "[happy] Доброе утро, Аня!")
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = memory, conversation = convo, stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { cloud }, random = Random(1),
+                clock = { now }, diary = diary)
+            agent.handle("Меня зовут Аня")
+            now = at(7, 18)
+            agent.handle("Я сдала экзамен на пятёрку!")
+            // Not on the same day: the day isn't over.
+            assertNull(agent.writeDiary())
+            // At night: the day that passed, in her words.
+            now = at(8, 3)
+            val e = agent.writeDiary()!!
+            assertEquals("2026-11-07", e.day)
+            assertEquals("Сегодня Аня рассказала, что сдала экзамен по анатомии на пятёрку, — я так за неё радовалась!", e.text)
+            val asked = cloud.asked.last().messages.single().let { (it as ru.iskra.core.llm.ChatMessage.User).text }
+            assertTrue(asked.contains("Аня: Я сдала экзамен на пятёрку!") && asked.contains("Я: Пятёрка — это здорово!"), asked)
+            assertTrue(asked.startsWith("Твои разговоры за 7 ноября (суббота)"), asked.take(60))
+            // Written once.
+            assertNull(agent.writeDiary())
+            // The morning's first message: she may recall it; the next one that day: not again.
+            now = at(8, 9)
+            agent.handle("Доброе утро!")
+            assertTrue(cloud.asked.last().situation.contains("вчера ты записала в свой дневник: «Сегодня Аня рассказала"), cloud.asked.last().situation)
+            now = at(8, 9, 5)
+            agent.handle("Что нового?")
+            assertFalse(cloud.asked.last().situation.contains("дневник"))
+        }
+    }
+
+    @Test fun nothingToWriteIsKeptAndAChatIsNotAnEntry() = withLang(Lang.RU) {
+        runBlocking {
+            var now = at(7, 10)
+            val convo = InMemoryConversationStore()
+            for (i in 0 until 4) convo.append(Turn(if (i % 2 == 0) Turn.Role.USER else Turn.Role.ASSISTANT, "реплика $i", at(6, 10 + i)))
+            val diary = ru.iskra.core.memory.InMemoryDiaryStore()
+            fun agent(p: LlmProvider) = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = convo, stateStore = InMemoryStateStore(),
+                tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { p }, random = Random(1), clock = { now }, diary = diary)
+            // The model went on with the chat instead: nothing is kept, it is tried again later.
+            assertNull(agent(Scripted("Человек: реплика 4\nЯ: Мрр, привет!")).writeDiary())
+            assertTrue(diary.all().isEmpty())
+            // «НЕТ»: the day is done, nothing to see.
+            assertEquals("", agent(Scripted("НЕТ")).writeDiary()!!.text)
+            assertNull(agent(Scripted("Сегодня что-то было.")).writeDiary())
+            // «Дорогой дневник» goes.
+            convo.append(Turn(Turn.Role.USER, "Привет", at(7, 10))); convo.append(Turn(Turn.Role.ASSISTANT, "Мрр!", at(7, 10, 1)))
+            convo.append(Turn(Turn.Role.USER, "Как ты?", at(7, 11))); convo.append(Turn(Turn.Role.ASSISTANT, "Хорошо!", at(7, 11, 1)))
+            now = at(8, 3)
+            assertEquals("Сегодня мы просто поболтали, и мне было тепло.", agent(Scripted("Дорогой дневник! Сегодня мы просто поболтали, и мне было тепло.")).writeDiary()!!.text)
+        }
     }
 }

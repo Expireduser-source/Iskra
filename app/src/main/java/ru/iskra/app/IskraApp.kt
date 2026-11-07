@@ -75,6 +75,8 @@ class IskraApp : Application() {
     lateinit var usage: UsageMeter; private set
     lateinit var notes: SqliteNoteStore; private set
     lateinit var reminders: SqliteReminderStore; private set
+    /** Iskra's own diary (0.15.0). */
+    lateinit var diary: ru.iskra.app.data.SqliteDiaryStore; private set
     lateinit var reminderScheduler: AndroidReminderScheduler; private set
     val phrases = PhraseBank()
     /** Last message or touch from the owner (for proactive lines). */
@@ -135,6 +137,7 @@ class IskraApp : Application() {
         confirm = ConfirmBridge()
         notes = SqliteNoteStore(db)
         reminders = SqliteReminderStore(db)
+        diary = ru.iskra.app.data.SqliteDiaryStore(db)
         reminderScheduler = AndroidReminderScheduler(this)
         val weather = WeatherClient()
         val skills = listOf(
@@ -163,6 +166,7 @@ class IskraApp : Application() {
             upcoming = { upcomingReminders(reminders, System.currentTimeMillis(), java.time.ZoneId.systemDefault()) },
             rules = { settings.modelRules() },
             ownWords = { settings.ownWords() },
+            diary = diary,
         )
         speaker = Speaker(
             this,
@@ -214,6 +218,7 @@ class IskraApp : Application() {
                     speaker.clearCache()
                     Diag.clearCrashes()
                     notes.deleteAll()
+                    diary.clear()
                     reminders.pending().forEach { reminderScheduler.cancel(it.id) }
                     reminders.deleteAll()
                     Diag.clear()

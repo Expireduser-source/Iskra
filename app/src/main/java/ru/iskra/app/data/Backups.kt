@@ -56,6 +56,7 @@ object Backups {
             memory = app.memory.all(),
             state = app.stateStore.load(),
             notes = app.notes.all(),
+            diary = app.diary.all(),
         )
         val text = BackupCodec.encode(b, knownSecrets = DiagCollector.knownSecrets(app))
         val out = ctx.contentResolver.openOutputStream(uri, "wt") ?: throw BackupException(tr("Не удалось открыть файл для записи.", "Couldn't open the file for writing."))
@@ -94,6 +95,8 @@ object Backups {
             add(tr("Копия от $date, версия ${b.appVersion.ifBlank { "?" }}.", "Backup from $date, version ${b.appVersion.ifBlank { "?" }}."))
             add(tr("Память: сейчас $now ${plural(now)} → будет ${b.memory.size}. Текущие записи удалятся.", "Memory: now $now ${plural(now)} → will be ${b.memory.size}. Current entries will be deleted."))
             if (b.notes.isNotEmpty()) add(tr("Заметки: сейчас ${app.notes.all().size} → будет ${b.notes.size}.", "Notes: now ${app.notes.all().size} → will be ${b.notes.size}."))
+            if (b.diary.isNotEmpty()) add(tr("Дневник Искры: сейчас ${app.diary.all().count { it.text.isNotBlank() }} → будет ${b.diary.count { it.text.isNotBlank() }}.",
+                "Iskra's diary: now ${app.diary.all().count { it.text.isNotBlank() }} → will be ${b.diary.count { it.text.isNotBlank() }}."))
             add(if (changed.isEmpty()) tr("Настройки: не изменятся.", "Settings: won't change.") else tr("Настройки: изменятся ${changed.size} — ${changed.joinToString(", ")}.", "Settings: ${changed.size} will change — ${changed.joinToString(", ")}."))
             if (b.state != null) add(tr("Настроение, привязанность, стиль общения и день рождения Искры: заменятся сохранёнными.", "Mood, bond, conversation style and Iskra's birthday: replaced with the saved ones."))
             add(tr("Не меняются: ключи API, переписка, разрешения, показ Искры на экране.", "Not changed: API keys, chat, permissions, showing Iskra on screen."))
@@ -107,6 +110,7 @@ object Backups {
         app.settings.save(app.settings.fromMap(b.settings, cur).copy(overlayEnabled = cur.overlayEnabled))
         val skipped = app.memory.replaceAll(b.memory)
         if (b.notes.isNotEmpty()) app.notes.replaceAll(b.notes)
+        if (b.diary.isNotEmpty()) app.diary.replaceAll(b.diary)
         b.state?.let { app.stateStore.save(it) }
         // The city comes as a name; find its coordinates again (only the name goes to open-meteo).
         val city = app.settings.load().weatherCity
