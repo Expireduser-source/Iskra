@@ -661,8 +661,10 @@ class OverlayService : Service(), AvatarView.Host, VoiceEar.Listener {
             val today = runCatching { app.reminders.pending().count { it.atMs < end } }.getOrDefault(0)
             // On the owner's birthday the morning starts with congratulations (the date comes from memory).
             val mem = runCatching { app.memory.all() }.getOrDefault(emptyList())
+            // On her own milestone days (a week, a month, a hundred days, a year since the first meeting) — her small holiday.
             val greeting = if (ru.iskra.core.brain.MemoryTalk.birthday(mem) == java.time.MonthDay.now())
-                ru.iskra.core.brain.MemoryTalk.birthdayGreeting(ru.iskra.core.brain.MemoryTalk.ownerName(mem)) else base
+                ru.iskra.core.brain.MemoryTalk.birthdayGreeting(ru.iskra.core.brain.MemoryTalk.ownerName(mem))
+                else if (!careful) runCatching { app.agent.milestoneLine() }.getOrNull() ?: base else base
             // Today's plans («Сегодня экзамен — держу за тебя лапки!») and how yesterday's went.
             val plans = withContext(Dispatchers.IO) {
                 listOfNotNull(

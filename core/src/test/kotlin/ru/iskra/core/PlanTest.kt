@@ -687,7 +687,7 @@ class PhoneSummaryTest {
             // The excerpt first, the task last (Gemma 4 E2B went on with a bare transcript as Iskra).
             val asked = (phone.asked.single().messages.single() as ru.iskra.core.llm.ChatMessage.User).text
             assertTrue(asked.contains("\n\nВладелец: реплика 0\n"), asked)
-            assertTrue(asked.startsWith("Отрывок переписки владельца телефона и ассистента «Искра» от 6 ноября (пятница):"), asked)
+            assertTrue(asked.startsWith("Отрывок переписки владельца телефона и цифровой жизни по имени «Искра», которая живёт в этом телефоне, от 6 ноября (пятница):"), asked)
             assertTrue(asked.contains("Вместо «сегодня», «завтра», «вчера» пиши даты."), asked)
             assertTrue(asked.endsWith("Не продолжай переписку: ответь только пересказом или словом НЕТ."), asked)
         }

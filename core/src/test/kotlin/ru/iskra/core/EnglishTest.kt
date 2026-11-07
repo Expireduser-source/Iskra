@@ -131,7 +131,7 @@ class EnglishTest {
     @Test fun englishTextsEverywhere() = withLang(Lang.EN) {
         val prompt = ru.iskra.core.agent.PromptComposer(java.time.ZoneId.of("UTC")).system(
             Personas.ISKRA.localized(), ru.iskra.core.persona.MoodState(), ru.iskra.core.persona.StyleProfile(), emptyList(), 0L, true)
-        assertTrue(prompt.startsWith("You are Iskra, a digital cat-girl companion"), prompt.take(80))
+        assertTrue(prompt.startsWith("You are Iskra, a young digital life in the shape of a cat-girl companion"), prompt.take(80))
         assertTrue("Thursday, 1 January 1970" in prompt || "Thursday" in prompt, prompt)
         assertTrue(!prompt.any { it in 'а'..'я' }, "Russian left in the English prompt")
 

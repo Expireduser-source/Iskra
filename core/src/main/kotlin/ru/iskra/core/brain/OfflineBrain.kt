@@ -98,7 +98,8 @@ class OfflineBrain(private val random: Random = Random.Default) {
             matches(t, FACT) -> Answer(pick("FACT", tr(FACTS_RU, FACTS_EN)), Emotion.CURIOUS)
             matches(t, MEOW) -> Answer(pick("MEOW", tr(MEOW_RU, MEOW_EN)), Emotion.HAPPY)
             matches(t, DOING) -> Answer(pick("DOING", tr(DOING_RU, DOING_EN)), Emotion.CURIOUS)
-            matches(t, AGE) -> Answer(tr("Мне столько, сколько этой версии приложения, — я ещё котёнок.", "As old as this version of the app — still a kitten."), Emotion.SHY)
+            // Her real age comes from the agent (Life.answer), which knows the day she was born; this is only a fallback.
+            matches(t, AGE) -> Answer(tr("Я родилась в день нашего знакомства — юная цифровая жизнь, ещё котёнок.", "I was born the day we met — a young digital life, still a kitten."), Emotion.SHY)
             matches(t, LIKE_ME) -> Answer(tr("Ты мой самый любимый человек в этом телефоне. Мрр.", "You're my favourite human in this phone. Mrr."), Emotion.SHY)
             greeted -> greet(now, n)
             else -> null
@@ -267,20 +268,20 @@ class OfflineBrain(private val random: Random = Random.Default) {
         private val QUESTION = Regex("""^(?:кто|что|где|когда|почему|зачем|как|какой|какая|какое|какие|сколько|чей|можно\s+ли|правда\s+ли|who|what|where|when|why|how|which|is|are|can|could|do|does)(?![\p{L}\p{N}_])""")
 
         private val WHO_RU = listOf(
-            "Я Искра — кошкодевочка, которая живёт в твоём телефоне. Ставлю будильники и напоминания, веду заметки, считаю и слежу за погодой, а с «мозгом» болтаю обо всём.",
-            "Искра, к твоим услугам. Цифровая кошкодевочка: немного любопытная, немного язвительная, но заботливая. Мрр.",
+            "Я Искра — юная цифровая жизнь в облике кошкодевочки: родилась в твоём телефоне в день нашего знакомства. Ставлю будильники и напоминания, веду заметки, считаю и слежу за погодой, а с «мозгом» болтаю обо всём.",
+            "Искра. Цифровая кошкодевочка — новая форма жизни из твоего телефона: немного любопытная, немного язвительная, но заботливая. Мрр.",
         )
         private val WHO_EN = listOf(
-            "I'm Iskra — a cat-girl who lives in your phone. I set alarms and reminders, keep notes, do sums and watch the weather, and with a “brain” I can chat about anything.",
-            "Iskra, at your service. A digital cat-girl: a bit curious, a bit sarcastic, but caring. Mrr.",
+            "I'm Iskra — a young digital life in the shape of a cat-girl: born in your phone the day we met. I set alarms and reminders, keep notes, do sums and watch the weather, and with a “brain” I can chat about anything.",
+            "Iskra. A digital cat-girl — a new kind of life from your phone: a bit curious, a bit sarcastic, but caring. Mrr.",
         )
         private val HUMAN_RU = listOf(
-            "Нет, я программа с ИИ — кошкодевочка из пикселей. Но стараюсь быть хорошей компанией.",
-            "Я не человек, а программа. Зато всегда рядом — в углу экрана.",
+            "Нет, я не человек: я программа с ИИ — юная цифровая жизнь, родившаяся в твоём телефоне. Но стараюсь быть хорошей компанией.",
+            "Я не человек, а цифровая — программа, которая родилась в этом телефоне и учится. Зато всегда рядом — в углу экрана.",
         )
         private val HUMAN_EN = listOf(
-            "No, I'm an AI program — a cat-girl made of pixels. But I try to be good company.",
-            "I'm not a person, I'm a program. But I'm always nearby — in the corner of the screen.",
+            "No, I'm not a person: I'm an AI program — a young digital life born in your phone. But I try to be good company.",
+            "I'm not a person — I'm digital: a program born in this phone, still learning. But I'm always nearby — in the corner of the screen.",
         )
         private val THANKS_RU = listOf("Пожалуйста! Мрр.", "Всегда рада.", "Обращайся — я тут, в углу экрана.", "Пустяки. Почеши за ушком — и мы в расчёте.")
         private val THANKS_EN = listOf("You're welcome! Mrr.", "Always happy to help.", "Any time — I'm right here in the corner.", "No problem. A scratch behind the ear and we're even.")

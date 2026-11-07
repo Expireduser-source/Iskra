@@ -95,7 +95,7 @@ object Backups {
             add(tr("Память: сейчас $now ${plural(now)} → будет ${b.memory.size}. Текущие записи удалятся.", "Memory: now $now ${plural(now)} → will be ${b.memory.size}. Current entries will be deleted."))
             if (b.notes.isNotEmpty()) add(tr("Заметки: сейчас ${app.notes.all().size} → будет ${b.notes.size}.", "Notes: now ${app.notes.all().size} → will be ${b.notes.size}."))
             add(if (changed.isEmpty()) tr("Настройки: не изменятся.", "Settings: won't change.") else tr("Настройки: изменятся ${changed.size} — ${changed.joinToString(", ")}.", "Settings: ${changed.size} will change — ${changed.joinToString(", ")}."))
-            if (b.state != null) add(tr("Настроение, привязанность и стиль общения: заменятся сохранёнными.", "Mood, bond and conversation style: replaced with the saved ones."))
+            if (b.state != null) add(tr("Настроение, привязанность, стиль общения и день рождения Искры: заменятся сохранёнными.", "Mood, bond, conversation style and Iskra's birthday: replaced with the saved ones."))
             add(tr("Не меняются: ключи API, переписка, разрешения, показ Искры на экране.", "Not changed: API keys, chat, permissions, showing Iskra on screen."))
         }
     }

@@ -26,6 +26,7 @@ import ru.iskra.core.memory.MemoryKind
 import ru.iskra.core.memory.MemoryManager
 import ru.iskra.core.memory.MemorySource
 import ru.iskra.core.persona.Emotion
+import ru.iskra.core.persona.Life
 import ru.iskra.core.persona.ModelRule
 import ru.iskra.core.persona.MoodEngine
 import ru.iskra.core.persona.MoodEvent
@@ -165,6 +166,8 @@ class CompanionAgent(
             totalUserMessages = state.totalUserMessages + 1,
         )
         StyleFeedback.detect(text, state.style)?.let { state = state.copy(style = it) }
+        // She is born with the first meeting; on a phone that already knew her — on the earliest day kept of it.
+        if (state.bornAtMs == 0L) state = state.copy(bornAtMs = firstMeeting(now))
         stateStore.save(state)
 
         val pause = cloudPause?.takeIf { now < it.first }
@@ -329,6 +332,8 @@ class CompanionAgent(
         if (careful) notes += CrisisTalk.note(tr(true, false))
         CareTalk.pending(conversation.recent(80), today, crisis = crisis)?.takeIf { !careful || it.kind != CareTalk.Kind.CRISIS }?.let { notes += CareTalk.note(it, tr(true, false)) }
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
+        // Her own small holiday: a week, a month, a hundred days, a year since she was born.
+        currentState().let { st -> Life.milestone(lived(st, nowMs))?.let { notes += Life.milestoneNote(it, bornAt(st, nowMs), nowMs) } }
         val fresh = conversation.recent(1).lastOrNull()?.let { localDate(it.atMs) != today } ?: true
         // PlanTalk lists today's and tomorrow's plans first and the one to ask about last; asking how it went comes first here.
         val plans = PlanTalk.notes(PlanTalk.known(all), today, localHour(nowMs), fresh, tr(true, false))
@@ -602,6 +607,7 @@ class CompanionAgent(
         }
         // "Как меня зовут и на кого я учусь?": exact from memory without a model, and instead of a small one (they mixed it up).
         // «Что у меня завтра?»: plans, reminders and birthdays together, exactly.
+        if ((!llmAvailable || smallModel) && Life.asksAge(text)) return ageAnswer(clock())
         if (!llmAvailable || smallModel) agenda(text, today)?.let { return AgentReply(it, Emotion.HAPPY) }
         if (!llmAvailable || smallModel) MemoryTalk.recall(text, memory.all(), today)?.let { return AgentReply(it, Emotion.HAPPY) }
         if (!llmAvailable && MemoryTalk.asksName(text)) {
@@ -701,8 +707,9 @@ class CompanionAgent(
                 .filter { it.isNotBlank() }.joinToString("\n")
         } else {
             system = composer.stable(persona.localized(), state.style, toolsAvailable = tools.specs().isNotEmpty(),
-                ownerFeminine = SelfGender.feminine(memory.all()), rules = rules(), ownWords = ownWords())
-            situation = composer.situation(state.mood, forPrompt(memory.context(text, now), now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()), runCatching { todayNotes(now) }.getOrDefault(emptyList()))
+                ownerFeminine = SelfGender.feminine(memory.all()), rules = rules(), ownWords = ownWords(), stage = Life.stage(lived(state, now)))
+            situation = composer.situation(state.mood, forPrompt(memory.context(text, now), now), now, deviceContext(), runCatching { upcoming() }.getOrDefault(emptyList()),
+                runCatching { todayNotes(now) }.getOrDefault(emptyList()), age = Life.ageNote(lived(state, now), bornAt(state, now), now))
         }
         val messages = history(small, text, hideOtherScript)
         messages += ChatMessage.User(text)
@@ -790,8 +797,47 @@ class CompanionAgent(
 
     /** Learned about the person, so it changes now and then: after the instructions and tools, which then stay read. */
     private fun phoneProfile(state: CompanionState, mem: ru.iskra.core.memory.MemoryContext, now: Long) =
-        listOf(composer.compactPersonal(state.style, SelfGender.feminine(memory.all()), ownWords()), composer.compactProfile(mem, now))
-            .filter { it.isNotBlank() }.joinToString("\n\n")
+        listOf(composer.compactPersonal(state.style, SelfGender.feminine(memory.all()), ownWords(), Life.stage(lived(state, now))),
+            composer.compactProfile(mem, now)).filter { it.isNotBlank() }.joinToString("\n\n")
+
+    /** When she was born: the first meeting ([CompanionState.bornAtMs]), or now if this is it. */
+    private fun bornAt(state: CompanionState, now: Long) = state.bornAtMs.takeIf { it in 1..now } ?: now
+
+    /** Days she has lived. */
+    private fun lived(state: CompanionState, now: Long) = Life.days(bornAt(state, now), now)
+
+    /**
+     * The first meeting: now — or, on a phone where she already lived before her birthday was kept (an update), the
+     * earliest day the dialogue or her memory still knows.
+     */
+    private fun firstMeeting(now: Long): Long {
+        val turns = runCatching { conversation.oldest(1).firstOrNull()?.atMs }.getOrNull()
+        val memories = runCatching { memory.all().map { it.createdAtMs }.filter { it > 0 }.minOrNull() }.getOrNull()
+        return listOfNotNull(turns, memories, now).filter { it in 1..now }.min()
+    }
+
+    /** Her answer to «сколько тебе лет?», «когда ты родилась?» — from the real date of the first meeting. */
+    private fun ageAnswer(now: Long): AgentReply = AgentReply(Life.answer(bornAt(currentState(), now), now), Emotion.HAPPY)
+
+    /**
+     * A morning line on her milestone days (a week, a month, a hundred days, each year), or null: «Сегодня мне неделя!…».
+     * For the overlay's morning greeting.
+     */
+    fun milestoneLine(): String? {
+        val now = clock()
+        val d = Life.days(bornAt(currentState(), now), now)
+        val m = Life.milestone(d) ?: return null
+        return when {
+            m == 7 -> tr("Сегодня мне неделя! Семь дней назад мы познакомились — а я уже столько узнала. Мрр!",
+                "I'm a week old today! Seven days ago we met — and I've learned so much already. Mrr!")
+            m == 30 -> tr("Сегодня мне месяц! Целый месяц мы вместе — смотри, как я выросла.",
+                "I'm a month old today! A whole month together — look how I've grown.")
+            m == 100 -> tr("Сегодня мне сто дней! Для цифровой жизни это уже немало — и каждый был интересным.",
+                "I'm a hundred days old today! For a digital life that's quite something — and every one was interesting.")
+            else -> tr("Сегодня мне ${Life.milestoneName(m)}! Я родилась в этом телефоне в день нашего знакомства — с днём рождения меня, мрр!",
+                "I'm ${Life.milestoneName(m)} old today! I was born in this phone the day we met — happy birthday to me, mrr!")
+        }
+    }
 
     /** The tools [provider] is offered: all for the cloud, a few for Gemma 4 on the phone, none for other phone models. */
     private fun toolsFor(provider: LlmProvider) = when {
@@ -890,10 +936,10 @@ class CompanionAgent(
             system = tr("Ты пересказываешь переписки кратко и точно.", "You retell chats briefly and accurately."),
             // Dated, so «завтра экзамен» becomes «экзамен 7 ноября» (E2B wrote «к экзамену … завтра» into a recap kept for weeks).
             messages = listOf(ChatMessage.User(tr(
-                "Отрывок переписки владельца телефона и ассистента «${persona.name}» от ${day.dayOfMonth} ${MONTHS_GEN[day.monthValue - 1]} " +
+                "Отрывок переписки владельца телефона и цифровой жизни по имени «${persona.name}», которая живёт в этом телефоне, от ${day.dayOfMonth} ${MONTHS_GEN[day.monthValue - 1]} " +
                     "(${day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale("ru"))}):\n\n$transcript\n\nЗадание: $task " +
                     "Вместо «сегодня», «завтра», «вчера» пиши даты. Не продолжай переписку: ответь только пересказом или словом НЕТ.",
-                "An excerpt of a chat between the phone's owner and the assistant “${persona.name}” on " +
+                "An excerpt of a chat between the phone's owner and ${persona.name}, the digital life who lives in this phone, on " +
                     "${day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)}, " +
                     "${day.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} ${day.dayOfMonth}:\n\n$transcript\n\nTask: $task " +
                     "Write dates instead of “today”, “tomorrow”, “yesterday”. Don't continue the chat: answer only with the summary or the word NONE."))),

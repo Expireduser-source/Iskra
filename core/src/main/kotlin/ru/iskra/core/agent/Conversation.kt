@@ -44,6 +44,8 @@ data class CompanionState(
     val style: ru.iskra.core.persona.StyleProfile = ru.iskra.core.persona.StyleProfile(),
     val lastUserMessageAtMs: Long = 0L,
     val totalUserMessages: Long = 0L,
+    /** When she was born — the first meeting ([ru.iskra.core.persona.Life]); 0 until it is known. */
+    val bornAtMs: Long = 0L,
 )
 
 class InMemoryStateStore(private var state: CompanionState = CompanionState()) : CompanionStateStore {

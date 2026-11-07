@@ -337,6 +337,7 @@ class PrefsStateStore(context: Context) : CompanionStateStore {
                 ).clamp(),
                 lastUserMessageAtMs = o["lastMsg"]?.jsonPrimitive?.long ?: 0L,
                 totalUserMessages = o["total"]?.jsonPrimitive?.long ?: 0L,
+                bornAtMs = o["born"]?.jsonPrimitive?.long ?: 0L,
             )
         } catch (e: Exception) {
             CompanionState()
@@ -350,6 +351,7 @@ class PrefsStateStore(context: Context) : CompanionStateStore {
             put("moodAt", state.mood.updatedAtMs)
             put("verbosity", state.style.verbosity); put("humor", state.style.humor); put("catSpeech", state.style.catSpeech)
             put("lastMsg", state.lastUserMessageAtMs); put("total", state.totalUserMessages)
+            put("born", state.bornAtMs)
         }
         prefs.edit().putString("state", o.toString()).apply()
     }

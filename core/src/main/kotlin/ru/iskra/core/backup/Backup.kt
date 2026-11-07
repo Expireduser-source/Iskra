@@ -96,6 +96,7 @@ object BackupCodec {
                     put("moodAt", st.mood.updatedAtMs)
                     put("verbosity", st.style.verbosity); put("humor", st.style.humor); put("catSpeech", st.style.catSpeech)
                     put("lastMsg", st.lastUserMessageAtMs); put("total", st.totalUserMessages)
+                    put("born", st.bornAtMs)
                 })
             }
             put("memory", buildJsonArray {
@@ -166,6 +167,7 @@ object BackupCodec {
                     style = StyleProfile(d("verbosity", 0.0), d("humor", 0.0), d("catSpeech", 0.0)).clamp(),
                     lastUserMessageAtMs = o["lastMsg"]?.jsonPrimitive?.longOrNull ?: 0L,
                     totalUserMessages = o["total"]?.jsonPrimitive?.longOrNull ?: 0L,
+                    bornAtMs = o["born"]?.jsonPrimitive?.longOrNull ?: 0L,
                 )
             }
             val b = Backup(
