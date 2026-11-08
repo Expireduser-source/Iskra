@@ -18,6 +18,18 @@ object Lines {
             tr("$cap — обращайся!", "$cap — any time!"))
     }
 
+    /**
+     * A timer she set, when the model said nothing after it (Gemma 4 did so about half the time in the ARM evaluations of
+     * 0.16.3, with the app's own words for the result): «Засекла 10 минут — таймер прозвенит, когда пора.» It rings by
+     * itself, in the clock app, so that's what she promises.
+     */
+    fun timerSet(rnd: Random, seconds: Int): String {
+        val time = if (seconds % 60 == 0) ru.iskra.core.i18n.Plural.count((seconds / 60).toLong(), "минуту", "минуты", "минут", "minute", "minutes")
+            else ru.iskra.core.i18n.Plural.count(seconds.toLong(), "секунду", "секунды", "секунд", "second", "seconds")
+        return pick(rnd, tr("Засекла $time — таймер прозвенит, когда пора. Мрр.", "Timer's on for $time — it'll ring when it's time. Mrr."),
+            tr("Поставила таймер на $time — он прозвенит, когда будет пора.", "I set a timer for $time — it'll ring when it's time."))
+    }
+
     fun actionFailed(rnd: Random, why: String) = pick(rnd,
         tr("Фыр… не вышло: $why", "Hmph… didn't work: $why"), tr("Не получилось: $why", "Couldn't do it: $why"), tr("Хм, споткнулась: $why", "Hm, I tripped: $why"))
 

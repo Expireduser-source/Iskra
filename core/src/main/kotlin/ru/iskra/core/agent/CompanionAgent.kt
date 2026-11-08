@@ -865,8 +865,11 @@ class CompanionAgent(
                 if (response.toolCalls.isEmpty() || !offerTools) {
                     // Nothing written after the tools (E4B after a timer, ARM evaluation 0.15.0): what was done, in her words —
                     // «Сделала — таймер на 5 мин.» — rather than the bare report; an answer tool's message is the answer itself.
+                    val timer = actions.singleOrNull()?.takeIf { it.tool == ru.iskra.core.tools.ToolNames.SET_TIMER && it.outcome.ok }
+                        ?.let { a -> done.entries.firstOrNull { it.value === a }?.key?.second?.let { args -> ru.iskra.core.tools.timerSeconds(args) } }
                     val fallback = when {
                         actions.isEmpty() -> "…"
+                        timer != null -> Lines.timerSet(random, timer)
                         actions.all { it.outcome.ok } && actions.none { tools[it.tool]?.informational == true } ->
                             Lines.actionDone(random, actions.joinToString(", ") { it.outcome.message })
                         else -> actions.joinToString("; ") { it.outcome.message }

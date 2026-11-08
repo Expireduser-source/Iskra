@@ -300,10 +300,10 @@ class ActionPromiseTest {
             assertFalse(p.made(t), t)
     }
 
-    private fun agent(engine: LlamaEngine, format: ChatFormat, tool: RecordingTool = RecordingTool()) = CompanionAgent(
+    private fun agent(engine: LlamaEngine, format: ChatFormat, tool: RecordingTool = RecordingTool(), seed: Int = 1) = CompanionAgent(
         persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
         stateStore = InMemoryStateStore(), tools = ToolRegistry(listOf(tool)), policy = SafetyPolicy({ _, _ -> true }),
-        providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, format, "local:test") }, random = Random(1))
+        providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, format, "local:test") }, random = Random(seed))
 
     @Test fun gemma4IsToldToCallAndDoes() = withLang(Lang.RU) {
         runBlocking {
@@ -424,6 +424,18 @@ class ActionPromiseTest {
         }
     }
 
+    /** Nothing written after the timer (Gemma 4, about half the time in the ARM evaluations of 0.16.3): she says it herself. */
+    @Test fun aTimerTheModelSaysNothingAfterIsToldInHerWords() = withLang(Lang.RU) {
+        runBlocking {
+            for (seed in 0 until 4) {
+                val engine = Gemma4Tools2.Scripted("10}<tool_call|>", "")
+                val r = agent(engine, ChatFormat.GEMMA4, RecordingTool(), seed).handle("Жарю сырники — засеки, сколько нужно")
+                assertTrue(r.text == "Засекла 10 минут — таймер прозвенит, когда пора. Мрр." ||
+                    r.text == "Поставила таймер на 10 минут — он прозвенит, когда будет пора.", r.text)
+            }
+        }
+    }
+
     /** An offer of what was asked for is a promise too (E4B, ARM evaluation 0.15.0); without the request it is just an offer. */
     @Test fun anOfferOfWhatWasAskedIsDone() = withLang(Lang.RU) {
         val p = ru.iskra.core.agent.ActionPromise
@@ -470,7 +482,8 @@ class ActionPromiseTest {
             val engine = Gemma4Tools2.Scripted("5}<tool_call|>", "")
             val r = agent(engine, ChatFormat.GEMMA4).handle("Жарю сырники — засеки, сколько нужно")
             assertEquals(1, r.actions.size)
-            assertTrue(r.text.contains("таймер запущен") && r.text != "OK: таймер запущен", r.text)
+            // A timer is told by its time (0.16.3); another tool by its own words, as before.
+            assertTrue(r.text.contains("5 минут") && r.text.contains("прозвенит") && !r.text.contains("OK:"), r.text)
         }
     }
 
