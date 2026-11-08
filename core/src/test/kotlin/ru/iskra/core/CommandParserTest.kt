@@ -9,6 +9,7 @@ import ru.iskra.core.tools.SafetyPolicy
 import ru.iskra.core.tools.ToolRegistry
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -148,5 +149,29 @@ class DishTimerTest {
         assertEquals(600, p.duration("10 minutes"))
         assertNull(p.duration("через 5 минут позвони маме"))
         assertNull(p.duration("не знаю"))
+    }
+
+    @Test fun whatWasJustAskedIsAnsweredFromTheChat() = ru.iskra.core.i18n.withLang(ru.iskra.core.i18n.Lang.RU) {
+        kotlinx.coroutines.runBlocking {
+            val light = object : ru.iskra.core.llm.LlmProvider {
+                override val id = "local:light"
+                override val onDevice = true
+                override suspend fun complete(request: ru.iskra.core.llm.LlmRequest): ru.iskra.core.llm.LlmResponse =
+                    ru.iskra.core.llm.LlmResponse("[happy] Я просто пытаюсь помочь!", emptyList())
+            }
+            val agent = ru.iskra.core.agent.CompanionAgent(persona = ru.iskra.core.persona.Personas.ISKRA,
+                memory = ru.iskra.core.memory.MemoryManager(ru.iskra.core.memory.InMemoryMemoryStore()),
+                conversation = ru.iskra.core.agent.InMemoryConversationStore(), stateStore = ru.iskra.core.agent.InMemoryStateStore(),
+                tools = ToolRegistry(listOf(RecordingTool())), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, localFactory = { light })
+            assertEquals("Ты меня пока ни о чём не просишь — спрашивай, мрр!", agent.handle("О чём я тебя только что попросила?").text)
+            agent.handle("Жарю сырники — засеки, сколько нужно.")
+            assertEquals("Мрр, твоя последняя просьба: «Жарю сырники — засеки, сколько нужно.»", agent.handle("О чём я тебя только что попросила?").text)
+            agent.handle("Мне сегодня грустно")
+            assertEquals("Мрр, твоё последнее сообщение: «Мне сегодня грустно»", agent.handle("Что я тебе только что написал?").text)
+        }
+        val r = ru.iskra.core.agent.LastRequest
+        assertTrue(r.asks("О чём я тебя только что попросила?"))
+        assertTrue(r.asks("what did I just ask you?"))
+        assertFalse(r.asks("О чём ты мечтаешь?"))
     }
 }

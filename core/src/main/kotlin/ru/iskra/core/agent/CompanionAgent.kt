@@ -640,6 +640,9 @@ class CompanionAgent(
         }
         answerOffer(text, llmAvailable)?.let { return it }
         answerTimer(text, llmAvailable)?.let { return it }
+        // «О чём я тебя только что попросила?» to a brain that loses track of it: her answer from the chat ([LastRequest]).
+        if (!canAct && LastRequest.asks(text))
+            return AgentReply(LastRequest.answer(conversation.recent(6).lastOrNull { it.role == Turn.Role.USER }?.text), Emotion.HAPPY)
         if (smallModel && ModelRule.AI_HONESTY in rules()) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         MemoryTalk.forgetQuery(text)?.let { return forget(it) }
