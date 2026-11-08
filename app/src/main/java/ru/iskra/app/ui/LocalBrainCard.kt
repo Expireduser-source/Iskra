@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -99,9 +100,13 @@ fun LocalBrainCard() {
                 is LocalBrain.State.Ready -> {
                     Text(tr("Готово ✓ ${s.model.title} · ${mb(s.bytes)}. Первый ответ после паузы — через несколько секунд: модель загружается в память.",
                         "Ready ✓ ${s.model.title} · ${mb(s.bytes)}. The first reply after a pause takes a few seconds: the model loads into memory."), fontSize = 13.sp)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // The whole row is the switch, and TalkBack reads its words with it (alone, the switch had no name —
+                    // the emulator check's audit, 0.16.1).
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("local_brain_enabled")
+                        .toggleable(value = enabled, role = Role.Switch) { enabled = it; LocalBrain.setEnabled(it) },
+                        verticalAlignment = Alignment.CenterVertically) {
                         Text(tr("Отвечать ею, когда нет облака", "Answer with it when there's no cloud"), Modifier.weight(1f), fontSize = 14.sp)
-                        Switch(checked = enabled, onCheckedChange = { enabled = it; LocalBrain.setEnabled(it) }, modifier = Modifier.testTag("local_brain_enabled"))
+                        Switch(checked = enabled, onCheckedChange = null)
                     }
                     if (LocalBrain.isLegacy(s.model)) Text(
                         LocalBrain.replacement(s.model).let { r ->

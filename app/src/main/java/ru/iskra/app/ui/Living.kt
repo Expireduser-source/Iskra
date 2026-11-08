@@ -66,6 +66,16 @@ import kotlin.random.Random
 /** A pause between frames of her life in the app: about 30 a second — breathing and blinking need no more. */
 private const val FRAME_PAUSE_MS = 24L
 
+/**
+ * …and when she only breathes and blinks (nothing said, thought or heard for a few seconds): about 20 a second. Just being
+ * there took 45 % of a core in the emulator's chat (it draws in software; 0.16.1's idle measurement), and slow breathing
+ * looks the same at 20 frames.
+ */
+private const val CALM_PAUSE_MS = 40L
+
+/** How long after something happens (her words, a hop, a new feeling) she is drawn at the full rate. */
+private const val LIVELY_MS = 3_000L
+
 /** The rig model and its layers per drawn size, decoded once (off the main thread) and shared by her screens. */
 internal object RigCache {
     @Volatile private var model: RigModel? = null
@@ -251,16 +261,20 @@ fun LiveIskra(
             }
         }
         val rig = loaded ?: return@BoxWithConstraints
+        // Until when she is drawn at the full rate: a little after anything that moves more than her breath.
+        val livelyUntil = remember(rig) { longArrayOf(0L) }
+        fun lively(ms: Long = LIVELY_MS) { livelyUntil[0] = maxOf(livelyUntil[0], android.os.SystemClock.uptimeMillis() + ms) }
         SideEffect { rig.thinking = thinking; rig.listening = listening; rig.watching = watching }
-        LaunchedEffect(rig, emotion) { rig.feel(emotion) }
-        LaunchedEffect(rig, wave) { if (wave > 0 && !still) rig.wave() }
-        LaunchedEffect(rig, hop) { if (hop > 0 && !still) rig.hop() }
+        LaunchedEffect(rig, emotion) { rig.feel(emotion); lively() }
+        LaunchedEffect(rig, wave) { if (wave > 0 && !still) { rig.wave(); lively() } }
+        LaunchedEffect(rig, hop) { if (hop > 0 && !still) { rig.hop(); lively() } }
         if (speaks) LaunchedEffect(rig) {
             CompanionBus.cues.collect { cue ->
                 when (cue) {
-                    is AvatarCue.Talk -> rig.talk(cue.text, cue.lipSync)
-                    is AvatarCue.Mouth -> rig.mouth(cue.level)
-                    AvatarCue.StopTalking -> rig.stopTalking()
+                    // Words without a voice move her lips for about as long as they'd take to say.
+                    is AvatarCue.Talk -> { rig.talk(cue.text, cue.lipSync); lively(LIVELY_MS + cue.text.length * 70L) }
+                    is AvatarCue.Mouth -> { rig.mouth(cue.level); lively() }
+                    AvatarCue.StopTalking -> { rig.stopTalking(); lively() }
                     else -> Unit
                 }
             }
@@ -277,7 +291,9 @@ fun LiveIskra(
                     last = now
                     frame.intValue++
                 }
-                delay(FRAME_PAUSE_MS)
+                // The rig's own flags: set on every composition, unlike this loop's captured parameters.
+                val busy = rig.thinking || rig.listening || android.os.SystemClock.uptimeMillis() < livelyUntil[0]
+                delay(if (busy) FRAME_PAUSE_MS else CALM_PAUSE_MS)
             }
         }
         Canvas(Modifier.fillMaxSize().graphicsLayer {
