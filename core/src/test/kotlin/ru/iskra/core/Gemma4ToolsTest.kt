@@ -324,6 +324,34 @@ class ActionPromiseTest {
         }
     }
 
+    /** E2B offered its tools to anything (ARM evaluations 0.14.0–0.16.1): such an offer goes, unless the words gave a reason. */
+    @Test fun anOfferNobodyAskedForGoes() = withLang(Lang.RU) {
+        val p = ru.iskra.core.agent.ActionPromise
+        assertTrue(p.unaskedOffer("Может, включим фонарик, чтобы стало веселее?", "Мне сегодня грустно, поддержи меня."))
+        assertTrue(p.unaskedOffer("Может, тебе нужно что-то записать о подготовке?", "Я волнуюсь перед лекцией."))
+        withLang(Lang.EN) {
+            assertTrue(p.unaskedOffer("I can help you find tutorials or maybe set a timer if you want to practice?", "My name is Tom. I'm learning to play the guitar."))
+            assertFalse(p.unaskedOffer("Maybe set a timer for 20 minutes of practice?", "How long should I practice each time?"))
+        }
+        // A reason in the words, or a request: it stays.
+        assertFalse(p.unaskedOffer("Может, включить фонарик?", "Темно, ничего не вижу"))
+        assertFalse(p.unaskedOffer("Хочешь, поставлю таймер?", "Ставлю пирог в духовку"))
+        assertFalse(p.unaskedOffer("Могу поставить напоминание на утро.", "Завтра у меня экзамен"))
+        assertFalse(p.unaskedOffer("Ты молодец, что держишься!", "Мне грустно"))
+        assertEquals("Ох, мне жаль. Я рядом.", p.withoutUnaskedOffers("Ох, мне жаль. Может, включим фонарик? Я рядом.", "Мне грустно"))
+        assertEquals("Может, включим фонарик?", p.withoutUnaskedOffers("Может, включим фонарик?", "Мне грустно"))
+        runBlocking {
+            val heard = StringBuilder()
+            val r = agent(Gemma4Tools2.Scripted("[sad] Ох, Аня, мне очень жаль. Может, включим фонарик, чтобы стало светлее? Я здесь, рядом."),
+                ChatFormat.GEMMA4).handle("Мне сегодня грустно, поддержи меня.", object : ru.iskra.core.voice.ReplySink {
+                override fun emotion(e: ru.iskra.core.persona.Emotion) = Unit
+                override fun sentence(text: String, emotion: ru.iskra.core.persona.Emotion) { heard.append(text).append(' ') }
+            })
+            assertEquals("Ох, Аня, мне очень жаль. Я здесь, рядом.", r.text)
+            assertFalse(heard.contains("фонарик"), heard.toString())
+        }
+    }
+
     /** «засеки, сколько нужно»: E2B asked «Ты хочешь, чтобы я поставила таймер?» three evaluations in a row; the call is begun for it. */
     @Test fun aTimerAskedForBeginsWithTheCall() = withLang(Lang.RU) {
         val p = ru.iskra.core.agent.ActionPromise

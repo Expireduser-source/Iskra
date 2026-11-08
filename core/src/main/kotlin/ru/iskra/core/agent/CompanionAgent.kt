@@ -780,10 +780,17 @@ class CompanionAgent(
         val feminine = owner == true && tr(true, false)
         // «милый/милая», «устал(а)» from a model that doesn't know: the right form, or no lone address at all.
         fun agree(t: String) = (if (feminine) SelfGender.agreeFeminine(t) else t).let { if (tr(true, false)) SelfGender.slashes(it, owner) else it }
+        // A phone model's offer of its actions when nothing asked for one («Может, включим фонарик?» to a sad person) is neither
+        // shown nor spoken ([ActionPromise.unaskedOffer]).
+        val asked = text
+        fun unasked(s: String) = small && ActionPromise.unaskedOffer(s, asked)
         val voice = sink?.let { out ->
             object : ReplySink {
                 override fun emotion(e: Emotion) = out.emotion(e)
-                override fun sentence(text: String, emotion: Emotion) { spoke = true; out.sentence(agree(text), emotion) }
+                override fun sentence(text: String, emotion: Emotion) {
+                    if (unasked(text)) return
+                    spoke = true; out.sentence(agree(text), emotion)
+                }
             }
         }
         val actions = mutableListOf<ActionRecord>()
@@ -822,6 +829,7 @@ class CompanionAgent(
                         else -> actions.joinToString("; ") { it.outcome.message }
                     }
                     val full = listOf(said.toString().trim(), parsed.text).filter { it.isNotBlank() }.joinToString(" ").trim()
+                        .let { if (small) ActionPromise.withoutUnaskedOffers(it, asked) else it }
                     return AgentReply(
                         text = agree(full.ifBlank { fallback }),
                         emotion = emotion ?: state.mood.dominantEmotion(),

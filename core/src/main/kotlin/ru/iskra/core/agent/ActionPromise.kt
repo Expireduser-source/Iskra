@@ -59,6 +59,49 @@ object ActionPromise {
         return Math.round(s).toInt().takeIf { it in 1..86_400 }
     }
 
+    /**
+     * A sentence of a phone model's reply that offers one of its actions when the person's message ([asked]) gave no reason
+     * for it: «Может, включим фонарик?» to a sad person, «Может, тебе нужно что-то записать о подготовке?» to «волнуюсь»,
+     * "maybe set a timer if you want to practice" to "I'm learning the guitar" (E2B, ARM evaluations 0.14.0–0.16.1). Its
+     * instructions already say not to; the sentence is neither shown nor spoken.
+     */
+    fun unaskedOffer(sentence: String, asked: String): Boolean {
+        if (asks(asked)) return false
+        val offer = (offerAny.find(sentence) ?: return false).value
+        val tool = toolWords.entries.firstOrNull { (_, re) -> re.containsMatchIn(offer) }?.key ?: return false
+        return topics[tool]?.containsMatchIn(asked) != true
+    }
+
+    /** [text] without its [unaskedOffer] sentences — unless that would leave nothing. */
+    fun withoutUnaskedOffers(text: String, asked: String): String {
+        val parts = text.split(Regex("""(?<=[.!?…])\s+"""))
+        val kept = parts.filterNot { unaskedOffer(it, asked) }
+        return if (kept.isEmpty() || kept.size == parts.size) text else kept.joinToString(" ")
+    }
+
+    private val offerAny = Regex("""(?iu)(?<!\p{L})(?:может|хочешь|хотите|давай|могу|можно|если\s+хочешь|shall\s+i|want\s+me\s+to|i\s+can|i\s+could|maybe|how\s+about)(?!\p{L})""" +
+        """[^.!?\n]{0,70}?(?<!\p{L})(?:фонарик\p{L}*|таймер\p{L}*|будильник\p{L}*|напоминани\p{L}*|заметк\p{L}*|записать|запишу|погод\p{L}*|музык\p{L}*|""" +
+        """flashlight|torch|timer|alarm|reminder|note|weather|music)(?!\p{L})""")
+    private val toolWords = linkedMapOf(
+        "light" to Regex("""(?iu)фонарик|flashlight|torch"""),
+        "timer" to Regex("""(?iu)таймер|timer"""),
+        "alarm" to Regex("""(?iu)будильник|alarm"""),
+        "remind" to Regex("""(?iu)напоминани|reminder"""),
+        "note" to Regex("""(?iu)заметк|записать|запишу|(?<!\p{L})note"""),
+        "weather" to Regex("""(?iu)погод|weather"""),
+        "music" to Regex("""(?iu)музык|music"""),
+    )
+    /** What in the person's words makes the offer fit: «темно» for the flashlight, «пирог» for a timer… */
+    private val topics = mapOf(
+        "light" to Regex("""(?iu)фонар|темн|свет|не\s+вижу|dark|light|can'?t\s+see"""),
+        "timer" to Regex("""(?iu)таймер|засек|минут|час(?:а|ов)?(?!\p{L})|время|варю|варить|жарю|печ[её]|пирог|духовк|timer|minute|hour|time|cook|bake|boil"""),
+        "alarm" to Regex("""(?iu)будиль|разбуд|просну|встать|утром|alarm|wake|morning"""),
+        "remind" to Regex("""(?iu)напомн|не\s+забыть|забуд|забыва|завтра|послезавтра|встреч|экзамен|врач|remind|forget|tomorrow|meeting|exam"""),
+        "note" to Regex("""(?iu)запиш|записа|заметк|список|купить|note|write|list|buy"""),
+        "weather" to Regex("""(?iu)погод|дожд|снег|холод|жар|тепл|зонт|weather|rain|snow|cold|hot|umbrella"""),
+        "music" to Regex("""(?iu)музык|песн|music|song"""),
+    )
+
     /** The reply speaks of an action as done or about to be done. */
     fun made(text: String): Boolean = ru.containsMatchIn(text) || en.containsMatchIn(text)
 
