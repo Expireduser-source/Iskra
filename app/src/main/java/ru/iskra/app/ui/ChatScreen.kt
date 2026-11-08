@@ -533,10 +533,14 @@ private fun Welcome(compact: Boolean, enabled: Boolean, still: Boolean, onSend: 
             var wave by remember { mutableIntStateOf(0) }
             var hop by remember { mutableIntStateOf(0) }
             LaunchedEffect(Unit) { delay(700); wave++ }
-            Box(Modifier.size(232.dp), contentAlignment = Alignment.Center) {
+            // On a small screen (640 dp, the Android 8 emulator) the full-size figure pushed the first steps under the input
+            // field: she is smaller there, so they are seen without scrolling.
+            val tall = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp
+            val hero = when { tall >= 760 -> 232; tall >= 660 -> 184; else -> 148 }
+            Box(Modifier.size(hero.dp), contentAlignment = Alignment.Center) {
                 Aura(Modifier.fillMaxSize(), still)
                 Sparkles(Modifier.fillMaxSize(), still)
-                LiveIskra(Modifier.size(190.dp).semantics { contentDescription = herLook() }
+                LiveIskra(Modifier.size((hero * 190 / 232).dp).semantics { contentDescription = herLook() }
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
                         onClickLabel = tr("погладить", "pet her")) { hop++ }, Framing.FULL, still = still, wave = wave, hop = hop)
             }

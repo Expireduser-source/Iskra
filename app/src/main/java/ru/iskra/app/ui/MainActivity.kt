@@ -150,7 +150,11 @@ private fun MainScreen(requestedTab: Int, tabRequests: Int) {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                 tabs.forEachIndexed { i, (icon, label) ->
                     NavigationBarItem(selected = tab == i, onClick = { tab = i }, modifier = Modifier.testTag("tab_$i"),
-                        icon = { Icon(icon, contentDescription = null) }, label = { Text(label, style = MaterialTheme.typography.labelMedium) },
+                        // One line: on a 320-dp screen «Permissions» broke in the middle of the word (emulator, Android 8).
+                        icon = { Icon(icon, contentDescription = null) }, label = {
+                            Text(label, style = MaterialTheme.typography.labelMedium.let { if (label.length > 9) it.copy(fontSize = it.fontSize * 0.88f) else it },
+                                maxLines = 1, softWrap = false, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        },
                         colors = NavigationBarItemDefaults.colors(
                             indicatorColor = MaterialTheme.colorScheme.primaryContainer,
                             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
