@@ -114,6 +114,13 @@ fun LocalBrainCard() {
                                 "A better model is available — ${r.title} (${mb(r.approxMb.toLong() * 1_000_000)}): ${LocalBrain.whyBetter(s.model)}. Delete this one and download the new one.")
                         },
                         fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                    // The light one, on a phone that holds the smart one: until 0.16.1 the light one was what two fast cores
+                    // were offered; now E2B answers fast enough there, and it is the better brain.
+                    else runCatching { LocalBrain.suggested() }.getOrNull()?.takeIf { it.id != s.model.id && s.model.id == LocalBrain.models.first().id }?.let { r ->
+                        Text(tr("Этот телефон потянет и умную модель — ${r.title} (${mb(r.approxMb.toLong() * 1_000_000)}): больше знает, сама ставит таймеры и напоминания, лучше говорит по-русски. Чтобы перейти, удали эту и скачай её.",
+                            "This phone can run the smart model too — ${r.title} (${mb(r.approxMb.toLong() * 1_000_000)}): it knows more, sets timers and reminders itself and speaks better. To switch, delete this one and download it."),
+                            fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                    }
                     if (tuning) Row(verticalAlignment = Alignment.CenterVertically) {
                         LinearProgressIndicator(Modifier.weight(1f))
                         Text(tr("  Подбираю настройки под этот телефон…", "  Tuning for this phone…"), fontSize = 12.sp)
