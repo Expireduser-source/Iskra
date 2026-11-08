@@ -1,0 +1,4 @@
+• The phone model answers without long pauses: it reads the start of its next reply while you read hers, and at night for the morning
+• "Time it, as long as it takes": eggs, dumplings, pasta, buckwheat, tea get their usual time at once; Gemma 4 picks the minutes itself, other models ask "how long?"
+• News told before she asks isn't asked for again; she gives real advice at once instead of "I'm still learning"
+• TalkBack names Iskra and her mood; every screen is checked for accessibility

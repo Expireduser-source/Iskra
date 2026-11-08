@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -64,7 +65,7 @@ fun LocalBrainCard() {
                         "A small model is downloaded once and thinks right on the phone: free, no account, nothing goes online. " +
                             "It's simpler and slower than the cloud, so it answers when there is no cloud or it's unavailable."), fontSize = 13.sp)
                     LocalBrain.models.forEach { m ->
-                        Row(Modifier.fillMaxWidth().selectable(selected = m == choice, onClick = { choice = m }).semantics { role = Role.RadioButton },
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected = m == choice, onClick = { choice = m }).semantics { role = Role.RadioButton },
                             verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = m == choice, onClick = null)
                             Column(Modifier.padding(start = 6.dp)) {

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
@@ -77,7 +78,8 @@ private fun Hint(text: String) = Text(text, fontSize = 13.sp, color = MaterialTh
 /** The whole row is the switch: one big touch target, and TalkBack reads the label with the state. */
 @Composable
 internal fun SwitchRow(checked: Boolean, label: String, enabled: Boolean = true, tag: String? = null, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().then(if (tag != null) Modifier.testTag(tag) else Modifier).toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+    // At least 48 dp high, the size a finger needs (the emulator check's audit found a 38-dp row, 0.16.1).
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).then(if (tag != null) Modifier.testTag(tag) else Modifier).toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onChange)
         .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
         Spacer(Modifier.size(8.dp)); Text(label)
@@ -87,7 +89,7 @@ internal fun SwitchRow(checked: Boolean, label: String, enabled: Boolean = true,
 /** A radio choice whose label is part of the touch target and of the TalkBack announcement. */
 @Composable
 internal fun RadioRow(selected: Boolean, label: String, hint: String? = null, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
         .padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         RadioButton(selected = selected, onClick = null)
         Spacer(Modifier.size(8.dp))
@@ -282,7 +284,7 @@ fun MotionSection(s: AppSettings, onChange: (AppSettings) -> Unit) {
             Text(tr("Непоседливость", "Restlessness"))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 listOf(tr("спокойная", "calm"), tr("обычная", "normal"), tr("шустрая", "lively")).forEachIndexed { i, label ->
-                    Row(Modifier.weight(1f).selectable(s.liveliness == i, role = Role.RadioButton) { onChange(s.copy(liveliness = i)) },
+                    Row(Modifier.weight(1f).heightIn(min = 48.dp).selectable(s.liveliness == i, role = Role.RadioButton) { onChange(s.copy(liveliness = i)) },
                         verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = s.liveliness == i, onClick = null)
                         Text(label, fontSize = 13.sp)
