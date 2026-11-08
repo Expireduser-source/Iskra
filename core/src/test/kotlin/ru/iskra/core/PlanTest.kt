@@ -719,6 +719,24 @@ class PhoneSummaryTest {
         }
     }
 
+    @Test fun theRecapCallsTheOwnerByName() = withLang(Lang.RU) {
+        runBlocking {
+            // «Владелец, Аня, учится на врача…» (E2B's recap, ARM evaluation of 0.16.2): by name when she knows it.
+            val memory = MemoryManager(InMemoryMemoryStore())
+            memory.add("Владельца зовут Аня", MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, 0L)
+            val convo = InMemoryConversationStore()
+            fill(convo, 64)
+            val phone = PhoneModel("Аня учится на врача и сдаёт сессию.")
+            assertEquals(1, agent(memory, convo, phone).summarizeOnPhone())
+            val asked = (phone.asked.single().messages.single() as ru.iskra.core.llm.ChatMessage.User).text
+            assertTrue(asked.contains("\n\nАня: реплика 0\nИскра: реплика 1\n"), asked)
+            assertTrue(asked.contains("только устойчиво полезное о владельце по имени Аня (так и называй)"), asked)
+            // The transcript copied back is not a recap.
+            val copied = MemoryManager(InMemoryMemoryStore()).also { it.add("Владельца зовут Аня", MemoryKind.FACT, MemorySource.USER_EXPLICIT, 3, 0L) }
+            assertEquals(0, agent(copied, InMemoryConversationStore().also { fill(it, 64) }, PhoneModel("Аня: реплика 0. Искра — реплика 1, вот и всё.")).summarizeOnPhone())
+        }
+    }
+
     @Test fun aChattyOrEmptyAnswerKeepsTheTurns() = withLang(Lang.RU) {
         runBlocking {
             for (bad in listOf("[happy] Мрр, конечно! Давай поговорим!", "Владелец: реплика 0\nИскра: реплика 1", "", "Ок")) {

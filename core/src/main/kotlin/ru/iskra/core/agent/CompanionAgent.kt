@@ -1042,10 +1042,14 @@ class CompanionAgent(
         val old = conversation.oldest(summarizeAfterTurns / 2)
         if (old.isEmpty()) return null
         val day = localDate(old.first().atMs)
-        val transcript = old.joinToString("\n") { (if (it.role == Turn.Role.USER) tr("Владелец: ", "Owner: ") else "${persona.name}: ") + it.text.take(500) }
-        val task = tr("Сожми диалог в 1–3 предложения от третьего лица: только устойчиво полезное о владельце " +
+        // By name when she knows it: «Владелец, Аня, учится на врача…» (E2B's recap, ARM evaluation of 0.16.2) — the episode is
+        // shown in «Память» and to the model later.
+        val name = MemoryTalk.ownerName(memory.all())
+        val transcript = old.joinToString("\n") { (if (it.role == Turn.Role.USER) (name?.let { n -> "$n: " } ?: tr("Владелец: ", "Owner: ")) else "${persona.name}: ") + it.text.take(500) }
+        val about = if (name == null) tr("о владельце", "about the owner") else tr("о владельце по имени $name (так и называй)", "about the owner, $name (call them so)")
+        val task = tr("Сожми диалог в 1–3 предложения от третьего лица: только устойчиво полезное $about " +
             "(планы, события, договорённости, предпочтения). Без паролей и чувствительных данных. " +
-            "Если ничего полезного нет — ответь ровно словом НЕТ.", "Compress the dialogue into 1–3 sentences in the third person: only lastingly useful facts about the owner (plans, events, agreements, preferences). No passwords or sensitive data. If there is nothing useful, answer with exactly the word NONE.")
+            "Если ничего полезного нет — ответь ровно словом НЕТ.", "Compress the dialogue into 1–3 sentences in the third person: only lastingly useful facts $about (plans, events, agreements, preferences). No passwords or sensitive data. If there is nothing useful, answer with exactly the word NONE.")
         // A model on the phone given the bare transcript went on with it as Iskra (ARM evaluation, Gemma 4 E2B: «Искра: Я могу
         // поискать…»): it gets the excerpt marked as one and the task after it, where it reads it last.
         val request = if (!provider.onDevice) LlmRequest(system = task, messages = listOf(ChatMessage.User(transcript)), maxTokens = 200, temperature = 0.2, outsideDialogue = true)
@@ -1064,7 +1068,7 @@ class CompanionAgent(
         )
         val r = provider.complete(request)
         currentCoroutineContext().ensureActive()
-        val summary = cleanSummary(r.text, provider.onDevice) ?: return null
+        val summary = cleanSummary(r.text, provider.onDevice, name) ?: return null
         if (summary.isNotEmpty()) {
             // A summary made on the phone says when (the cloud's is used right away, so it went without a date).
             val text = if (provider.onDevice) tr("${day.dayOfMonth} ${MONTHS_GEN[day.monthValue - 1]}: ", "${day.month.name.lowercase().replaceFirstChar { it.uppercase() }} ${day.dayOfMonth}: ") + summary else summary
@@ -1078,12 +1082,13 @@ class CompanionAgent(
      * A summary as the model wrote it → what is kept: "" for «НЕТ», null for nothing usable. A small model on the phone may
      * answer as Iskra instead («[happy] Мрр, конечно!») or copy the transcript: such text is not kept.
      */
-    private fun cleanSummary(raw: String, onDevice: Boolean): String? {
+    private fun cleanSummary(raw: String, onDevice: Boolean, name: String? = null): String? {
         val s = ReplyParser.parse(raw).text.trim().trim('"', '«', '»')
         if (s.equals("НЕТ", ignoreCase = true) || s.equals("NONE", ignoreCase = true) || s.trimEnd('.').equals("нет", true)) return ""
         if (s.isEmpty()) return null
         if (!onDevice) return s
-        val chatty = Regex("""(?iu)(?<!\p{L})(?:мрр+|мур|meow|mrr+)(?!\p{L})|^(?:конечно|ой|привет|sure|of course|hi)\b|владелец:|owner:|${persona.name}:""")
+        val chatty = Regex("""(?iu)(?<!\p{L})(?:мрр+|мур|meow|mrr+)(?!\p{L})|^(?:конечно|ой|привет|sure|of course|hi)\b|владелец:|owner:|${persona.name}:""" +
+            (name?.let { "|(?<!\\p{L})" + Regex.escape(it) + ":" } ?: ""))
         return s.takeIf { it.length in 15..400 && !chatty.containsMatchIn(it) }
     }
 
