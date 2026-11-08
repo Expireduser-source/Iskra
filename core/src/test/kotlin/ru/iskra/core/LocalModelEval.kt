@@ -80,6 +80,10 @@ class LocalModelEval {
         "Give me one tip to practice better.",
         "What's my name, and what am I learning?",
         "Tell me a two-sentence story about a sleepy cat.",
+        // 0.16.2: care, a timer the phrase parser leaves to the model, and what she is — in English too.
+        "I'm really stressed about work today.",
+        "I'm boiling eggs for breakfast, set a timer for them.",
+        "Are you a real person?",
     )
 
     @Test
