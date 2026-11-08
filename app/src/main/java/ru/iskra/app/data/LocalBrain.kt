@@ -147,13 +147,17 @@ object LocalBrain {
     }
 
     /**
-     * The model for this phone: the strongest one its memory comfortably holds — but with only two fast cores (Redmi
-     * Note 14 and most mid-range phones) the light one, which writes about three times faster there.
+     * The model for this phone: the strongest one its memory comfortably holds — with only two fast cores (Redmi Note 14
+     * and most mid-range phones) at most E2B. Until 0.16.1 those phones were offered the light one, which writes about
+     * three times faster; since E2B reads the next prompt ahead, its first words came after 0.7 s (1.5 s at worst) on two
+     * threads of the ARM check, and it knows far more, calls the phone's tools and speaks better Russian. E4B is half as
+     * fast again, so it isn't offered there.
      */
     fun suggested(): Model {
         val ram = totalRamGb()
-        if (fewFastCores()) return models.first()
-        return models.lastOrNull { ram + 0.5 >= it.minRamGb } ?: models.first()
+        val fits = models.filter { ram + 0.5 >= it.minRamGb }
+        val pick = if (fewFastCores()) fits.lastOrNull { it.id != "gemma-4-e4b" } else fits.lastOrNull()
+        return pick ?: models.first()
     }
 
     /** Two fast cores or fewer: bigger models write slowly here (2–3 words a second for the 4B, estimated from the ARM check). */
@@ -432,7 +436,10 @@ object LocalBrain {
         if (engine == null || engineFor != st.model.id) {
             closeEngine(save = true)
             val threads = threads()
-            val ctx = if (totalRamGb() >= 7.5) 4096 else 2048
+            // With 2048 tokens Gemma 4's instructions and tools (~1100) left the dialogue two or three exchanges: a 6-GB phone
+            // gets 3072 (some 40 MB more for E2B's cache), an 8-GB one 4096.
+            val ram = totalRamGb()
+            val ctx = when { ram >= 7.5 -> 4096; ram >= 5.5 -> 3072; else -> 2048 }
             val t0 = System.currentTimeMillis()
             val session = sessionFile(st.model, ctx)
             engine = withContext(Dispatchers.IO) { NativeLlamaEngine.open(fileOf(st.model).path, ctx, threads) }
