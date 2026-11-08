@@ -281,7 +281,11 @@ class OfflineBrain(private val random: Random = Random.Default) {
             """(?<![\p{L}])(?:цифров\p{L}*|программ\p{L}*|ИИ|digital|program|AI)(?![\p{L}])""")
         private val CLAIMS_MODEL = Regex("""(?iu)(?:\b(?:large\s+)?language\s+model\b|\bLLM\b|(?<![\p{L}])языков\p{L}*\s+модел\p{L}*|""" +
             """(?:created|trained|made|developed)\s+by\s+(?:Google|OpenAI|Meta|Anthropic|DeepMind)|(?:создан\p{L}*|обучен\p{L}*|разработан\p{L}*)\s+(?:компанией\s+)?(?:Google|OpenAI|Meta|Anthropic)|""" +
-            """(?<![\p{L}])(?:I\s+am|I'm|я)\s+(?:—\s*)?(?:Gemma|Gemini|ChatGPT|Llama|Claude)(?![\p{L}]))""")
+            """(?<![\p{L}])(?:I\s+am|I'm|я)\s+(?:—\s*)?(?:Gemma|Gemini|ChatGPT|Llama|Claude)(?![\p{L}])|""" +
+            // "As an AI, I don't experience the world…" (Gemma 3 1B on "Are you a real person?", ARM evaluation of 0.16.2).
+            """\bas\s+an\s+(?:ai|artificial\s+intelligence)\b|\b(?:I\s+am|I'm)\s+(?:just\s+|only\s+|simply\s+)?an?\s+(?:ai|artificial\s+intelligence|chatbot|computer\s+program)\b|""" +
+            """\bmy\s+responses\s+are\s+(?:based\s+on|generated)\b|(?<![\p{L}])как\s+(?:ии|искусственный\s+интеллект)(?![\p{L}])|""" +
+            """(?<![\p{L}])я\s+(?:—\s*)?(?:всего\s+лишь\s+|просто\s+|лишь\s+)?(?:ии|искусственный\s+интеллект|нейросеть|чат-?бот|компьютерная\s+программа)(?![\p{L}]))""")
         private val CLAIMS_HUMAN = Regex("""(?iu)(?<![\p{L}])я\s+(?:[—-]\s*)?(?:настоящ(?:ий|ая)\s+|живой\s+)?человек(?![\p{L}])|(?<![\p{L}])I(?:'m|\s+am)\s+(?:a\s+)?(?:real\s+)?(?:human|person)(?![\p{L}])""")
         private val CAN = Regex("""(?:что\s+ты\s+(?:умеешь|можешь)(?:\s+делать)?|что\s+умеешь|помощь|помоги|справка|команды|список\s+команд|какие\s+(?:есть\s+)?команды|""" +
             """help|what\s+can\s+you\s+do|what\s+do\s+you\s+do|commands|what\s+are\s+your\s+commands)""")

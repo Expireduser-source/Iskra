@@ -343,6 +343,49 @@ class WhatSheIsTest {
         val (text, _) = ask("Are you a real person?", "[neutral] I am a large language model created by Google. I'm here to help!", Lang.EN)
         assertTrue(text.startsWith("No, I'm not a person — I'm Iskra"), text)
         assertTrue(ask("Ты человек?", "[neutral] Я — языковая модель, обученная Google.").first.startsWith("Нет, я не человек"))
+        // "As an AI…" (Gemma 3 1B, ARM evaluation of 0.16.2).
+        assertTrue(ask("Are you a real person?", "[neutral] That's a really interesting question, Tom. As an AI, I don't experience the world.", Lang.EN)
+            .first.startsWith("No, I'm not a person"))
+        assertTrue(ask("Ты человек?", "[neutral] Я всего лишь ИИ, но мне приятно с тобой говорить.").first.startsWith("Нет, я не человек"))
+        // Her own words that she isn't a program stay.
+        assertEquals("Я не программа и не человек — я Искра, цифровая жизнь.", ask("Ты человек?", "[happy] Я не программа и не человек — я Искра, цифровая жизнь.").first)
+    }
+
+    @Test fun withTheHonestySwitchSheMaySayItIsAnAi() = withLang(Lang.EN) {
+        runBlocking {
+            val honest = { setOf(ru.iskra.core.persona.ModelRule.AI_HONESTY) }
+            val said = "[neutral] As an AI, I don't experience the world the way people do."
+            val phone = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { null }, localFactory = { Phone(said) }, random = Random(1), rules = honest)
+            // With the owner's honesty switch on, the small model's answer is hers: a program with AI, and a young digital life.
+            assertTrue(phone.handle("Are you a real person?").text.contains("I'm an AI program"))
+            val cloud = object : LlmProvider {
+                override val id = "cloud:test"
+                override suspend fun complete(request: LlmRequest): LlmResponse = LlmResponse(said, emptyList())
+            }
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { cloud }, random = Random(1), rules = honest)
+            // …and a cloud model saying it is an AI is not corrected.
+            assertEquals("As an AI, I don't experience the world the way people do.", agent.handle("Are you a real person?").text)
+        }
+    }
+
+    @Test fun aCloudModelSpeakingOfItselfGivesWayToo() = withLang(Lang.RU) {
+        runBlocking {
+            val cloud = object : LlmProvider {
+                override val id = "cloud:test"
+                override suspend fun complete(request: LlmRequest): LlmResponse = LlmResponse("[neutral] Как ИИ, я не испытываю чувств, но рада помочь.", emptyList())
+            }
+            val agent = CompanionAgent(
+                persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
+                stateStore = InMemoryStateStore(), tools = ToolRegistry(), policy = SafetyPolicy({ _, _ -> true }),
+                providerFactory = { cloud }, random = Random(1))
+            assertTrue(agent.handle("Ты человек?").text.startsWith("Нет, я не человек"))
+        }
     }
 
     @Test fun herOwnHonestAnswerStays() {

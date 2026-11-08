@@ -190,7 +190,7 @@ class CompanionAgent(
             provider === onPhone -> brain.asksWhatSheIs(text).let { self ->
                 askPhone(provider, text, state, if (self) null else sink).let { r ->
                     if (r.errorKind == null) {
-                        if (self && (brain.claimsHuman(r.text, text) || brain.claimsModel(r.text))) brain.digitalSelf(text).let { a -> r.copy(text = a.text, emotion = a.emotion) } else r
+                        if (self && notHerself(r.text, text)) brain.digitalSelf(text).let { a -> r.copy(text = a.text, emotion = a.emotion) } else r
                     }
                     else (brain.chat(text, java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault()),
                         currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))
@@ -198,7 +198,11 @@ class CompanionAgent(
                         .let { a -> AgentReply(a.text, a.emotion, r.actions, error = r.error) }
                 }
             }
-            else -> askModel(provider, text, state, sink).let { r -> if (r.errorKind != null) rescue(text, state, sink, r) else r }.also { r ->
+            // The cloud too: asked what she is, a free model's «As an AI language model…» gives way to her own answer (not
+            // streamed, as on the phone).
+            else -> brain.asksWhatSheIs(text).let { self -> askModel(provider, text, state, if (self) null else sink).let { r ->
+                if (r.errorKind == null && self && notHerself(r.text, text)) brain.digitalSelf(text).let { a -> r.copy(text = a.text, emotion = a.emotion) } else r
+            } }.let { r -> if (r.errorKind != null) rescue(text, state, sink, r) else r }.also { r ->
                 if (r.errorKind == LlmException.Kind.AUTH || r.errorKind == LlmException.Kind.BALANCE ||
                     r.errorKind == LlmException.Kind.POLICY || r.errorKind == LlmException.Kind.MODEL)
                     cloudPause = (clock() + cloudPauseMs) to r.errorKind
@@ -429,6 +433,13 @@ class CompanionAgent(
 
     /** How long after words about not wanting to live she stays gentle and the model is told to be careful. */
     private val CAREFUL_HOURS = 12
+
+    /**
+     * A reply to «Ты человек?» in which the model says it is a person, or speaks of itself as the model («I am a large
+     * language model», "As an AI…") — not who answers here, unless the owner's switch has her say she is a program with AI.
+     */
+    private fun notHerself(reply: String, asked: String) =
+        brain.claimsHuman(reply, asked) || (ModelRule.AI_HONESTY !in rules() && brain.claimsModel(reply))
 
     /** Memory entries there were before the message being answered (null: not answering one); what it added isn't shown back. */
     @Volatile private var memoryBefore: Set<Long>? = null
