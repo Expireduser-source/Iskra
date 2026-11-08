@@ -11,6 +11,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class CommandParserTest {
     private fun tool(s: String) = assertIs<Parsed.Tool>(CommandParser.parse(s), s)
@@ -110,5 +111,42 @@ class DishTimerTest {
             assertEquals("Засекла 4 минуты — яйца всмятку будут в самый раз — считай от закипания.", r.text)
             assertEquals(240, timer.calls.single()["seconds"]!!.jsonPrimitive.content.toInt())
         }
+    }
+
+    @Test fun withoutToolsSheAsksHowLong() = ru.iskra.core.i18n.withLang(ru.iskra.core.i18n.Lang.RU) {
+        kotlinx.coroutines.runBlocking {
+            val light = object : ru.iskra.core.llm.LlmProvider {
+                override val id = "local:light"
+                override val onDevice = true
+                override suspend fun complete(request: ru.iskra.core.llm.LlmRequest): ru.iskra.core.llm.LlmResponse =
+                    ru.iskra.core.llm.LlmResponse("[happy] Мрр, интересно!", emptyList())
+            }
+            // A light model on the phone, which has no tools, and no model at all.
+            for (brain in listOf<ru.iskra.core.llm.LlmProvider?>(light, null)) {
+                val timer = RecordingTool()
+                val agent = ru.iskra.core.agent.CompanionAgent(persona = ru.iskra.core.persona.Personas.ISKRA,
+                    memory = ru.iskra.core.memory.MemoryManager(ru.iskra.core.memory.InMemoryMemoryStore()),
+                    conversation = ru.iskra.core.agent.InMemoryConversationStore(), stateStore = ru.iskra.core.agent.InMemoryStateStore(),
+                    tools = ToolRegistry(listOf(timer)), policy = SafetyPolicy({ _, _ -> true }), providerFactory = { null }, localFactory = { brain })
+                assertEquals("Сколько минут засечь? Скажи, например: «7 минут» — и поставлю.", agent.handle("Жарю сырники — засеки, сколько нужно").text)
+                assertTrue(timer.calls.isEmpty())
+                agent.handle("минут семь")
+                assertEquals(420, timer.calls.single()["seconds"]!!.jsonPrimitive.content.toInt())
+                // Asked, and then something else: nothing is set, and the next bare number is not a timer.
+                agent.handle("Жарю сырники — засеки, сколько нужно")
+                agent.handle("А какая завтра погода?")
+                agent.handle("5")
+                assertEquals(1, timer.calls.size)
+            }
+        }
+        val p = ru.iskra.core.agent.ActionPromise
+        assertEquals(1800, p.duration("полчаса"))
+        assertEquals(90, p.duration("1.5 минуты"))
+        assertEquals(420, p.duration("7"))
+        assertEquals(600, p.duration("на 10 мин."))
+        assertEquals(30, p.duration("30 секунд"))
+        assertEquals(600, p.duration("10 minutes"))
+        assertNull(p.duration("через 5 минут позвони маме"))
+        assertNull(p.duration("не знаю"))
     }
 }

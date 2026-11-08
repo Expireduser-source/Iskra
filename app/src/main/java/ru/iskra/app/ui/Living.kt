@@ -192,6 +192,29 @@ fun rememberSeconds(running: Boolean): State<Float> {
 }
 
 /**
+ * What TalkBack says of her picture: her name and how she looks now («Искра, радуется»). The picture is a button to pet
+ * her; without a name, TalkBack had only «Двойное нажатие — погладить» to say of it (the emulator check's audit, 0.16.1).
+ */
+fun herLook(emotion: Emotion? = null, thinking: Boolean = false, listening: Boolean = false): String {
+    val how = when {
+        listening -> tr("слушает", "listening")
+        thinking || emotion == Emotion.THINKING -> tr("думает", "thinking")
+        else -> when (emotion) {
+            Emotion.HAPPY -> tr("радуется", "happy")
+            Emotion.EXCITED -> tr("в восторге", "excited")
+            Emotion.CURIOUS -> tr("смотрит с любопытством", "curious")
+            Emotion.SHY -> tr("смущается", "shy")
+            Emotion.POUTY -> tr("дуется", "pouting")
+            Emotion.SAD -> tr("грустит", "sad")
+            Emotion.SURPRISED -> tr("удивилась", "surprised")
+            Emotion.SLEEPY -> tr("сонная", "sleepy")
+            else -> null
+        }
+    }
+    return tr("Искра", "Iskra") + (how?.let { ", $it" } ?: "")
+}
+
+/**
  * Iskra alive on her own screens: in the chat header, the welcome and the introduction. [Framing.FULL] — the whole
  * figure standing on the bottom of the area; [Framing.PORTRAIT] — her head filling a circle (clip it to one).
  * Bump [wave] or [hop] to make her wave or hop with joy. With Android's animations off ([still]) one still frame that

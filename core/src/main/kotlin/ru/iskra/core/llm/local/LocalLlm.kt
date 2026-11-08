@@ -259,10 +259,14 @@ enum class ChatFormat {
         return Prompt(sb.toString(), stable, head)
     }
 
-    /** The beginning of the call [LlmRequest.forceTool] asks for, written for the model (Gemma 4), or null. */
+    /**
+     * The beginning of the call [LlmRequest.forceTool] asks for, written for the model (Gemma 4), or null. A timer's call is
+     * begun up to its minutes: E4B, told to call it, wrote «set_timer{label:"Жарка сырников"}» with no time at all (ARM
+     * evaluation 0.16.1), which sets nothing.
+     */
     fun forcedCall(request: LlmRequest): String? = request.forceTool
         ?.takeIf { this == GEMMA4 && request.tools.any { t -> t.name == it } && request.messages.lastOrNull() is ChatMessage.User }
-        ?.let { Gemma4Tools.CALL_OPEN + "call:" + it }
+        ?.let { Gemma4Tools.CALL_OPEN + "call:" + it + (if (it == ru.iskra.core.tools.ToolNames.SET_TIMER) "{minutes:" else "") }
 
     /**
      * Characters per token, a cautious first guess for fitting the dialogue until the model's own prompts are measured:
@@ -347,7 +351,7 @@ class LocalLlmProvider(
         val budget = minOf(maxTokens, request.maxTokens)
         val rendered = format.prompt(fit(request, e.contextSize - budget, perToken))
         val prompt = rendered.text
-        if (request.warmUp) return warmUp(e, rendered)
+        if (request.warmUp) return warmUp(e, rendered, request)
         // Small Qwen models sometimes slip Chinese characters into Russian or English; unless the person wrote them, drop them.
         val lastUser = (request.messages.lastOrNull { it is ChatMessage.User } as? ChatMessage.User)?.text.orEmpty()
         // …and Llama 3.2 1B slipped in Devanagari («Мैं Аня»): letters of a script the person didn't write in go, unless they
@@ -441,8 +445,7 @@ class LocalLlmProvider(
         if (!leadDone) cleanStart(lead.toString(), dropPurr).takeIf { it.isNotEmpty() }?.let(onText)
         val cut = (format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } } + listOfNotNull(sampleBreak(text).takeIf { it >= 0 })).minOrNull()
         val (promptTokens, reused) = e.lastRead()
-        // The real measure of a token for the next dialogue fitting (a short prompt says little: markup weighs more).
-        if (promptTokens >= 200) charsPerToken = prompt.length.toDouble() / promptTokens
+        measure(request, prompt.length, promptTokens)
         onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000, promptTokens, promptTokens - reused))
         var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
         // What was shown is the part after the thought channel; the reply kept in the chat is the same.
@@ -461,7 +464,7 @@ class LocalLlmProvider(
      * Reads [rendered] into the engine's cache and writes nothing (one token, dropped): the next message's prompt begins
      * the same, so only its own part is read then.
      */
-    private suspend fun warmUp(e: LlamaEngine, rendered: Prompt): LlmResponse {
+    private suspend fun warmUp(e: LlamaEngine, rendered: Prompt, request: LlmRequest): LlmResponse {
         val t0 = System.nanoTime()
         withContext(Dispatchers.IO) {
             try {
@@ -473,9 +476,21 @@ class LocalLlmProvider(
         }
         val ms = (System.nanoTime() - t0) / 1_000_000
         val (promptTokens, reused) = e.lastRead()
-        if (promptTokens >= 200) charsPerToken = rendered.text.length.toDouble() / promptTokens
+        measure(request, rendered.text.length, promptTokens)
         onStats?.invoke(GenStats(rendered.text.length, ms, 0, 0, ms, promptTokens, promptTokens - reused))
         return LlmResponse("", emptyList())
+    }
+
+    /**
+     * The real measure of a token, for fitting the next dialogue: only from the dialogue's own prompts (a short one says
+     * little — markup weighs more), and only ever smaller. Taken anew from every prompt, it moved with a diary's prompt and
+     * back again, and the same dialogue was fitted with other turns from one prompt to the next: a turn put back at its
+     * beginning can't be added to the cache, so everything after it was read again (Gemma 4, ARM evaluation 0.16.1).
+     */
+    private fun measure(request: LlmRequest, chars: Int, tokens: Int) {
+        if (request.outsideDialogue || tokens < 200) return
+        val m = chars.toDouble() / tokens
+        charsPerToken = charsPerToken?.let { minOf(it, m) } ?: m
     }
 
     /** Gemma 4's start of a reply: waiting to see whether it opens the thought channel, inside it, or the answer itself. */

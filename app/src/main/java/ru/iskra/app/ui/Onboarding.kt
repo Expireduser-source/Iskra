@@ -65,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -180,8 +181,10 @@ fun Onboarding(onDone: () -> Unit) {
                         Aura(Modifier.size(HERO.dp).graphicsLayer { alpha = Birth.figure(birth.value) }, still, strength = if (step == 2) 1.5f else 1f)
                         Sparkles(Modifier.size(HERO.dp).graphicsLayer { alpha = Birth.words(birth.value) }, still)
                         LiveIskra(
-                            Modifier.size(FIGURE.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
-                                onClickLabel = tr("погладить", "pet her")) { hop++ },
+                            Modifier.size(FIGURE.dp)
+                                .semantics { contentDescription = herLook(if (step == 1) Emotion.CURIOUS else null, thinking = step == 3, listening = step == 2) }
+                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
+                                    onClickLabel = tr("погладить", "pet her")) { hop++ },
                             Framing.FULL,
                             emotion = if (step == 1) Emotion.CURIOUS else Emotion.NEUTRAL,
                             thinking = step == 3, listening = step == 2, still = still, wave = wave, hop = hop,

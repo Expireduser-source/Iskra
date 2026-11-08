@@ -179,7 +179,8 @@ class CompanionAgent(
         crisisAgain = null
         memoryBefore = runCatching { memory.all().map { it.id }.toSet() }.getOrNull()
         messageText = text
-        val local = handleLocally(text, provider != null, provider?.onDevice == true)
+        val local = handleLocally(text, provider != null, provider?.onDevice == true,
+            canAct = provider != null && (!provider.onDevice || provider.nativeTools))
         val answered = local ?: when {
             provider == null && pause != null -> AgentReply(pausedLine(pause.second, (pause.first - now) / 60_000 + 1), Emotion.SAD)
             provider == null -> brain.fallback(text).let { AgentReply(it.text, it.emotion) }
@@ -452,6 +453,19 @@ class CompanionAgent(
     private val yes = Regex("""(?iu)^(?:да|давай|ага|угу|конечно|ок|окей|хорошо|пожалуйста|напомни|да,?\s+(?:давай|напомни|пожалуйста)|yes|yeah|yep|sure|ok|okay|please|do\s+it)[.!]*$""")
     private val no = Regex("""(?iu)^(?:нет|не\s+надо|не\s+нужно|неа|не|no|nope|no\s+thanks|don't)[.!,]*(?:\s+спасибо)?$""")
 
+    /** She asked «Сколько минут засечь?»: waiting for the time in the very next message. */
+    @Volatile private var askedTimer = false
+
+    /** «7 минут», «минут десять», «полчаса» right after she asked how long: the timer is set. null: not such an answer. */
+    private suspend fun answerTimer(text: String, llmAvailable: Boolean): AgentReply? {
+        if (!askedTimer) return null
+        askedTimer = false
+        val seconds = ActionPromise.duration(NumberWords.digitize(text)) ?: return null
+        return command(CommandParser.Parsed.Tool(ToolNames.SET_TIMER, kotlinx.serialization.json.buildJsonObject {
+            put("seconds", kotlinx.serialization.json.JsonPrimitive(seconds))
+        }), llmAvailable)
+    }
+
     /** «да» right after «Напомнить за час — в 09:00?»: the reminder is set; «нет» — not. null: not an answer to an offer. */
     private suspend fun answerOffer(text: String, llmAvailable: Boolean): AgentReply? {
         val pending = offer ?: return null
@@ -615,7 +629,8 @@ class CompanionAgent(
      * Everything that needs no model: safety, memory commands, phone commands, exact answers (sums, units, dates),
      * and — only when there is no model — small talk. null: ask the model.
      */
-    private suspend fun handleLocally(text: String, llmAvailable: Boolean, smallModel: Boolean = false): AgentReply? {
+    /** [canAct]: the brain answering can call tools itself (the cloud, Gemma 4 on the phone). */
+    private suspend fun handleLocally(text: String, llmAvailable: Boolean, smallModel: Boolean = false, canAct: Boolean = true): AgentReply? {
         // Words about not wanting to live: help numbers at once (shorter if they heard them in the last few hours). A cloud
         // model answers in its own words instead — told to be gentle, with the numbers added if it names none (in [handle]).
         if ((ModelRule.CRISIS in rules()) && CrisisTalk.said(text)) {
@@ -624,6 +639,7 @@ class CompanionAgent(
             crisisAgain = again
         }
         answerOffer(text, llmAvailable)?.let { return it }
+        answerTimer(text, llmAvailable)?.let { return it }
         if (smallModel && ModelRule.AI_HONESTY in rules()) brain.honesty(text)?.let { return AgentReply(it.text, it.emotion) }
         if (PocketSpark.matches(text)) return AgentReply(pocketSpark.next(), Emotion.CURIOUS)
         MemoryTalk.forgetQuery(text)?.let { return forget(it) }
@@ -658,6 +674,13 @@ class CompanionAgent(
         // «Запомни: завтра экзамен» is already kept as a plan, with its date worked out.
         if (parsed is CommandParser.Parsed.Remember && planned.isNotEmpty()) return AgentReply(planned.joinToString(" "), Emotion.HAPPY)
         if (parsed != null) return command(parsed, llmAvailable)
+        // «Жарю сырники — засеки, сколько нужно» with a brain that can't set it (a light model on the phone answered with
+        // talk about flour, Gemma 3 1B with «нужно сколько-нибудь», ARM evaluation 0.16.1), or with none: she asks how long.
+        if (!canAct && ActionPromise.wantsTimer(text)) {
+            askedTimer = true
+            return AgentReply(tr("Сколько минут засечь? Скажи, например: «7 минут» — и поставлю.",
+                "For how many minutes? Say, for example, “7 minutes” — and I'll set it."), Emotion.CURIOUS)
+        }
         brain.utility(withBirthday(text), now)?.let { return AgentReply(it.text, it.emotion) }
         if (!llmAvailable) {
             brain.chat(text, now, currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))?.let { a ->
@@ -975,7 +998,7 @@ class CompanionAgent(
             "Если ничего полезного нет — ответь ровно словом НЕТ.", "Compress the dialogue into 1–3 sentences in the third person: only lastingly useful facts about the owner (plans, events, agreements, preferences). No passwords or sensitive data. If there is nothing useful, answer with exactly the word NONE.")
         // A model on the phone given the bare transcript went on with it as Iskra (ARM evaluation, Gemma 4 E2B: «Искра: Я могу
         // поискать…»): it gets the excerpt marked as one and the task after it, where it reads it last.
-        val request = if (!provider.onDevice) LlmRequest(system = task, messages = listOf(ChatMessage.User(transcript)), maxTokens = 200, temperature = 0.2)
+        val request = if (!provider.onDevice) LlmRequest(system = task, messages = listOf(ChatMessage.User(transcript)), maxTokens = 200, temperature = 0.2, outsideDialogue = true)
         else LlmRequest(
             system = tr("Ты пересказываешь переписки кратко и точно.", "You retell chats briefly and accurately."),
             // Dated, so «завтра экзамен» becomes «экзамен 7 ноября» (E2B wrote «к экзамену … завтра» into a recap kept for weeks).
@@ -987,7 +1010,7 @@ class CompanionAgent(
                     "${day.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)}, " +
                     "${day.month.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH)} ${day.dayOfMonth}:\n\n$transcript\n\nTask: $task " +
                     "Write dates instead of “today”, “tomorrow”, “yesterday”. Don't continue the chat: answer only with the summary or the word NONE."))),
-            maxTokens = 200, temperature = 0.2,
+            maxTokens = 200, temperature = 0.2, outsideDialogue = true,
         )
         val r = provider.complete(request)
         currentCoroutineContext().ensureActive()
@@ -1046,7 +1069,7 @@ class CompanionAgent(
                 "Your conversations on $date:\n\n$transcript\n\nTask: write 1–3 short sentences about this day in your diary — in the first " +
                     "person: what happened, what you felt, what you learned. Only what was in the conversations; no passwords, addresses or " +
                     "numbers. Don't continue the chat and don't write a list."))),
-            maxTokens = 160, temperature = 0.5,
+            maxTokens = 160, temperature = 0.5, outsideDialogue = true,
         )
         val text = try {
             cleanDiary(provider.complete(request).text, who)

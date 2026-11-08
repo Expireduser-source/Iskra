@@ -37,6 +37,28 @@ object ActionPromise {
     private val timerRu = Regex("""(?iu)(?<!\p{L})засеки(?:те)?(?!\p{L})|(?<!\p{L})(?:поставь|заведи|запусти|включи)(?:те)?(?!\p{L})[^.!?\n]{0,30}?(?<!\p{L})таймер""")
     private val timerEn = Regex("""(?i)\b(?:set|start|put\s+on)\b[^.!?\n]{0,30}?\btimer\b""")
 
+    /**
+     * A time and nothing else, as the answer to «Сколько минут засечь?»: «7 минут», «7», «минут 10», «полчаса», «1.5 часа»,
+     * "10 minutes". Number words are digits already ([ru.iskra.core.brain.NumberWords.digitize]). Seconds, or null.
+     */
+    fun duration(text: String): Int? {
+        val t = text.lowercase().replace('ё', 'е').trim().trimEnd('.', '!', ' ').removePrefix("на ").removePrefix("for ").trim()
+        when (t) {
+            "полчаса", "half an hour" -> return 1800
+            "час", "1 час", "an hour", "one hour", "1 hour" -> return 3600
+        }
+        val m = Regex("""^(\d+(?:[.,]\d+)?)\s*(минут\p{L}*|мин|секунд\p{L}*|сек|час\p{L}*|minutes?|mins?|seconds?|secs?|hours?)?$""").find(t)
+            ?: Regex("""^(?:минут\p{L}*|minutes?)\s+(\d+)()$""").find(t) ?: return null
+        val n = m.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return null
+        val unit = m.groupValues[2]
+        val s = when {
+            unit.startsWith("сек") || unit.startsWith("sec") -> n
+            unit.startsWith("час") || unit.startsWith("hour") -> n * 3600
+            else -> n * 60
+        }
+        return Math.round(s).toInt().takeIf { it in 1..86_400 }
+    }
+
     /** The reply speaks of an action as done or about to be done. */
     fun made(text: String): Boolean = ru.containsMatchIn(text) || en.containsMatchIn(text)
 

@@ -39,6 +39,9 @@ class LocalModelEval {
         override fun describe(args: JsonObject) = "${spec.name}$args"
         override suspend fun execute(args: JsonObject): ToolOutcome {
             calls += "${spec.name}$args"
+            // As the app's timer: without a time nothing is set (E4B once called it with a label alone, 0.16.1).
+            if (spec.name == ru.iskra.core.tools.ToolNames.SET_TIMER && ru.iskra.core.tools.timerSeconds(args) == null)
+                return ToolOutcome(false, "неверная длительность")
             return ToolOutcome(true, "готово")
         }
     }
@@ -154,7 +157,10 @@ class LocalModelEval {
                             raw = ""
                             val kept = java.io.File.createTempFile("eval-dialogue-", ".bin")
                             val saved = e.saveSession(kept.path)
+                            // Not a reply: its reading stays out of the medians and the slowest first words.
+                            val beforeDiary = stats.size
                             val entry = runCatching { runBlocking { agent.writeDiary(onPhone = true) } }.getOrNull()
+                            while (stats.size > beforeDiary) stats.removeAt(stats.lastIndex)
                             if (saved) e.loadSession(kept.path)
                             kept.delete()
                             doc.append("\n**Night diary** (%.1f s): %s\n".format(java.util.Locale.ROOT, (System.nanoTime() - td) / 1e9,
@@ -180,7 +186,9 @@ class LocalModelEval {
                     // What the night job would keep: a recap of the oldest turns, made by this model.
                     val t1 = System.nanoTime()
                     raw = ""
+                    val beforeRecap = stats.size
                     val recaps = runCatching { runBlocking { agent.summarizeOnPhone(maxChunks = 1) } }.getOrElse { -1 }
+                    while (stats.size > beforeRecap) stats.removeAt(stats.lastIndex)
                     val episodes = memory.all().filter { it.kind == MemoryKind.EPISODE }.joinToString(" | ") { it.text }
                     doc.append("\n**Night recap** (%.1f s, saved: %s): %s\n".format(java.util.Locale.ROOT, (System.nanoTime() - t1) / 1e9, recaps, episodes.ifEmpty { "—" }))
                     // Not kept: what the model wrote, to see why the filter refused it.

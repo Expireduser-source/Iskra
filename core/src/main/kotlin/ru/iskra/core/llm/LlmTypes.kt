@@ -53,6 +53,12 @@ data class LlmRequest(
      * nothing is written or shown. Others ignore it.
      */
     val warmUp: Boolean = false,
+    /**
+     * A task beside the dialogue (her diary, a recap): an on-device model doesn't learn from it how long its tokens are —
+     * a diary's prompt measured differently, and the morning's dialogue was fitted with other turns than the night had
+     * read ahead, so the first reply of the day read the whole dialogue again (Gemma 4, ARM evaluation 0.16.1).
+     */
+    val outsideDialogue: Boolean = false,
 ) {
     /** The instructions with the steady facts, for a format that has nothing between them. */
     val systemWithProfile: String get() = if (profile.isBlank()) system.trim() else system.trim() + "\n\n" + profile.trim()

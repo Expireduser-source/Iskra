@@ -366,8 +366,9 @@ private fun ChatHeader(compact: Boolean, busy: Boolean, writing: Boolean, listen
     Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 6.dp, top = if (compact) 4.dp else 8.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Portrait(if (compact) 40.dp else 46.dp, emotion, busy, listening, watching, still, hop,
-            Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
-                onClickLabel = tr("погладить", "pet her")) { hop++ })
+            Modifier.semantics { contentDescription = herLook(emotion) }
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
+                    onClickLabel = tr("погладить", "pet her")) { hop++ })
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f).semantics(mergeDescendants = true) { heading() }) {
             Text(tr("Искра", "Iskra"), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
@@ -535,8 +536,9 @@ private fun Welcome(compact: Boolean, enabled: Boolean, still: Boolean, onSend: 
             Box(Modifier.size(232.dp), contentAlignment = Alignment.Center) {
                 Aura(Modifier.fillMaxSize(), still)
                 Sparkles(Modifier.fillMaxSize(), still)
-                LiveIskra(Modifier.size(190.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
-                    onClickLabel = tr("погладить", "pet her")) { hop++ }, Framing.FULL, still = still, wave = wave, hop = hop)
+                LiveIskra(Modifier.size(190.dp).semantics { contentDescription = herLook() }
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null,
+                        onClickLabel = tr("погладить", "pet her")) { hop++ }, Framing.FULL, still = still, wave = wave, hop = hop)
             }
             Appear(!still, delayMs = 120) {
                 Text(tr("Ну что, знакомиться?", "So, shall we get acquainted?"), style = MaterialTheme.typography.headlineSmall,

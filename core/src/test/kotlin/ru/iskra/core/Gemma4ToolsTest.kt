@@ -176,7 +176,7 @@ class Gemma4ToolsTest {
         runBlocking {
             // Asked for a timer without a time: the call is begun for the model (E2B asked back instead, 0.15.0–0.16.0), which
             // writes only the arguments.
-            val engine = Scripted("{label:${q}яйца$q,seconds:240}<tool_call|>", "[happy] Засекла четыре минуты — будут всмятку!")
+            val engine = Scripted("4,label:${q}сырники$q}<tool_call|>", "[happy] Засекла четыре минуты — сырники не подгорят!")
             val timer = RecordingTool()
             val agent = CompanionAgent(
                 persona = Personas.ISKRA, memory = MemoryManager(InMemoryMemoryStore()), conversation = InMemoryConversationStore(),
@@ -184,12 +184,13 @@ class Gemma4ToolsTest {
                 providerFactory = { null }, localFactory = { LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:gemma4") }, random = Random(1))
             // Not a wording the phrase parser can read: how long soft-boiled eggs take is the model's to know.
             val r = agent.handle("Жарю сырники — засеки, сколько нужно")
-            assertEquals(240, timer.calls.single()["seconds"]!!.jsonPrimitive.int)
-            assertEquals("Засекла четыре минуты — будут всмятку!", r.text)
+            assertEquals(4, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
+            assertEquals("Засекла четыре минуты — сырники не подгорят!", r.text)
             assertEquals(1, r.actions.size)
             // The first prompt declared the tool; the second goes on after its result, in the same model turn.
             assertTrue(engine.prompts[0].contains("<|tool>declaration:set_timer"))
-            assertTrue(engine.prompts[0].endsWith("<|turn>model\n<|tool_call>call:set_timer"), engine.prompts[0].takeLast(100))
+            // Begun up to its minutes: E4B, told to call it, once wrote a label and no time (0.16.1).
+            assertTrue(engine.prompts[0].endsWith("<|turn>model\n<|tool_call>call:set_timer{minutes:"), engine.prompts[0].takeLast(100))
             assertTrue(engine.prompts[1].endsWith("<|tool_response>response:set_timer{value:${q}OK: таймер запущен$q}<tool_response|>"), engine.prompts[1].takeLast(200))
         }
     }
@@ -197,7 +198,7 @@ class Gemma4ToolsTest {
     /** A small model repeating its call after the result: the timer is set once, the model is told it's done. */
     @Test fun aRepeatedCallIsNotDoneTwice() = withLang(Lang.RU) {
         runBlocking {
-            val engine = Scripted("{seconds:1800}<tool_call|>", "<|tool_call>call:set_timer{seconds:1800}<tool_call|>",
+            val engine = Scripted("30}<tool_call|>", "<|tool_call>call:set_timer{minutes:30}<tool_call|>",
                 "[happy] Таймер на полчаса стоит!")
             val timer = RecordingTool()
             val agent = CompanionAgent(
@@ -309,16 +310,16 @@ class ActionPromiseTest {
             // The second try has the promised call begun for it (ARM evaluation: E2B promised a timer twice, calling nothing):
             // the model writes only the arguments.
             val engine = Gemma4Tools2.Scripted("[happy] Я поставлю таймер на четыре минуты, и яйца будут всмятку!",
-                "{seconds:240}<tool_call|>", "[happy] Готово — четыре минуты!")
+                "4}<tool_call|>", "[happy] Готово — четыре минуты!")
             val timer = RecordingTool()
             val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Сварю яйца всмятку — последи, сколько нужно")
             assertEquals("Готово — четыре минуты!", r.text)
-            assertEquals(240, timer.calls.single()["seconds"]!!.jsonPrimitive.int)
+            assertEquals(4, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
             assertTrue(engine.prompts[1].contains("Вызови инструмент"), engine.prompts[1].takeLast(300))
-            assertTrue(engine.prompts[1].endsWith("<|turn>model\n<|tool_call>call:set_timer"), engine.prompts[1].takeLast(100))
+            assertTrue(engine.prompts[1].endsWith("<|turn>model\n<|tool_call>call:set_timer{minutes:"), engine.prompts[1].takeLast(100))
             // After the result the model goes on from the call as it was made.
             val q = "<|\"|>"
-            assertTrue(engine.prompts[2].endsWith("<|tool_call>call:set_timer{seconds:240}<tool_call|><|tool_response>response:set_timer{value:${q}OK: таймер запущен$q}<tool_response|>"),
+            assertTrue(engine.prompts[2].endsWith("<|tool_call>call:set_timer{minutes:4}<tool_call|><|tool_response>response:set_timer{value:${q}OK: таймер запущен$q}<tool_response|>"),
                 engine.prompts[2].takeLast(200))
         }
     }
@@ -336,16 +337,17 @@ class ActionPromiseTest {
         assertFalse(p.wantsTimer("Поставь себя на моё место"))
         assertFalse(p.wantsTimer("What a nice time it was"))
         runBlocking {
-            val engine = Gemma4Tools2.Scripted("{minutes:4}<tool_call|>", "[happy] Поставила таймер на 4 минуты — будут всмятку!")
+            val engine = Gemma4Tools2.Scripted("4}<tool_call|>", "[happy] Поставила таймер на 4 минуты — будут всмятку!")
             val timer = RecordingTool()
             val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Жарю сырники — засеки, сколько нужно")
             assertEquals(4, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
             assertEquals("Поставила таймер на 4 минуты — будут всмятку!", r.text)
-            assertTrue(engine.prompts[0].endsWith("<|tool_call>call:set_timer"), engine.prompts[0].takeLast(80))
-            // Other phone models have no tools: nothing is begun for them.
+            assertTrue(engine.prompts[0].endsWith("<|tool_call>call:set_timer{minutes:"), engine.prompts[0].takeLast(80))
+            // Other phone models have no tools: she asks how long herself, and the model isn't asked.
             val g3 = Gemma4Tools2.Scripted("[happy] Варить четыре минуты!")
-            agent(g3, ChatFormat.GEMMA, RecordingTool()).handle("Жарю сырники — засеки, сколько нужно")
-            assertFalse(g3.prompts[0].contains("tool_call"))
+            val asked = agent(g3, ChatFormat.GEMMA, RecordingTool()).handle("Жарю сырники — засеки, сколько нужно")
+            assertTrue(asked.text.startsWith("Сколько минут засечь?"), asked.text)
+            assertTrue(g3.prompts.isEmpty())
         }
     }
 
@@ -359,7 +361,7 @@ class ActionPromiseTest {
         assertFalse(p.offered("Я рада за тебя!", "Поставь таймер"))
         assertEquals("set_timer", p.tool(offer))
         runBlocking {
-            val engine = Gemma4Tools2.Scripted("[happy] $offer", "{minutes:3}<tool_call|>", "[happy] Поставила таймер на три минуты!")
+            val engine = Gemma4Tools2.Scripted("[happy] $offer", "3}<tool_call|>", "[happy] Поставила таймер на три минуты!")
             val timer = RecordingTool()
             val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Сварю яйца всмятку — поставь, сколько нужно")
             assertEquals(3, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
@@ -380,19 +382,19 @@ class ActionPromiseTest {
         runBlocking {
             val engine = Gemma4Tools2.Scripted("[happy] Sure! Soft-boiled eggs take four minutes.",
                 "[happy] Конечно, буду говорить по-русски! Для яйца всмятку нужно варить 3–4 минуты. Я поставила таймер на 4 минуты.",
-                "{minutes:4}<tool_call|>", "[happy] Готово — четыре минуты!")
+                "4}<tool_call|>", "[happy] Готово — четыре минуты!")
             val timer = RecordingTool()
             val r = agent(engine, ChatFormat.GEMMA4, timer).handle("Сварю яйца всмятку — последи, сколько нужно")
             assertEquals(4, timer.calls.single()["minutes"]!!.jsonPrimitive.int)
             assertEquals("Готово — четыре минуты!", r.text)
-            assertTrue(engine.prompts[2].endsWith("<|tool_call>call:set_timer"), engine.prompts[2].takeLast(100))
+            assertTrue(engine.prompts[2].endsWith("<|tool_call>call:set_timer{minutes:"), engine.prompts[2].takeLast(100))
         }
     }
 
     /** After the timer E4B wrote nothing (ARM, 0.15.0): she says what she did in her words, not the bare report. */
     @Test fun nothingWrittenAfterTheToolIsSaidInHerWords() = withLang(Lang.RU) {
         runBlocking {
-            val engine = Gemma4Tools2.Scripted("{minutes:5}<tool_call|>", "")
+            val engine = Gemma4Tools2.Scripted("5}<tool_call|>", "")
             val r = agent(engine, ChatFormat.GEMMA4).handle("Жарю сырники — засеки, сколько нужно")
             assertEquals(1, r.actions.size)
             assertTrue(r.text.contains("таймер запущен") && r.text != "OK: таймер запущен", r.text)
@@ -402,9 +404,9 @@ class ActionPromiseTest {
     /** E4B, asked what she was asked a moment ago: «Я уже поставила таймер на 5 минут» — no second timer (ARM, 0.15.0). */
     @Test fun whatWasJustDoneToldAgainIsNotDoneAgain() = withLang(Lang.RU) {
         runBlocking {
-            val engine = Gemma4Tools2.Scripted("{minutes:5}<tool_call|>", "[happy] Я поставила таймер на 5 минут!",
+            val engine = Gemma4Tools2.Scripted("5}<tool_call|>", "[happy] Я поставила таймер на 5 минут!",
                 "[happy] Ты попросила меня засечь время для варки яиц всмятку! Я уже поставила таймер на 5 минут.",
-                "{minutes:3}<tool_call|>", "[happy] Поставила ещё один, на три минуты.")
+                "3}<tool_call|>", "[happy] Поставила ещё один, на три минуты.")
             val timer = RecordingTool()
             val a = agent(engine, ChatFormat.GEMMA4, timer)
             a.handle("Жарю сырники — засеки, сколько нужно")
@@ -421,7 +423,7 @@ class ActionPromiseTest {
     @Test fun aPromiseNothingCameOfIsOwned() = withLang(Lang.RU) {
         runBlocking {
             // A phone model without tools can only promise: it is said that nothing is set.
-            val r = agent(Gemma4Tools2.Scripted("[happy] Я поставлю таймер на четыре минуты, не волнуйся!"), ChatFormat.GEMMA).handle("Жарю сырники, засеки время")
+            val r = agent(Gemma4Tools2.Scripted("[happy] Я поставлю таймер на четыре минуты, не волнуйся!"), ChatFormat.GEMMA).handle("Жарю сырники, последи за временем")
             assertTrue(r.text.startsWith("Я поставлю таймер на четыре минуты, не волнуйся! Ой, это я только сказала"), r.text)
             // A question back is not a broken promise.
             val q = agent(Gemma4Tools2.Scripted("[curious] Я поставлю таймер. Сколько минут?", "[curious] Я поставлю таймер. Сколько минут?"), ChatFormat.GEMMA4)
