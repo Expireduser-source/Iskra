@@ -190,7 +190,7 @@ class CompanionAgent(
             provider === onPhone -> brain.asksWhatSheIs(text).let { self ->
                 askPhone(provider, text, state, if (self) null else sink).let { r ->
                     if (r.errorKind == null) {
-                        if (self && brain.claimsHuman(r.text, text)) brain.digitalSelf(text).let { a -> r.copy(text = a.text, emotion = a.emotion) } else r
+                        if (self && (brain.claimsHuman(r.text, text) || brain.claimsModel(r.text))) brain.digitalSelf(text).let { a -> r.copy(text = a.text, emotion = a.emotion) } else r
                     }
                     else (brain.chat(text, java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(clock()), java.time.ZoneId.systemDefault()),
                         currentState().mood.dominantEmotion(), MemoryTalk.ownerName(memory.all()))
@@ -791,18 +791,22 @@ class CompanionAgent(
         fun unasked(s: String) = small && ActionPromise.unaskedOffer(s, asked)
         // As they stream: an offer waits, and what follows it waits too until something said stands on its own — then the
         // offers go. If nothing does, they are the answer after all and are said at the end ([ActionPromise.withoutUnaskedOffers]).
-        val held = ArrayList<Pair<String, Emotion>>()
+        // Each held sentence, its emotion, and whether it goes with the offers (an offer, or a sentence only about one).
+        val held = ArrayList<Triple<String, Emotion, Boolean>>()
         var stood = false
+        var offering = false
         fun say(out: ReplySink, text: String, emotion: Emotion) { spoke = true; out.sentence(agree(text), emotion) }
         fun release(out: ReplySink, dropOffers: Boolean) {
-            for ((t, e) in held) if (!(dropOffers && unasked(t))) say(out, t, e)
+            for ((t, e, offer) in held) if (!(dropOffers && offer)) say(out, t, e)
             held.clear()
         }
         val voice = sink?.let { out ->
             object : ReplySink {
                 override fun emotion(e: Emotion) = out.emotion(e)
                 override fun sentence(text: String, emotion: Emotion) {
-                    if (unasked(text) || (held.isNotEmpty() && !stood && !ActionPromise.substantive(text))) { held += text to emotion; return }
+                    offering = unasked(text) || (offering && ActionPromise.refersBack(text))
+                    if (offering) { held += Triple(text, emotion, true); return }
+                    if (held.isNotEmpty() && !stood && !ActionPromise.substantive(text)) { held += Triple(text, emotion, false); return }
                     release(out, dropOffers = true)
                     say(out, text, emotion)
                     if (ActionPromise.substantive(text)) stood = true

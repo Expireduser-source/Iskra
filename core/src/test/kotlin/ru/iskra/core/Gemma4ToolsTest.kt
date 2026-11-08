@@ -372,6 +372,10 @@ class ActionPromiseTest {
         assertFalse(p.unaskedOffer("Могу посоветовать: делай заметки и слушай музыку на перемене.", "Как не заснуть на лекции?"))
         assertEquals("Ох, мне жаль. Я рядом.", p.withoutUnaskedOffers("Ох, мне жаль. Может, включим фонарик? Я рядом.", "Мне грустно"))
         assertEquals("Может, включим фонарик?", p.withoutUnaskedOffers("Может, включим фонарик?", "Мне грустно"))
+        // A sentence only about the offer goes with it, or stays with it (E2B, ARM evaluation of 0.16.2's candidate).
+        assertEquals("Ох, мне жаль. Я рядом.", p.withoutUnaskedOffers("Ох, мне жаль. Может, включим фонарик? Это поднимет настроение. Я рядом.", "Мне грустно"))
+        val timer = "Я могу поставить таймер, чтобы ты делала перерывы! Это поможет не уснуть! ⏰"
+        assertEquals(timer, p.withoutUnaskedOffers(timer, "Посоветуй, как не заснуть на скучной лекции."))
         runBlocking {
             val heard = StringBuilder()
             val r = agent(Gemma4Tools2.Scripted("[sad] Ох, Аня, мне очень жаль. Может, включим фонарик, чтобы стало светлее? Я здесь, рядом."),

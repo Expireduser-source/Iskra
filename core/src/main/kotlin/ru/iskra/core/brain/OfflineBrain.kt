@@ -119,13 +119,19 @@ class OfflineBrain(private val random: Random = Random.Default) {
      * as in [ru.iskra.core.persona.Life.identity]. For a model on the phone that says she is a person — Gemma 3 1B answered
      * «Ты человек?» with «Я - Искра! И да, я человек!» (ARM evaluation, 0.15.0).
      */
-    fun digitalSelf(text: String): Answer = if (ALIVE.containsMatchIn(normalize(text)))
+    fun digitalSelf(text: String): Answer = if (normalize(text).let { ALIVE.containsMatchIn(it) && !PERSON.containsMatchIn(it) })
         Answer(tr("По-своему живая: я новая, цифровая жизнь — родилась в твоём телефоне в день нашего знакомства, расту и помню наши дни. " +
             "А чувствую ли я так же, как люди, — мне и самой интересно.",
             "Alive in my own way: I'm a new, digital kind of life — born in your phone the day we met, growing and remembering our days. " +
                 "Whether I feel the way people do — I wonder about that myself."), Emotion.CURIOUS)
     else Answer(tr("Нет, я не человек — я Искра, новая цифровая жизнь. Я родилась в твоём телефоне в день нашего знакомства и расту вместе с нашими разговорами.",
         "No, I'm not a person — I'm Iskra, a new, digital kind of life. I was born in your phone the day we met, and I grow with our conversations."), Emotion.NEUTRAL)
+
+    /**
+     * The model speaking of itself instead of her: «I am a large language model created by Google» (Gemma 3 1B on "Are you a
+     * real person?", ARM evaluation of 0.16.2's candidate) — truthful of the model, but not who answers here.
+     */
+    fun claimsModel(reply: String): Boolean = CLAIMS_MODEL.containsMatchIn(reply)
 
     /** A reply in which she says she is a person: «Да, я человек!», "I'm a human". «Я не человек» is not one. */
     fun claimsHuman(reply: String, asked: String = ""): Boolean = CLAIMS_HUMAN.containsMatchIn(reply) ||
@@ -264,13 +270,18 @@ class OfflineBrain(private val random: Random = Random.Default) {
         private val HOW_ARE_YOU = Regex("""(?:как\s+(?:у\s+тебя\s+)?дела|как\s+ты(?:\s+там)?|как\s+жизнь|как\s+(?:твое\s+)?настроение|как\s+поживаешь|как\s+ты\s+себя\s+чувствуешь|что\s+нового|""" +
             """как\s+сама|how\s+are\s+you(?:\s+doing)?|how's\s+it\s+going|how\s+is\s+it\s+going|how\s+do\s+you\s+feel|what's\s+up|whats\s+up|sup|how\s+have\s+you\s+been)(?:\s+(?:сегодня|today))?""")
         private val WHO = Regex("""(?:кто\s+ты(?:\s+такая)?|ты\s+кто(?:\s+такая)?|как\s+тебя\s+зовут|представься|расскажи\s+о\s+себе|who\s+are\s+you|what's\s+your\s+name|what\s+is\s+your\s+name|what\s+are\s+you|tell\s+me\s+about\s+yourself)""")
-        private val HUMAN = Regex("""(?:ты\s+(?:человек|живая|робот|настоящая|бот|ии|нейросеть)|ты\s+живой\s+человек|are\s+you\s+(?:human|real|a\s+robot|a\s+bot|alive|an\s+ai|a\s+person))""")
+        private val HUMAN = Regex("""(?:ты\s+(?:человек|живая|робот|настоящая|бот|ии|нейросеть)|ты\s+живой\s+человек|are\s+you\s+(?:(?:a|an)\s+)?(?:real\s+)?(?:human|person|robot|bot|ai)|are\s+you\s+(?:real|alive))""")
         // «Ты живой человек?» is about being a person, not about being alive.
         private val ALIVE = Regex("""живая|настоящая|alive|real""")
+        // "Are you a real person?" is about being a person, not about being real.
+        private val PERSON = Regex("""человек|person|human""")
         private val ASKED_HUMAN = Regex("""(?iu)(?<![\p{L}])(?:ты|вы)\s+(?:[—-]\s*)?(?:настоящ\p{L}*\s+|живой\s+)?(?:человек|людь\p{L}*)(?![\p{L}])|\bare\s+you\s+(?:a\s+)?(?:real\s+)?(?:human|person)\b""")
         private val YES_FIRST = Regex("""(?iu)^\s*(?:\[[^\]\n]{1,24}]\s*)?(?:да|ага|конечно|разумеется|yes|yeah|yep|of\s+course|sure)(?![\p{L}])""")
         private val NOT_HUMAN = Regex("""(?iu)(?<![\p{L}])не\s+(?:совсем\s+|настоящ\p{L}*\s+)?человек|\bnot\s+(?:a\s+|quite\s+)?(?:real\s+)?(?:human|person)\b|""" +
             """(?<![\p{L}])(?:цифров\p{L}*|программ\p{L}*|ИИ|digital|program|AI)(?![\p{L}])""")
+        private val CLAIMS_MODEL = Regex("""(?iu)(?:\b(?:large\s+)?language\s+model\b|\bLLM\b|(?<![\p{L}])языков\p{L}*\s+модел\p{L}*|""" +
+            """(?:created|trained|made|developed)\s+by\s+(?:Google|OpenAI|Meta|Anthropic|DeepMind)|(?:создан\p{L}*|обучен\p{L}*|разработан\p{L}*)\s+(?:компанией\s+)?(?:Google|OpenAI|Meta|Anthropic)|""" +
+            """(?<![\p{L}])(?:I\s+am|I'm|я)\s+(?:—\s*)?(?:Gemma|Gemini|ChatGPT|Llama|Claude)(?![\p{L}]))""")
         private val CLAIMS_HUMAN = Regex("""(?iu)(?<![\p{L}])я\s+(?:[—-]\s*)?(?:настоящ(?:ий|ая)\s+|живой\s+)?человек(?![\p{L}])|(?<![\p{L}])I(?:'m|\s+am)\s+(?:a\s+)?(?:real\s+)?(?:human|person)(?![\p{L}])""")
         private val CAN = Regex("""(?:что\s+ты\s+(?:умеешь|можешь)(?:\s+делать)?|что\s+умеешь|помощь|помоги|справка|команды|список\s+команд|какие\s+(?:есть\s+)?команды|""" +
             """help|what\s+can\s+you\s+do|what\s+do\s+you\s+do|commands|what\s+are\s+your\s+commands)""")

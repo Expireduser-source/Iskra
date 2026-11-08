@@ -76,11 +76,22 @@ object ActionPromise {
     /** [text] without its [unaskedOffer] sentences — unless that would leave nothing. */
     fun withoutUnaskedOffers(text: String, asked: String): String {
         val parts = text.split(Regex("""(?<=[.!?…])\s+"""))
-        val kept = parts.filterNot { unaskedOffer(it, asked) }
+        // An offer goes with the sentence that only speaks of it: «…могу поставить таймер на перерывы! Это поможет не уснуть!»
+        // left «Это поможет не уснуть!» alone (E2B, ARM evaluation of 0.16.2's candidate).
+        var offering = false
+        val kept = parts.filter { p ->
+            offering = unaskedOffer(p, asked) || (offering && refersBack(p))
+            !offering
+        }
         // A reply that is nothing but offers and a question («…могу включить музыку… Что ты хочешь сделать?», E2B on «посоветуй,
         // как не заснуть на лекции», 0.16.1) keeps them: they are all the answer it has, and a lone question is no answer.
         return if (kept.size == parts.size || kept.none(::substantive)) text else kept.joinToString(" ")
     }
+
+    /** A sentence that only speaks of the one before it: «Это поможет…», «Так будет проще», "It will help". */
+    fun refersBack(sentence: String): Boolean = backRef.containsMatchIn(sentence)
+
+    private val backRef = Regex("""(?iu)^\s*(?:это|так|тогда|он|она|оно|они|с\s+ним|с\s+ней|this|that|it|then|they)(?!\p{L})""")
 
     /** A sentence that stands on its own: not a question back, not an «Ох!» — «Я рядом.» is one. */
     fun substantive(sentence: String): Boolean = sentence.trim().let { it.count(Char::isLetter) >= 6 && !it.endsWith("?") }
@@ -89,7 +100,7 @@ object ActionPromise {
      * An offer: «может / хочешь / могу…», soon after it a verb of doing (включим, поставлю, запишу…), and a tool's name
      * near that — not any tool word in the sentence: «…но попробуй делать заметки от руки» is advice, not an offer.
      */
-    private val offerAny = Regex("""(?iu)(?<!\p{L})(?:может|хочешь|хотите|давай|могу|можно|если\s+хочешь|shall\s+i|want\s+me\s+to|i\s+can|i\s+could|maybe|how\s+about)(?!\p{L})""" +
+    private val offerAny = Regex("""(?iu)(?<!\p{L})(?:может|хочешь|хотите|давай|могу|можно|если\s+хочешь|shall\s+i|should\s+i|want\s+me\s+to|would\s+you\s+like\s+me\s+to|i\s+can|i\s+could|maybe|how\s+about)(?!\p{L})""" +
         """[^.!?\n]{0,30}?(?<!\p{L})(?:(?:включ|постав|завед|засеч|засек|напомн|откр|узна|посмотр|найд|найти|set|start|turn(?:ing)?\s+on|add|remind|check|look(?:ing)?\s+up|find|play)\p{L}*""" +
         """[^.!?\n]{0,40}?(?<!\p{L})(?:фонарик\p{L}*|таймер\p{L}*|будильник\p{L}*|напоминани\p{L}*|заметк\p{L}*|погод\p{L}*|музык\p{L}*|""" +
         """flashlight|torch|timers?|alarms?|reminders?|notes?|weather|music)|(?:записать|запишу|write\s+(?:it\s+)?down|make\s+a\s+note))(?!\p{L})""")

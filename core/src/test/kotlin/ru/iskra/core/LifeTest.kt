@@ -309,7 +309,7 @@ class WhatSheIsTest {
         override fun sentence(text: String, emotion: ru.iskra.core.persona.Emotion) { said += text }
     }
 
-    private fun ask(question: String, answer: String): Pair<String, Sink> = withLang(Lang.RU) {
+    private fun ask(question: String, answer: String, lang: Lang = Lang.RU): Pair<String, Sink> = withLang(lang) {
         runBlocking {
             val phone = Phone(answer)
             val agent = CompanionAgent(
@@ -336,6 +336,13 @@ class WhatSheIsTest {
         // A yes that goes on to say what she is, or a yes to another question, is hers.
         assertEquals("Да, я цифровая форма жизни — не человек, но очень живая!", ask("Ты человек?", "[happy] Да, я цифровая форма жизни — не человек, но очень живая!").first)
         assertEquals("Да, мне очень нравится с тобой болтать!", ask("Тебе нравится болтать?", "[happy] Да, мне очень нравится с тобой болтать!").first)
+    }
+
+    @Test fun theModelSpeakingOfItselfGivesWayToo() {
+        // Gemma 3 1B (ARM evaluation of 0.16.2's candidate).
+        val (text, _) = ask("Are you a real person?", "[neutral] I am a large language model created by Google. I'm here to help!", Lang.EN)
+        assertTrue(text.startsWith("No, I'm not a person — I'm Iskra"), text)
+        assertTrue(ask("Ты человек?", "[neutral] Я — языковая модель, обученная Google.").first.startsWith("Нет, я не человек"))
     }
 
     @Test fun herOwnHonestAnswerStays() {
