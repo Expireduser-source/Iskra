@@ -1141,9 +1141,15 @@ class CompanionAgent(
     private fun cleanDiary(raw: String, who: String): String? {
         // One plain paragraph: E4B began with a heading «**7 ноября. Суббота.**» (ARM evaluation), kept as the whole entry.
         val dateLine = Regex("""(?iu)^(?:\d{1,2}\s+\p{L}+|\p{L}+\s+\d{1,2})(?:[,.\s]+\d{4})?(?:[,.\s]+\p{L}+)?[.:!]?$""")
-        val lines = ReplyParser.parse(raw).text.replace(Regex("""(?m)^#+\s*"""), "").lines().map { it.trim() }.filter { it.isNotEmpty() }
-        // A list, line by line: «* Сегодня я…» / «* Я узнала…» (Gemma 3 1B wrote its day so).
-        if (lines.count { Regex("""^(?:\d+[.)]|[-•*])\s""").containsMatchIn(it) } >= 2) return null
+        val all = ReplyParser.parse(raw).text.replace(Regex("""(?m)^#+\s*"""), "").lines().map { it.trim() }.filter { it.isNotEmpty() }
+        // A list, line by line, after «Вот 1-3 коротких предложения…:» (Gemma 3 1B, ARM evaluations 0.16.1 and 0.16.2): when its
+        // points are her own words («* Я узнала…»), they are the entry, joined as sentences; a list of anything else is not kept.
+        val point = Regex("""^(?:\d+[.)]|[-•*])\s+""")
+        val points = all.filter { point.containsMatchIn(it) }
+        val mine = Regex("""(?iu)(?<!\p{L})(?:я|мне|меня|мы|i|me|my|we)(?!\p{L})""")
+        val lines = if (points.size < 2) all
+            else if (points.count { mine.containsMatchIn(it) } * 2 >= points.size) points.map { point.replace(it, "").trim().let { t -> if (t.last() in ".!?…") t else "$t." } }
+            else return null
         // No markdown in a diary: E4B wrote «*Мрр... Сегодня…*» and a title in italics, «*Солнечный день в моём маленьком
         // мире.* Сегодня я узнала…», whose closing asterisk stayed in the entry (ARM evaluations 0.15.0, 0.16.1).
         val s = lines.map { it.replace("*", "").replace("__", "").trim() }.filter { it.isNotEmpty() }

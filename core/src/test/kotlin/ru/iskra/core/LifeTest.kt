@@ -260,7 +260,12 @@ class DiaryFilterTest {
         // E4B (ARM evaluation 0.16.1): a title in italics before the entry.
         assertEquals("Солнечный день в моём маленьком мире. Сегодня я узнала много нового об Ане.",
             write("*Солнечный день в моём маленьком мире.* Сегодня я узнала много нового об Ане.").first)
-        assertNull(write("Вот мои записи:\n* Сегодня я познакомилась с Аней.\n* Я узнала, что она учится на врача.").first)
+    }
+
+    @Test fun herDayWrittenAsAListIsKeptAsSentences() {
+        // Gemma 3 1B (ARM evaluation of 0.16.2): a line about the task, then the day in points of her own.
+        assertEquals("Сегодня я познакомилась с Аней. Я узнала, что она учится на врача.",
+            write("Вот 1-3 коротких предложения об этом дне, в женском роде, как я это сделал:\n* Сегодня я познакомилась с Аней.\n* Я узнала, что она учится на врача").first)
     }
 
     @Test fun listsAndSomeoneElsesDiaryAreNotKept() {
