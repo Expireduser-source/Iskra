@@ -106,10 +106,18 @@ class LocalModelEval {
                     val toolCalls = ArrayList<String>()
                     var raw = ""
                     // The model's own text before any cleaning, to see what it really began with.
+                    // …and where a prompt first differs from the one before it: a reply that reads much again shows why.
+                    var lastPrompt = ""
+                    var diverged = ""
                     val recording = object : ru.iskra.core.llm.local.LlamaEngine by e {
                         override fun generate(prompt: String, maxTokens: Int, temperature: Float, stable: Int, head: Int,
-                                              onPiece: (String) -> Boolean): String =
-                            e.generate(prompt, maxTokens, temperature, stable, head, onPiece).also { raw = it }
+                                              onPiece: (String) -> Boolean): String {
+                            val at = lastPrompt.commonPrefixWith(prompt).length
+                            diverged = "was `" + lastPrompt.substring(at).take(70).replace("\n", "⏎").replace("`", "'") +
+                                "`, now `" + prompt.substring(at).take(70).replace("\n", "⏎").replace("`", "'") + "` (at ${at} of ${prompt.length} characters)"
+                            lastPrompt = prompt
+                            return e.generate(prompt, maxTokens, temperature, stable, head, onPiece).also { raw = it }
+                        }
                     }
                     val provider = LocalLlmProvider({ recording }, ChatFormat.valueOf(format), "local:$name", onStats = { stats += it })
                     var clockMs = System.currentTimeMillis()
@@ -180,6 +188,8 @@ class LocalModelEval {
                         val note = if (!odd) "" else "; raw start: `" + start.map { c ->
                             if (c.code < 32 || c.code >= 0x2E80) "\\u%04x".format(c.code) else c.toString() }.joinToString("") + "`"
                         doc.append("\n**Q:** $q\n\n**A** [${r.emotion.name.lowercase()}] ($how$note): ${r.text}\n")
+                        // Much read again: where this prompt left the one before (the read ahead's, if there was one).
+                        if (g != null && g.newTokens > 100) doc.append("\n*(read again from: $diverged)*\n")
                         if (r.actions.isNotEmpty()) doc.append("\n*(tools: ${r.actions.joinToString("; ") { it.description }})*\n")
                         if (r.error == null) readAhead("after the reply")
                     }
