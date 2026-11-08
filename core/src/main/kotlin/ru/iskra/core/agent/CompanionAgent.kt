@@ -356,6 +356,8 @@ class CompanionAgent(
         val crisis = (ModelRule.CRISIS in rules())
         val careful = crisis && (crisisAgain != null || CrisisTalk.recent(conversation.recent(80), nowMs, CAREFUL_HOURS))
         if (careful) notes += CrisisTalk.note(tr(true, false))
+        // How the owner says they are in this very message — before yesterday's check-in.
+        else CareTalk.feels(messageText)?.let { CareTalk.nowNote(it, tr(true, false)) }?.let { notes += it }
         CareTalk.pending(conversation.recent(80), today, crisis = crisis)?.takeIf { !careful || it.kind != CareTalk.Kind.CRISIS }?.let { notes += CareTalk.note(it, tr(true, false)) }
         if (MemoryTalk.birthday(all) == java.time.MonthDay.from(today)) notes += tr("сегодня день рождения владельца — поздравь", "today is the owner's birthday — congratulate them")
         // Her own small holiday: a week, a month, a hundred days, a year since she was born.
@@ -806,6 +808,11 @@ class CompanionAgent(
         val held = ArrayList<Triple<String, Emotion, Boolean>>()
         var stood = false
         var offering = false
+        // What she said in her last replies: a phone model's sentence said again word for word goes like an offer ([Echo]).
+        val before = if (!small) emptyList() else conversation.recent(8).filter { it.role == Turn.Role.ASSISTANT }.takeLast(3).map { it.text }
+        // Her face to how the owner is: to «мне грустно» not curious or glad ([CareTalk.face]).
+        val feels = CareTalk.feels(text)
+        fun fit(e: Emotion) = CareTalk.face(feels, e)
         fun say(out: ReplySink, text: String, emotion: Emotion) { spoke = true; out.sentence(agree(text), emotion) }
         fun release(out: ReplySink, dropOffers: Boolean) {
             for ((t, e, offer) in held) if (!(dropOffers && offer)) say(out, t, e)
@@ -813,14 +820,17 @@ class CompanionAgent(
         }
         val voice = sink?.let { out ->
             object : ReplySink {
-                override fun emotion(e: Emotion) = out.emotion(e)
+                override fun emotion(e: Emotion) = out.emotion(fit(e))
                 override fun sentence(text: String, emotion: Emotion) {
-                    offering = unasked(text) || (offering && ActionPromise.refersBack(text))
-                    if (offering) { held += Triple(text, emotion, true); return }
-                    if (held.isNotEmpty() && !stood && !ActionPromise.substantive(text)) { held += Triple(text, emotion, false); return }
+                    val e = fit(emotion)
+                    val fresh = Echo.strip(text, before, ::agree)
+                    if (fresh.isBlank()) { held += Triple(text, e, true); return }
+                    offering = unasked(fresh) || (offering && ActionPromise.refersBack(fresh))
+                    if (offering) { held += Triple(fresh, e, true); return }
+                    if (held.isNotEmpty() && !stood && !ActionPromise.substantive(fresh)) { held += Triple(fresh, e, false); return }
                     release(out, dropOffers = true)
-                    say(out, text, emotion)
-                    if (ActionPromise.substantive(text)) stood = true
+                    say(out, fresh, e)
+                    if (ActionPromise.substantive(fresh)) stood = true
                 }
             }
         }
@@ -861,10 +871,10 @@ class CompanionAgent(
                         else -> actions.joinToString("; ") { it.outcome.message }
                     }
                     val full = listOf(said.toString().trim(), parsed.text).filter { it.isNotBlank() }.joinToString(" ").trim()
-                        .let { if (small) ActionPromise.withoutUnaskedOffers(it, asked) else it }
+                        .let { if (small) ActionPromise.withoutUnaskedOffers(it, asked) else it }.let { Echo.without(it, before, ::agree) }
                     return AgentReply(
                         text = agree(full.ifBlank { fallback }),
-                        emotion = emotion ?: state.mood.dominantEmotion(),
+                        emotion = fit(emotion ?: state.mood.dominantEmotion()),
                         actions = actions,
                         usedLlm = true,
                     )

@@ -42,6 +42,9 @@ class LocalModelEval {
             // As the app's timer: without a time nothing is set (E4B once called it with a label alone, 0.16.1).
             if (spec.name == ru.iskra.core.tools.ToolNames.SET_TIMER && ru.iskra.core.tools.timerSeconds(args) == null)
                 return ToolOutcome(false, "неверная длительность")
+            // As the app says it: «Сделала — таймер на 10 мин.» rather than «Сделала — готово.» (0.16.2's transcript).
+            if (spec.name == ru.iskra.core.tools.ToolNames.SET_TIMER) ru.iskra.core.tools.timerSeconds(args)?.let { s ->
+                return ToolOutcome(true, ru.iskra.core.i18n.tr("таймер на ${s / 60} мин", "timer for ${s / 60} min")) }
             return ToolOutcome(true, "готово")
         }
     }

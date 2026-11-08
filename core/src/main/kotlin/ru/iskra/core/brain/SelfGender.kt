@@ -81,6 +81,13 @@ object SelfGender {
         "спокойный" to "спокойная", "солнечный" to "солнечная", "потрясающий" to "потрясающая", "великолепный" to "великолепная",
         "необыкновенный" to "необыкновенная", "золотой" to "золотая", "молодой" to "молодая", "сладкий" to "сладкая")
     private val notVerbs = NOT_VERBS.split('|').toSet()
+    /**
+     * Masculine nouns said of anyone: the words before them agree with the noun, not with the person — «ты такой интересный
+     * человек» stays (E2B said it to Аня in the ARM evaluation of 0.16.2; «такая интересная человек» would be wrong).
+     */
+    private val masculineNouns = setOf("человек", "человечек", "друг", "дружище", "собеседник", "специалист", "профессионал", "мастер", "гений",
+        "пример", "врач", "доктор", "учитель", "студент", "котик", "зайчик", "ангел", "лучик", "талант", "герой", "боец", "товарищ", "партнёр",
+        "партнер", "ребёнок", "ребенок", "кот", "котёнок", "котенок", "помощник", "слушатель", "рассказчик", "мечтатель")
     /** Who else a clause may be about: past this word the verb is no longer the owner's. */
     private val otherSubject = setOf("я", "он", "она", "оно", "мы", "вы", "они", "кто", "что", "это", "все", "всё", "мама", "папа")
     private val word = Regex("""\p{L}+|[.!?;:,()«»"]""")
@@ -112,6 +119,7 @@ object SelfGender {
                 // Dashes are skipped («ты прекрасен — очень добрый»): they aren't tokens. Up to six words after «ты».
                 if (!w.first().isLetter() || w.lowercase() in otherSubject || w.equals("ты", true) || ++words > 6) break
                 val lw = w.lowercase()
+                if (lw in masculineNouns) { while (edits.isNotEmpty() && edits.last().first.first > t.range.first) edits.removeAt(edits.lastIndex); break }
                 val fem = when {
                     lw in notVerbs || lw.length < 3 -> null
                     feminineOf.containsKey(lw) -> feminineOf[lw]
