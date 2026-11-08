@@ -1085,10 +1085,14 @@ class CompanionAgent(
     private fun cleanDiary(raw: String, who: String): String? {
         // One plain paragraph: E4B began with a heading «**7 ноября. Суббота.**» (ARM evaluation), kept as the whole entry.
         val dateLine = Regex("""(?iu)^(?:\d{1,2}\s+\p{L}+|\p{L}+\s+\d{1,2})(?:[,.\s]+\d{4})?(?:[,.\s]+\p{L}+)?[.:!]?$""")
-        val s = ReplyParser.parse(raw).text.replace("**", "").replace("__", "").replace(Regex("""(?m)^#+\s*"""), "")
-            .lines().map { it.trim() }.filter { it.isNotEmpty() }.dropWhile { dateLine.matches(it) }.joinToString(" ")
-            // A single asterisk around it: E4B wrote «*Мрр... Сегодня я поболтала с Аней…*» (ARM evaluation).
-            .trim().trim('*').trim().trim('"', '«', '»')
+        val lines = ReplyParser.parse(raw).text.replace(Regex("""(?m)^#+\s*"""), "").lines().map { it.trim() }.filter { it.isNotEmpty() }
+        // A list, line by line: «* Сегодня я…» / «* Я узнала…» (Gemma 3 1B wrote its day so).
+        if (lines.count { Regex("""^(?:\d+[.)]|[-•*])\s""").containsMatchIn(it) } >= 2) return null
+        // No markdown in a diary: E4B wrote «*Мрр... Сегодня…*» and a title in italics, «*Солнечный день в моём маленьком
+        // мире.* Сегодня я узнала…», whose closing asterisk stayed in the entry (ARM evaluations 0.15.0, 0.16.1).
+        val s = lines.map { it.replace("*", "").replace("__", "").trim() }.filter { it.isNotEmpty() }
+            .dropWhile { dateLine.matches(it) }.joinToString(" ")
+            .trim().trim('"', '«', '»')
             .replace(Regex("""(?iu)^(?:дорогой\s+дневник|dear\s+diary)[\s,!.:—-]*"""), "")
             // The heading on the same line: E4B wrote «Дневник Искры, 7 ноября (Суббота) Сегодня я…» (ARM evaluation).
             .replace(Regex("""(?iu)^(?:(?:мой\s+)?дневник\s+искры|(?:iskra'?s|my)\s+diary)[\s,.:—-]*"""), "")

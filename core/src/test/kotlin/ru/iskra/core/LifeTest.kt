@@ -256,6 +256,13 @@ class DiaryFilterTest {
             write("**7 ноября. Суббота.**\n\nСегодня я пообщалась с Аней.\nМне было приятно её поддержать.").first)
     }
 
+    @Test fun noAsteriskStays() {
+        // E4B (ARM evaluation 0.16.1): a title in italics before the entry.
+        assertEquals("Солнечный день в моём маленьком мире. Сегодня я узнала много нового об Ане.",
+            write("*Солнечный день в моём маленьком мире.* Сегодня я узнала много нового об Ане.").first)
+        assertNull(write("Вот мои записи:\n* Сегодня я познакомилась с Аней.\n* Я узнала, что она учится на врача.").first)
+    }
+
     @Test fun listsAndSomeoneElsesDiaryAreNotKept() {
         assertNull(write("1. Забегая за Анной, я видел её на улице, подражая кошкодевочке.").first)
         assertNull(write("- Поговорили\n- Посмеялись").first)
