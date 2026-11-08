@@ -1,0 +1,3 @@
+• Phones like the Redmi Note 14 are now offered the smart Gemma 4 E2B model: it answers fast there too, sets timers and reminders itself and speaks better
+• On a 6 GB phone the model keeps almost twice as much of the conversation in mind
+• No "I can't give advice" before advice; "what did I just ask you?" gets an exact answer even from the light model
