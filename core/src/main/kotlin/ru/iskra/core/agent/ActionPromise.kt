@@ -66,7 +66,8 @@ object ActionPromise {
      * instructions already say not to; the sentence is neither shown nor spoken.
      */
     fun unaskedOffer(sentence: String, asked: String): Boolean {
-        if (asks(asked)) return false
+        // Asked what she can do: telling it is the answer (E2B's "I can do lots of things, like setting timers…").
+        if (asks(asked) || capabilities.containsMatchIn(asked)) return false
         val offer = (offerAny.find(sentence) ?: return false).value
         val tool = toolWords.entries.firstOrNull { (_, re) -> re.containsMatchIn(offer) }?.key ?: return false
         return topics[tool]?.containsMatchIn(asked) != true
@@ -87,6 +88,8 @@ object ActionPromise {
         """[^.!?\n]{0,30}?(?<!\p{L})(?:(?:включ|постав|завед|засеч|засек|напомн|откр|узна|посмотр|найд|найти|set|start|turn(?:ing)?\s+on|add|remind|check|look(?:ing)?\s+up|find|play)\p{L}*""" +
         """[^.!?\n]{0,40}?(?<!\p{L})(?:фонарик\p{L}*|таймер\p{L}*|будильник\p{L}*|напоминани\p{L}*|заметк\p{L}*|погод\p{L}*|музык\p{L}*|""" +
         """flashlight|torch|timers?|alarms?|reminders?|notes?|weather|music)|(?:записать|запишу|write\s+(?:it\s+)?down|make\s+a\s+note))(?!\p{L})""")
+    private val capabilities = Regex("""(?iu)(?:что\s+ты\s+(?:умеешь|можешь)|что\s+умеешь|чем\s+(?:ты\s+)?(?:можешь\s+)?(?:мне\s+)?помочь|твои\s+(?:возможности|функции|умения)|""" +
+        """what\s+can\s+you\s+do|what\s+do\s+you\s+do|how\s+can\s+you\s+help|what\s+are\s+you\s+able|your\s+(?:features|abilities|skills))""")
     private val toolWords = linkedMapOf(
         "light" to Regex("""(?iu)фонарик|flashlight|torch"""),
         "timer" to Regex("""(?iu)таймер|timer"""),

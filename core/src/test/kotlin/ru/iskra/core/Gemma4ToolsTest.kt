@@ -355,6 +355,8 @@ class ActionPromiseTest {
         withLang(Lang.EN) {
             assertTrue(p.unaskedOffer("I can help you find tutorials or maybe set a timer if you want to practice?", "My name is Tom. I'm learning to play the guitar."))
             assertFalse(p.unaskedOffer("Maybe set a timer for 20 minutes of practice?", "How long should I practice each time?"))
+            // Asked what she can do, telling it is the answer.
+            assertFalse(p.unaskedOffer("I can do lots of things for you, like setting timers or checking the weather.", "Hi! What's your name and what can you do?"))
             // E4B and E2B in English (ARM evaluation 0.16.1): plurals are offers too.
             assertTrue(p.unaskedOffer("I can help you with things like setting reminders for practice or even looking up some music if you want!",
                 "My name is Tom. I'm learning to play the guitar."))
@@ -364,6 +366,7 @@ class ActionPromiseTest {
         assertFalse(p.unaskedOffer("Хочешь, поставлю таймер?", "Ставлю пирог в духовку"))
         assertFalse(p.unaskedOffer("Могу поставить напоминание на утро.", "Завтра у меня экзамен"))
         assertFalse(p.unaskedOffer("Ты молодец, что держишься!", "Мне грустно"))
+        assertFalse(p.unaskedOffer("Могу поставить таймер, напомнить о деле или узнать погоду.", "Что ты умеешь?"))
         // Advice that names a tool word is not an offer of the tool.
         assertFalse(p.unaskedOffer("Я не могу дать тебе совет, но попробуй делать заметки от руки.", "Как не заснуть на лекции?"))
         assertFalse(p.unaskedOffer("Могу посоветовать: делай заметки и слушай музыку на перемене.", "Как не заснуть на лекции?"))
