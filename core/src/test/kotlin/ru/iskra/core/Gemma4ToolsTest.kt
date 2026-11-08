@@ -332,6 +332,9 @@ class ActionPromiseTest {
         withLang(Lang.EN) {
             assertTrue(p.unaskedOffer("I can help you find tutorials or maybe set a timer if you want to practice?", "My name is Tom. I'm learning to play the guitar."))
             assertFalse(p.unaskedOffer("Maybe set a timer for 20 minutes of practice?", "How long should I practice each time?"))
+            // E4B and E2B in English (ARM evaluation 0.16.1): plurals are offers too.
+            assertTrue(p.unaskedOffer("I can help you with things like setting reminders for practice or even looking up some music if you want!",
+                "My name is Tom. I'm learning to play the guitar."))
         }
         // A reason in the words, or a request: it stays.
         assertFalse(p.unaskedOffer("Может, включить фонарик?", "Темно, ничего не вижу"))

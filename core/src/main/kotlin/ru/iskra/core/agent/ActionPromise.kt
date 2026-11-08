@@ -81,7 +81,7 @@ object ActionPromise {
 
     private val offerAny = Regex("""(?iu)(?<!\p{L})(?:может|хочешь|хотите|давай|могу|можно|если\s+хочешь|shall\s+i|want\s+me\s+to|i\s+can|i\s+could|maybe|how\s+about)(?!\p{L})""" +
         """[^.!?\n]{0,70}?(?<!\p{L})(?:фонарик\p{L}*|таймер\p{L}*|будильник\p{L}*|напоминани\p{L}*|заметк\p{L}*|записать|запишу|погод\p{L}*|музык\p{L}*|""" +
-        """flashlight|torch|timer|alarm|reminder|note|weather|music)(?!\p{L})""")
+        """flashlight|torch|timers?|alarms?|reminders?|notes?|weather|music)(?!\p{L})""")
     private val toolWords = linkedMapOf(
         "light" to Regex("""(?iu)фонарик|flashlight|torch"""),
         "timer" to Regex("""(?iu)таймер|timer"""),
