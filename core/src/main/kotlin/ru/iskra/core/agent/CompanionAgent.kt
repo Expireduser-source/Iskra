@@ -789,15 +789,27 @@ class CompanionAgent(
         // A phone model's offer of its actions when nothing asked for one («Может, включим фонарик?» to a sad person) is neither
         // shown nor spoken ([ActionPromise.unaskedOffer]).
         fun unasked(s: String) = small && ActionPromise.unaskedOffer(s, asked)
+        // As they stream: an offer waits, and what follows it waits too until something said stands on its own — then the
+        // offers go. If nothing does, they are the answer after all and are said at the end ([ActionPromise.withoutUnaskedOffers]).
+        val held = ArrayList<Pair<String, Emotion>>()
+        var stood = false
+        fun say(out: ReplySink, text: String, emotion: Emotion) { spoke = true; out.sentence(agree(text), emotion) }
+        fun release(out: ReplySink, dropOffers: Boolean) {
+            for ((t, e) in held) if (!(dropOffers && unasked(t))) say(out, t, e)
+            held.clear()
+        }
         val voice = sink?.let { out ->
             object : ReplySink {
                 override fun emotion(e: Emotion) = out.emotion(e)
                 override fun sentence(text: String, emotion: Emotion) {
-                    if (unasked(text)) return
-                    spoke = true; out.sentence(agree(text), emotion)
+                    if (unasked(text) || (held.isNotEmpty() && !stood && !ActionPromise.substantive(text))) { held += text to emotion; return }
+                    release(out, dropOffers = true)
+                    say(out, text, emotion)
+                    if (ActionPromise.substantive(text)) stood = true
                 }
             }
         }
+        fun flushHeld() { if (sink != null && held.isNotEmpty()) release(sink, dropOffers = stood) }
         val actions = mutableListOf<ActionRecord>()
         // Calls made in this reply, by name and arguments.
         val done = HashMap<Pair<String, kotlinx.serialization.json.JsonObject>, ActionRecord>()
@@ -812,7 +824,7 @@ class CompanionAgent(
                     maxTokens = if (small) 320 else 600, temperature = if (small) 0.6 else 0.8)
                 suspend fun send(r: LlmRequest) = if (voice == null) provider.complete(r) else {
                     val stream = ReplyStream(voice, state.mood.dominantEmotion())
-                    provider.stream(r) { stream.feed(it) }.also { stream.finish() }
+                    provider.stream(r) { stream.feed(it) }.also { stream.finish(); flushHeld() }
                 }
                 val response = try {
                     send(request)

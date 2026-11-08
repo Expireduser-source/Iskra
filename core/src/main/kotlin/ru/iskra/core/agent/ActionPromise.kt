@@ -77,8 +77,13 @@ object ActionPromise {
     fun withoutUnaskedOffers(text: String, asked: String): String {
         val parts = text.split(Regex("""(?<=[.!?…])\s+"""))
         val kept = parts.filterNot { unaskedOffer(it, asked) }
-        return if (kept.isEmpty() || kept.size == parts.size) text else kept.joinToString(" ")
+        // A reply that is nothing but offers and a question («…могу включить музыку… Что ты хочешь сделать?», E2B on «посоветуй,
+        // как не заснуть на лекции», 0.16.1) keeps them: they are all the answer it has, and a lone question is no answer.
+        return if (kept.size == parts.size || kept.none(::substantive)) text else kept.joinToString(" ")
     }
+
+    /** A sentence that stands on its own: not a question back, not an «Ох!» — «Я рядом.» is one. */
+    fun substantive(sentence: String): Boolean = sentence.trim().let { it.count(Char::isLetter) >= 6 && !it.endsWith("?") }
 
     /**
      * An offer: «может / хочешь / могу…», soon after it a verb of doing (включим, поставлю, запишу…), and a tool's name

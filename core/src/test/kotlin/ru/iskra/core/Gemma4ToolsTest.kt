@@ -381,6 +381,15 @@ class ActionPromiseTest {
             })
             assertEquals("Ох, Аня, мне очень жаль. Я здесь, рядом.", r.text)
             assertFalse(heard.contains("фонарик"), heard.toString())
+            // Nothing but offers and a question back (E2B, ARM evaluation 0.16.1): they are all the answer it has, and stay.
+            val said = StringBuilder()
+            val only = agent(Gemma4Tools2.Scripted("[happy] Я могу включить тебе музыку, чтобы ты не заснула! Что ты хочешь сделать?"),
+                ChatFormat.GEMMA4).handle("Посоветуй, как не заснуть на скучной лекции.", object : ru.iskra.core.voice.ReplySink {
+                override fun emotion(e: ru.iskra.core.persona.Emotion) = Unit
+                override fun sentence(text: String, emotion: ru.iskra.core.persona.Emotion) { said.append(text).append(' ') }
+            })
+            assertEquals("Я могу включить тебе музыку, чтобы ты не заснула! Что ты хочешь сделать?", only.text)
+            assertEquals("Я могу включить тебе музыку, чтобы ты не заснула! Что ты хочешь сделать?", said.toString().trim())
         }
     }
 
