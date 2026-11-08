@@ -11,6 +11,14 @@ object Echo {
 
     private fun norm(s: String) = nonWord.replace(s.lowercase().replace('ё', 'е'), " ").trim()
 
+    /** Asked to say it again, or not understood: then a repeat is what is wanted. */
+    private val again = Regex("""(?iu)(?<!\p{L})(?:повтори\p{L}*|ещё\s+раз|еще\s+раз|снова|что\s+ты\s+(?:сейчас\s+)?(?:сказала|говорила)|""" +
+        """не\s+(?:расслышал\p{L}*|понял\p{L}*|услышал\p{L}*)|переспрош\p{L}*|repeat|again|say\s+that|what\s+did\s+you\s+say|""" +
+        """didn'?t\s+(?:catch|hear|get|understand))(?!\p{L})""")
+
+    /** The person asks her to repeat herself («Повтори, пожалуйста», "Say that again?"). */
+    fun asksAgain(text: String): Boolean = again.containsMatchIn(text)
+
     /** [sentence] said word for word in one of [before] (her last replies), and five words long or more. */
     fun said(sentence: String, before: List<String>): Boolean {
         val n = norm(sentence)

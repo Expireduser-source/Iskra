@@ -103,6 +103,18 @@ class FeelingsTest {
         }
     }
 
+    @Test fun askedToSayItAgainSheDoes() = withLang(Lang.RU) {
+        runBlocking {
+            val phone = Phone("[happy] Фотосинтез — это когда растения делают себе еду из света.",
+                "[happy] Конечно! Фотосинтез — это когда растения делают себе еду из света.")
+            val agent = agent(phone)
+            agent.handle("Объясни простыми словами, что такое фотосинтез.")
+            assertEquals("Конечно! Фотосинтез — это когда растения делают себе еду из света.", agent.handle("Повтори, пожалуйста").text)
+            for (t in listOf("Повтори, пожалуйста", "Скажи ещё раз", "Я не поняла", "Say that again?", "What did you say?")) assertTrue(Echo.asksAgain(t), t)
+            for (t in listOf("Как дела?", "Расскажи сказку")) assertFalse(Echo.asksAgain(t), t)
+        }
+    }
+
     @Test fun anEchoThatIsAllTheReplyHasStays() {
         val before = listOf("Привет! У меня тут столько всего интересного, и ты — такой интересный человек!")
         val again = "У меня тут столько всего интересного, и ты — такой интересный человек! А ты как?"

@@ -809,7 +809,8 @@ class CompanionAgent(
         var stood = false
         var offering = false
         // What she said in her last replies: a phone model's sentence said again word for word goes like an offer ([Echo]).
-        val before = if (!small) emptyList() else conversation.recent(8).filter { it.role == Turn.Role.ASSISTANT }.takeLast(3).map { it.text }
+        // Asked to say it again, she does.
+        val before = if (!small || Echo.asksAgain(text)) emptyList() else conversation.recent(8).filter { it.role == Turn.Role.ASSISTANT }.takeLast(3).map { it.text }
         // Her face to how the owner is: to «мне грустно» not curious or glad ([CareTalk.face]).
         val feels = CareTalk.feels(text)
         fun fit(e: Emotion) = CareTalk.face(feels, e)
