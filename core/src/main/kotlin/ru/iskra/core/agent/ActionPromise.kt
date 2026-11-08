@@ -79,9 +79,14 @@ object ActionPromise {
         return if (kept.isEmpty() || kept.size == parts.size) text else kept.joinToString(" ")
     }
 
+    /**
+     * An offer: «может / хочешь / могу…», soon after it a verb of doing (включим, поставлю, запишу…), and a tool's name
+     * near that — not any tool word in the sentence: «…но попробуй делать заметки от руки» is advice, not an offer.
+     */
     private val offerAny = Regex("""(?iu)(?<!\p{L})(?:может|хочешь|хотите|давай|могу|можно|если\s+хочешь|shall\s+i|want\s+me\s+to|i\s+can|i\s+could|maybe|how\s+about)(?!\p{L})""" +
-        """[^.!?\n]{0,70}?(?<!\p{L})(?:фонарик\p{L}*|таймер\p{L}*|будильник\p{L}*|напоминани\p{L}*|заметк\p{L}*|записать|запишу|погод\p{L}*|музык\p{L}*|""" +
-        """flashlight|torch|timers?|alarms?|reminders?|notes?|weather|music)(?!\p{L})""")
+        """[^.!?\n]{0,30}?(?<!\p{L})(?:(?:включ|постав|завед|засеч|засек|напомн|откр|узна|посмотр|найд|найти|set|start|turn(?:ing)?\s+on|add|remind|check|look(?:ing)?\s+up|find|play)\p{L}*""" +
+        """[^.!?\n]{0,40}?(?<!\p{L})(?:фонарик\p{L}*|таймер\p{L}*|будильник\p{L}*|напоминани\p{L}*|заметк\p{L}*|погод\p{L}*|музык\p{L}*|""" +
+        """flashlight|torch|timers?|alarms?|reminders?|notes?|weather|music)|(?:записать|запишу|write\s+(?:it\s+)?down|make\s+a\s+note))(?!\p{L})""")
     private val toolWords = linkedMapOf(
         "light" to Regex("""(?iu)фонарик|flashlight|torch"""),
         "timer" to Regex("""(?iu)таймер|timer"""),

@@ -779,10 +779,12 @@ class CompanionAgent(
         val owner = SelfGender.feminine(memory.all())
         val feminine = owner == true && tr(true, false)
         // «милый/милая», «устал(а)» from a model that doesn't know: the right form, or no lone address at all.
-        fun agree(t: String) = (if (feminine) SelfGender.agreeFeminine(t) else t).let { if (tr(true, false)) SelfGender.slashes(it, owner) else it }
+        val asked = text
+        // …and without a hedge before advice it gives anyway («Я не могу дать тебе медицинский совет, но…», [AdviceHedge]).
+        fun agree(t: String) = (if (small) AdviceHedge.strip(t, asked) else t)
+            .let { if (feminine) SelfGender.agreeFeminine(it) else it }.let { if (tr(true, false)) SelfGender.slashes(it, owner) else it }
         // A phone model's offer of its actions when nothing asked for one («Может, включим фонарик?» to a sad person) is neither
         // shown nor spoken ([ActionPromise.unaskedOffer]).
-        val asked = text
         fun unasked(s: String) = small && ActionPromise.unaskedOffer(s, asked)
         val voice = sink?.let { out ->
             object : ReplySink {

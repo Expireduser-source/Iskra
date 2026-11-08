@@ -324,6 +324,29 @@ class ActionPromiseTest {
         }
     }
 
+    /** E4B hedged advice it gave anyway (ARM evaluation 0.16.1); about health the hedge stays. */
+    @Test fun aHedgeBeforeAdviceGoes() = withLang(Lang.RU) {
+        val h = ru.iskra.core.agent.AdviceHedge
+        val lecture = "Посоветуй, как не заснуть на скучной лекции."
+        assertEquals("Хм, это сложная задача! Знаю, что иногда помогает немного активности.",
+            h.strip("Хм, это сложная задача! Я не могу дать тебе медицинский совет, но знаю, что иногда помогает немного активности.", lecture))
+        assertEquals("Мрр, это сложный вопрос! Вот что я заметила: попробуй делать заметки.",
+            h.strip("Мрр, это сложный вопрос! Я не могу дать тебе медицинский совет, но вот что я заметила: попробуй делать заметки.", lecture))
+        assertEquals("Ой, попробуй встать и размяться.", h.strip("Ой, я не могу прямо посоветовать, как вести себя на лекции, но попробуй встать и размяться.", lecture))
+        // About health it stays; and words that aren't such a hedge stay as they are.
+        val pain = "Я не могу дать тебе медицинский совет, но если боль сильная — вызови врача."
+        assertEquals(pain, h.strip(pain, "У меня болит голова, что делать?"))
+        assertEquals("Я не могу сейчас открыть приложение, но попробую позже.", h.strip("Я не могу сейчас открыть приложение, но попробую позже.", lecture))
+        withLang(Lang.EN) {
+            assertEquals("Try short breaks every half hour.", h.strip("I can't give you medical advice, but try short breaks every half hour.", "How do I stay awake in class?"))
+        }
+        runBlocking {
+            val r = agent(Gemma4Tools2.Scripted("[curious] Хм! Я не могу дать тебе медицинский совет, но попробуй делать заметки от руки."), ChatFormat.GEMMA4)
+                .handle(lecture)
+            assertEquals("Хм! Попробуй делать заметки от руки.", r.text)
+        }
+    }
+
     /** E2B offered its tools to anything (ARM evaluations 0.14.0–0.16.1): such an offer goes, unless the words gave a reason. */
     @Test fun anOfferNobodyAskedForGoes() = withLang(Lang.RU) {
         val p = ru.iskra.core.agent.ActionPromise
@@ -341,6 +364,9 @@ class ActionPromiseTest {
         assertFalse(p.unaskedOffer("Хочешь, поставлю таймер?", "Ставлю пирог в духовку"))
         assertFalse(p.unaskedOffer("Могу поставить напоминание на утро.", "Завтра у меня экзамен"))
         assertFalse(p.unaskedOffer("Ты молодец, что держишься!", "Мне грустно"))
+        // Advice that names a tool word is not an offer of the tool.
+        assertFalse(p.unaskedOffer("Я не могу дать тебе совет, но попробуй делать заметки от руки.", "Как не заснуть на лекции?"))
+        assertFalse(p.unaskedOffer("Могу посоветовать: делай заметки и слушай музыку на перемене.", "Как не заснуть на лекции?"))
         assertEquals("Ох, мне жаль. Я рядом.", p.withoutUnaskedOffers("Ох, мне жаль. Может, включим фонарик? Я рядом.", "Мне грустно"))
         assertEquals("Может, включим фонарик?", p.withoutUnaskedOffers("Может, включим фонарик?", "Мне грустно"))
         runBlocking {
