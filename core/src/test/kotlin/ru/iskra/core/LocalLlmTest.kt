@@ -59,6 +59,14 @@ class LocalLlmTest {
         assertEquals(10, LocalLlmProvider.sampleBreak("Ответ тут.\n\n\nЕщё"))
     }
 
+    /** E4B (ARM evaluation 0.16.1): an opening line, two empty lines and then the tale asked for — all of it stays. */
+    @Test fun gemma4sTaleAfterEmptyLinesStays() = runTest {
+        val engine = FakeEngine("[happy] Конечно, Аня! Давай я тебе расскажу. 🚀", "\n\n\n", "Жил-был кот по имени Мурзик. ", "Он полетел к звёздам.")
+        val r = LocalLlmProvider({ engine }, ChatFormat.GEMMA4, "local:test").stream(LlmRequest("Ты — Искра.",
+            listOf(ChatMessage.User("Расскажи очень короткую сказку про кота-космонавта.")))) { }
+        assertEquals("[happy] Конечно, Аня! Давай я тебе расскажу. 🚀\n\nЖил-был кот по имени Мурзик. Он полетел к звёздам.", r.text)
+    }
+
     private val request = LlmRequest(
         system = "Ты — Искра.",
         messages = listOf(ChatMessage.User("Привет"), ChatMessage.Assistant("Мрр, привет!"), ChatMessage.User("Как дела?")),

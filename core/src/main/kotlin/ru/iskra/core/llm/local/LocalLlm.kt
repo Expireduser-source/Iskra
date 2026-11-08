@@ -390,7 +390,11 @@ class LocalLlmProvider(
                         raw.append(piece)
                         // Two empty lines after some words: a small model starting another version of its reply (Gemma 3 1B:
                         // «Привет! Всё отлично…» and then «Я поняла тебя, ты хочешь узнать, как я?…», «Ах... ничего особенного…»).
-                        val stop = format.stops.firstOrNull { raw.contains(it) } ?: SECOND_TAKE.takeIf { piece.contains('\n') && sampleBreak(raw.toString()) >= 0 }
+                        // Not for Gemma 4: E4B wrote «Конечно, Аня! Давай я тебе расскажу. 🚀», two empty lines and the tale,
+                        // and the tale was cut (ARM evaluation 0.16.1); it doesn't begin its reply again.
+                        val stop = format.stops.firstOrNull { raw.contains(it) } ?: SECOND_TAKE.takeIf {
+                            format != ChatFormat.GEMMA4 && piece.contains('\n') && sampleBreak(raw.toString()) >= 0
+                        }
                         if (stop != null) return@generate false
                         val incoming = when (gate) {
                             Gate.OPEN -> piece
@@ -443,13 +447,15 @@ class LocalLlmProvider(
             }
         }
         if (!leadDone) cleanStart(lead.toString(), dropPurr).takeIf { it.isNotEmpty() }?.let(onText)
-        val cut = (format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } } + listOfNotNull(sampleBreak(text).takeIf { it >= 0 })).minOrNull()
+        val cut = (format.stops.mapNotNull { s -> text.indexOf(s).takeIf { it >= 0 } } +
+            listOfNotNull(sampleBreak(text).takeIf { it >= 0 && format != ChatFormat.GEMMA4 })).minOrNull()
         val (promptTokens, reused) = e.lastRead()
         measure(request, prompt.length, promptTokens)
         onStats?.invoke(GenStats(prompt.length, firstMs, pieces, text.length, (System.nanoTime() - t0) / 1_000_000, promptTokens, promptTokens - reused))
         var reply = ThinkFilter.strip(if (cut != null) text.substring(0, cut) else text)
-        // What was shown is the part after the thought channel; the reply kept in the chat is the same.
-        if (format == ChatFormat.GEMMA4) reply = reply.substringAfterLast(THOUGHT_CLOSE).trim()
+        // What was shown is the part after the thought channel; the reply kept in the chat is the same — and its empty lines
+        // no more than one at a time.
+        if (format == ChatFormat.GEMMA4) reply = reply.substringAfterLast(THOUGHT_CLOSE).trim().replace(Regex("""\n{3,}"""), "\n\n")
         // Gemma 4's tool calls: the words before the first call are the reply, the calls go to the agent (none if no tool
         // was offered — a call made up anyway is just not shown).
         val (said, made) = if (format == ChatFormat.GEMMA4) Gemma4Tools.parse(forced.orEmpty() + reply, toolNames) else reply to emptyList()
