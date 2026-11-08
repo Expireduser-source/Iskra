@@ -102,6 +102,7 @@ class Smoke:
         nodes = self.nodes()
         if not nodes:
             return
+        root = nodes[0]
         parent = {}
         for n in nodes:
             for c in n.findall("node"):
@@ -111,15 +112,24 @@ class Smoke:
         def named(n):
             return any((d.get("text") or "").strip() or (d.get("content-desc") or "").strip() for d in n.iter("node"))
         def clipped(n):
-            # Cut by the edge of a list it scrolls in: its size on screen is not its size.
+            # Cut by the edge of a list it scrolls in, or of the screen: its size on screen is not its size, and what
+            # it says may lie in the part that isn't shown (the dump leaves invisible text out).
             x1, y1, x2, y2 = bounds(n)
             p = parent.get(n)
             while p is not None:
-                if p.get("scrollable") == "true":
+                if p.get("scrollable") == "true" or p is root:
                     a1, b1, a2, b2 = bounds(p)
-                    return y1 <= b1 or y2 >= b2 or x1 <= a1 or x2 >= a2
+                    if y1 <= b1 or y2 >= b2 or x1 <= a1 or x2 >= a2:
+                        return True
                 p = parent.get(p)
             return False
+        def said(n):
+            # What identifies it in the report: its id, its own words or the first words inside it.
+            for d in n.iter("node"):
+                t = (d.get("text") or d.get("content-desc") or "").strip()
+                if t:
+                    return t[:40]
+            return ""
         found = []
         dp = 160.0 / self.density()
         for n in nodes:
@@ -128,15 +138,19 @@ class Smoke:
             x1, y1, x2, y2 = bounds(n)
             if x2 <= x1 or y2 <= y1:
                 continue
-            what = n.get("resource-id", "").split("/")[-1] or (n.get("text") or n.get("content-desc") or n.get("class", "")).strip()[:40]
-            if not named(n):
-                found.append(f"{name}: a control without a name for TalkBack ({what or n.get('class')}, {n.get('bounds')})")
+            what = n.get("resource-id", "").split("/")[-1] or said(n) or n.get("class", "").split(".")[-1]
+            cut = clipped(n)
             w, h = (x2 - x1) * dp, (y2 - y1) * dp
-            if (w < 47.5 or h < 47.5) and not clipped(n):
-                found.append(f"{name}: «{what}» is {w:.0f}×{h:.0f} dp — smaller than 48 dp to touch")
+            if not named(n) and not cut:
+                found.append(f"{name}: a control without a name for TalkBack ({what}, {w:.0f}×{h:.0f} dp at {n.get('bounds')})")
+            if (w < 47.5 or h < 47.5) and not cut:
+                found.append(f"{name}: «{what}» is {w:.0f}×{h:.0f} dp — smaller than 48 dp to touch ({n.get('bounds')})")
         if not hasattr(self, "a11y"):
             self.a11y = []
         self.a11y += found
+        if found:  # the screen's whole tree, to see where each finding sits
+            with open(os.path.join(self.out, f"a11y-{self.n:02d}-{name}.xml"), "w") as f:
+                f.write(ET.tostring(root, encoding="unicode"))
         with open(os.path.join(self.out, "a11y.txt"), "a") as f:
             f.write(f"## {name}: {sum(1 for n in nodes if n.get('package') == PKG and n.get('clickable') == 'true')} controls, "
                     f"{len(found)} findings\n" + "".join(f"- {x}\n" for x in found))
